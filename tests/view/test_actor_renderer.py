@@ -456,10 +456,11 @@ class TestViewportZoomScaling:
             view_origin=(0.0, 0.0),
         )
 
-        call_args = graphics.draw_sprite_smooth.call_args
+        call_args = graphics.draw_sprite_smooth_batch.call_args
         assert call_args is not None
-        assert call_args.kwargs["scale_x"] == 0.5
-        assert call_args.kwargs["scale_y"] == 0.5
+        # Batch path returns numpy arrays; check the single-element values.
+        assert float(call_args.kwargs["scale_x"][0]) == 0.5
+        assert float(call_args.kwargs["scale_y"][0]) == 0.5
 
     def test_zoomed_sprite_position_is_anchor_corrected_to_tile(self) -> None:
         renderer, graphics = _make_renderer()
@@ -480,9 +481,9 @@ class TestViewportZoomScaling:
             view_origin=(0.0, 0.0),
         )
 
-        call_args = graphics.draw_sprite_smooth.call_args
+        call_args = graphics.draw_sprite_smooth_batch.call_args
         assert call_args is not None
         # The draw origin is shifted by half a root tile (8px at 16px tiles) so the
         # backend's centering math lands on the zoomed world tile, not between tiles.
-        assert call_args.args[2] == 72.0
-        assert call_args.args[3] == 80.0
+        assert float(call_args.kwargs["screen_x"][0]) == 72.0
+        assert float(call_args.kwargs["screen_y"][0]) == 80.0

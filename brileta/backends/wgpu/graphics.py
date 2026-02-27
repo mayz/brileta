@@ -600,6 +600,107 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             use_sprite_atlas=True,
         )
 
+    def draw_sprite_smooth_batch(
+        self,
+        *,
+        sprite_uvs: np.ndarray,
+        actor_colors: np.ndarray,
+        screen_x: np.ndarray,
+        screen_y: np.ndarray,
+        light_intensity: np.ndarray,
+        scale_x: np.ndarray,
+        scale_y: np.ndarray,
+        ground_anchor_y: np.ndarray,
+        world_pos: np.ndarray,
+        tile_bg: np.ndarray,
+    ) -> None:
+        """Batch-draw multiple sprites from the sprite atlas.
+
+        Vectorized version of :meth:`draw_sprite_smooth` for rendering many
+        sprite actors in one call, avoiding per-actor Python overhead.
+
+        Args:
+            sprite_uvs: UV rects (u1, v1, u2, v2), shape (N, 4), float32.
+            actor_colors: RGB colors 0-255, shape (N, 3), uint8 or int.
+            screen_x, screen_y: Screen pixel positions, shape (N,).
+            light_intensity: RGB light scale, shape (N, 3), float.
+            scale_x, scale_y: Per-actor scale factors, shape (N,).
+            ground_anchor_y: Sprite ground anchor, shape (N,).
+            world_pos: World tile positions, shape (N, 2), int.
+            tile_bg: Tile background RGB 0-255, shape (N, 3).
+        """
+        if self.screen_renderer is None:
+            return
+        n = len(screen_x)
+        if n == 0:
+            return
+
+        tile_w, tile_h = self.tile_dimensions
+        use_gpu = self._gpu_actor_lighting_enabled
+
+        # Compute quad geometry.
+        scaled_w = float(tile_w) * scale_x
+        scaled_h = float(tile_h) * scale_y
+        offset_x = (float(tile_w) - scaled_w) * 0.5
+        anchor_y = np.clip(ground_anchor_y, 0.0, 1.0)
+        offset_y = float(tile_h) * anchor_y - scaled_h
+
+        quad_x = screen_x + offset_x
+        quad_y = screen_y + offset_y
+
+        # Compute final colors (N, 4) in float 0-1 range.
+        base_r = actor_colors[:, 0].astype(np.float32) / 255.0
+        base_g = actor_colors[:, 1].astype(np.float32) / 255.0
+        base_b = actor_colors[:, 2].astype(np.float32) / 255.0
+
+        if use_gpu:
+            # GPU actor lighting: pass base color through, shader handles light.
+            final_colors = np.column_stack(
+                [base_r, base_g, base_b, np.ones(n, dtype=np.float32)]
+            )
+        else:
+            # CPU lighting blend: base * light * 0.7 + light * 0.3
+            lr = light_intensity[:, 0]
+            lg = light_intensity[:, 1]
+            lb = light_intensity[:, 2]
+            final_colors = np.column_stack(
+                [
+                    np.minimum(1.0, base_r * lr * 0.7 + lr * 0.3),
+                    np.minimum(1.0, base_g * lg * 0.7 + lg * 0.3),
+                    np.minimum(1.0, base_b * lb * 0.7 + lb * 0.3),
+                    np.ones(n, dtype=np.float32),
+                ]
+            )
+
+        # Flags: sprite_atlas bit (2) always set, actor_lighting bit (1) if GPU.
+        flags_val = np.uint32(3 if use_gpu else 2)
+        flags_arr = np.full(n, flags_val, dtype=np.uint32)
+
+        # Light scale for shader.
+        light_scale = np.clip(light_intensity[:, 0], 0.0, 1.0).astype(np.float32)
+
+        # Normalize tile_bg to 0-1.
+        if use_gpu:
+            norm_tile_bg = np.clip(tile_bg.astype(np.float32) / 255.0, 0.0, 1.0)
+        else:
+            norm_tile_bg = np.zeros((n, 3), dtype=np.float32)
+
+        # World positions as float.
+        world_pos_f = world_pos.astype(np.float32)
+
+        self.screen_renderer.add_quad_batch(
+            quad_x.astype(np.float32),
+            quad_y.astype(np.float32),
+            scaled_w.astype(np.float32),
+            scaled_h.astype(np.float32),
+            sprite_uvs.astype(np.float32),
+            final_colors.astype(np.float32),
+            world_pos=world_pos_f,
+            actor_light_scale=light_scale,
+            flags=flags_arr,
+            tile_bg=norm_tile_bg,
+        )
+
     def set_actor_lighting_gpu_context(
         self,
         lightmap_texture: Any | None,

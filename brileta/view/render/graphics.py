@@ -196,6 +196,27 @@ class GraphicsContext(abc.ABC):
         """
         return
 
+    def draw_sprite_smooth_batch(
+        self,
+        *,
+        sprite_uvs: np.ndarray,
+        actor_colors: np.ndarray,
+        screen_x: np.ndarray,
+        screen_y: np.ndarray,
+        light_intensity: np.ndarray,
+        scale_x: np.ndarray,
+        scale_y: np.ndarray,
+        ground_anchor_y: np.ndarray,
+        world_pos: np.ndarray,
+        tile_bg: np.ndarray,
+    ) -> None:
+        """Batch-draw multiple sprites from the sprite atlas.
+
+        Vectorized version of :meth:`draw_sprite_smooth` for rendering many
+        sprite actors in one call, avoiding per-actor Python overhead.
+        """
+        return
+
     def create_sprite_atlas(self, width: int, height: int) -> Any | None:
         """Create a dynamic sprite atlas if supported by the backend.
 

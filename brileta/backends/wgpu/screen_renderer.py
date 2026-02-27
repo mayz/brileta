@@ -677,6 +677,143 @@ class WGPUScreenRenderer:
 
         self.vertex_count = end
 
+    def add_quad_batch(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        w: np.ndarray,
+        h: np.ndarray,
+        uv_coords: np.ndarray,
+        colors: np.ndarray,
+        *,
+        world_pos: np.ndarray | None = None,
+        actor_light_scale: np.ndarray | None = None,
+        flags: np.ndarray | None = None,
+        tile_bg: np.ndarray | None = None,
+    ) -> None:
+        """Add multiple axis-aligned quads in one buffer write.
+
+        Vectorized version of :meth:`add_quad` for batch actor/sprite rendering.
+        Each quad is defined by position (x, y), size (w, h), and UV coordinates.
+
+        Args:
+            x, y: Quad top-left positions, shape (N,).
+            w, h: Quad widths and heights, shape (N,).
+            uv_coords: UV rectangles (u1, v1, u2, v2), shape (N, 4).
+            colors: RGBA colors, shape (N, 4).
+            world_pos: World tile positions, shape (N, 2). Default (-1, -1).
+            actor_light_scale: Per-quad light scale, shape (N,). Default 1.0.
+            flags: Per-quad uint32 flags, shape (N,). Default 0.
+            tile_bg: Per-quad tile background RGB, shape (N, 3). Default (0,0,0).
+        """
+        quad_count = len(x)
+        if quad_count <= 0:
+            return
+
+        remaining = len(self.cpu_vertex_buffer) - self.vertex_count
+        max_quads = remaining // 6
+        if max_quads <= 0:
+            return
+        if quad_count > max_quads:
+            quad_count = max_quads
+            x = x[:quad_count]
+            y = y[:quad_count]
+            w = w[:quad_count]
+            h = h[:quad_count]
+            uv_coords = uv_coords[:quad_count]
+            colors = colors[:quad_count]
+            if world_pos is not None:
+                world_pos = world_pos[:quad_count]
+            if actor_light_scale is not None:
+                actor_light_scale = actor_light_scale[:quad_count]
+            if flags is not None:
+                flags = flags[:quad_count]
+            if tile_bg is not None:
+                tile_bg = tile_bg[:quad_count]
+
+        start = self.vertex_count
+        end = start + (quad_count * 6)
+        vertices = self.cpu_vertex_buffer[start:end].reshape((quad_count, 6))
+
+        # Two triangles per quad: v0=TL, v1=TR, v2=BL, v3=TR, v4=BL, v5=BR.
+        x_right = x + w
+        y_bottom = y + h
+
+        # Positions: [N, 6, 2]
+        vertices["position"][:, 0, 0] = x
+        vertices["position"][:, 0, 1] = y
+        vertices["position"][:, 1, 0] = x_right
+        vertices["position"][:, 1, 1] = y
+        vertices["position"][:, 2, 0] = x
+        vertices["position"][:, 2, 1] = y_bottom
+        vertices["position"][:, 3, 0] = x_right
+        vertices["position"][:, 3, 1] = y
+        vertices["position"][:, 4, 0] = x
+        vertices["position"][:, 4, 1] = y_bottom
+        vertices["position"][:, 5, 0] = x_right
+        vertices["position"][:, 5, 1] = y_bottom
+
+        # UVs: [N, 6, 2]
+        u1 = uv_coords[:, 0]
+        v1 = uv_coords[:, 1]
+        u2 = uv_coords[:, 2]
+        v2 = uv_coords[:, 3]
+        vertices["uv"][:, 0, 0] = u1
+        vertices["uv"][:, 0, 1] = v1
+        vertices["uv"][:, 1, 0] = u2
+        vertices["uv"][:, 1, 1] = v1
+        vertices["uv"][:, 2, 0] = u1
+        vertices["uv"][:, 2, 1] = v2
+        vertices["uv"][:, 3, 0] = u2
+        vertices["uv"][:, 3, 1] = v1
+        vertices["uv"][:, 4, 0] = u1
+        vertices["uv"][:, 4, 1] = v2
+        vertices["uv"][:, 5, 0] = u2
+        vertices["uv"][:, 5, 1] = v2
+
+        # Local UVs: constant pattern for axis-aligned quads.
+        local_uv = np.array(
+            [
+                (0.0, 0.0),  # TL
+                (1.0, 0.0),  # TR
+                (0.0, 1.0),  # BL
+                (1.0, 0.0),  # TR
+                (0.0, 1.0),  # BL
+                (1.0, 1.0),  # BR
+            ],
+            dtype=np.float32,
+        )
+        vertices["uv_local"][:] = local_uv[np.newaxis, :, :]
+
+        # Colors: broadcast per-quad RGBA to all 6 vertices.
+        vertices["color"][:] = colors[:, np.newaxis, :]
+
+        # World positions.
+        if world_pos is not None:
+            vertices["world_pos"][:] = world_pos[:, np.newaxis, :]
+        else:
+            vertices["world_pos"][:] = (-1.0, -1.0)
+
+        # Actor light scale.
+        if actor_light_scale is not None:
+            vertices["actor_light_scale"][:] = actor_light_scale[:, np.newaxis]
+        else:
+            vertices["actor_light_scale"][:] = 1.0
+
+        # Flags.
+        if flags is not None:
+            vertices["flags"][:] = flags[:, np.newaxis]
+        else:
+            vertices["flags"][:] = np.uint32(0)
+
+        # Tile background.
+        if tile_bg is not None:
+            vertices["tile_bg"][:] = tile_bg[:, np.newaxis, :]
+        else:
+            vertices["tile_bg"][:] = (0.0, 0.0, 0.0)
+
+        self.vertex_count = end
+
     def render_to_screen(
         self,
         render_pass: wgpu.GPURenderPassEncoder,

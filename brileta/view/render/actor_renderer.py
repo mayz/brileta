@@ -9,6 +9,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from brileta import colors
 from brileta.types import (
     ColorRGBf,
@@ -79,6 +81,11 @@ class ActorRenderer:
     ) -> None:
         """Render all visible actors with smooth sub-pixel positioning.
 
+        Sprite actors are batched into a single vectorized draw call to avoid
+        per-actor Python overhead. Non-sprite actors (character layers, single
+        glyphs) are rendered individually between sprite batches to maintain
+        correct painter's algorithm ordering.
+
         Args:
             interpolation_alpha: Interpolation factor for smooth movement.
             game_world: The current game world state.
@@ -102,16 +109,209 @@ class ActorRenderer:
             return
 
         game_map = game_world.game_map
-        for actor in visible_actors:
-            self._render_single_actor(
-                actor,
-                viewport_bounds,
-                vs,
-                interpolation_alpha,
-                game_map=game_map,
-                camera_frac_offset=camera_frac_offset,
-                view_origin=view_origin,
+        n = len(visible_actors)
+
+        # Classify actors and collect sprite data in one pass.
+        sprite_indices: list[int] = []
+        non_sprite_indices: list[int] = []
+
+        # Pre-allocate arrays for sprite actor data.
+        prev_x = np.empty(n, dtype=np.float64)
+        prev_y = np.empty(n, dtype=np.float64)
+        curr_x = np.empty(n, dtype=np.float64)
+        curr_y = np.empty(n, dtype=np.float64)
+        render_x = np.empty(n, dtype=np.float64)
+        render_y = np.empty(n, dtype=np.float64)
+        anim_controlled = np.zeros(n, dtype=bool)
+        drift_x = np.zeros(n, dtype=np.float64)
+        drift_y = np.zeros(n, dtype=np.float64)
+        actor_colors = np.empty((n, 3), dtype=np.uint8)
+        sprite_uvs = np.empty((n, 4), dtype=np.float32)
+        visual_scales = np.ones(n, dtype=np.float64)
+        anchor_y = np.ones(n, dtype=np.float64)
+        world_pos_arr = np.empty((n, 2), dtype=np.int32)
+        tile_bg_arr = np.zeros((n, 3), dtype=np.uint8)
+        light_scale_arr = np.ones(n, dtype=np.float64)
+
+        # Single pass: classify and extract sprite data.
+        shadow_receive = self.shadow_renderer.actor_shadow_receive_light_scale
+        for idx, actor in enumerate(visible_actors):
+            sprite_uv = actor.sprite_uv
+            if sprite_uv is not None and not actor.character_layers:
+                sprite_indices.append(idx)
+                prev_x[idx] = float(actor.prev_x)
+                prev_y[idx] = float(actor.prev_y)
+                curr_x[idx] = float(actor.x)
+                curr_y[idx] = float(actor.y)
+                render_x[idx] = float(actor.render_x)
+                render_y[idx] = float(actor.render_y)
+                anim_controlled[idx] = actor._animation_controlled
+                visual_scales[idx] = float(actor.visual_scale)
+                world_pos_arr[idx, 0] = actor.x
+                world_pos_arr[idx, 1] = actor.y
+
+                # Idle drift.
+                if (
+                    actor.visual_effects is not None
+                    and actor.health is not None
+                    and actor.health.is_alive()
+                ):
+                    dx, dy = actor.visual_effects.get_idle_drift_offset()
+                    drift_x[idx] = float(dx)
+                    drift_y[idx] = float(dy)
+
+                # Color with flash override.
+                color = actor.color
+                ve = actor.visual_effects
+                if ve is not None:
+                    ve.update()
+                    flash = ve.get_flash_color()
+                    if flash:
+                        color = flash
+                actor_colors[idx] = color
+
+                # Sprite UV.
+                sprite_uvs[idx, 0] = float(sprite_uv.u1)
+                sprite_uvs[idx, 1] = float(sprite_uv.v1)
+                sprite_uvs[idx, 2] = float(sprite_uv.u2)
+                sprite_uvs[idx, 3] = float(sprite_uv.v2)
+
+                anchor_y[idx] = float(actor.sprite_ground_anchor_y)
+
+                # Tile background for shader contrast.
+                bg = game_map.light_appearance_map[actor.x, actor.y]["bg"]
+                tile_bg_arr[idx, 0] = int(bg[0])
+                tile_bg_arr[idx, 1] = int(bg[1])
+                tile_bg_arr[idx, 2] = int(bg[2])
+
+                # Shadow receive dimming.
+                light_scale_arr[idx] = shadow_receive.get(actor, 1.0)
+            else:
+                non_sprite_indices.append(idx)
+
+        if not sprite_indices:
+            # All non-sprite: use per-actor path.
+            for idx in non_sprite_indices:
+                self._render_single_actor(
+                    visible_actors[idx],
+                    viewport_bounds,
+                    vs,
+                    interpolation_alpha,
+                    game_map=game_map,
+                    camera_frac_offset=camera_frac_offset,
+                    view_origin=view_origin,
+                )
+            return
+
+        # Vectorized screen position computation for sprite actors.
+        si = np.array(sprite_indices, dtype=np.int32)
+        alpha_val = float(interpolation_alpha)
+        interp_x = np.where(
+            anim_controlled[si],
+            render_x[si],
+            prev_x[si] * (1.0 - alpha_val) + curr_x[si] * alpha_val,
+        )
+        interp_y = np.where(
+            anim_controlled[si],
+            render_y[si],
+            prev_y[si] * (1.0 - alpha_val) + curr_y[si] * alpha_val,
+        )
+        interp_x += drift_x[si]
+        interp_y += drift_y[si]
+
+        # Vectorized world-to-screen coordinate transform.
+        viewport_scale_x, viewport_scale_y = vs.get_display_scale_factors()
+        bounds = vs.viewport.get_world_bounds(vs.camera)
+        left = float(bounds.x1)
+        top = float(bounds.y1)
+        offset_x = float(vs.viewport.offset_x)
+        offset_y = float(vs.viewport.offset_y)
+        vp_x = (interp_x - left + offset_x) * viewport_scale_x
+        vp_y = (interp_y - top + offset_y) * viewport_scale_y
+
+        cam_frac_x, cam_frac_y = camera_frac_offset
+        root_x = float(view_origin[0]) + (vp_x - float(cam_frac_x))
+        root_y = float(view_origin[1]) + (vp_y - float(cam_frac_y))
+
+        # Apply zoomed tile draw origin correction for sprites.
+        draw_root_x = root_x + (viewport_scale_x - 1.0) * 0.5
+        draw_root_y = root_y + (viewport_scale_y - 1.0) * anchor_y[si]
+
+        # Vectorized console-to-screen-coords.
+        letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
+        if isinstance(letterbox_geometry, tuple) and len(letterbox_geometry) == 4:
+            console_w = getattr(self.graphics, "console_width_tiles", None)
+            console_h = getattr(self.graphics, "console_height_tiles", None)
+            if console_w is not None and console_h is not None:
+                lx, ly, lw, lh = letterbox_geometry
+                screen_px_x = float(lx) + draw_root_x * (float(lw) / float(console_w))
+                screen_px_y = float(ly) + draw_root_y * (float(lh) / float(console_h))
+            else:
+                tile_dims = self.graphics.tile_dimensions
+                screen_px_x = np.trunc(draw_root_x * float(tile_dims[0]))
+                screen_px_y = np.trunc(draw_root_y * float(tile_dims[1]))
+        else:
+            tile_dims = self.graphics.tile_dimensions
+            screen_px_x = np.trunc(draw_root_x * float(tile_dims[0]))
+            screen_px_y = np.trunc(draw_root_y * float(tile_dims[1]))
+
+        # Build light intensity array.
+        ls = light_scale_arr[si]
+        light_intensity = np.column_stack([ls, ls, ls]).astype(np.float32)
+
+        # Maintain painter's algorithm by processing in draw order, batching
+        # contiguous runs of sprite actors and flushing when interrupted by
+        # non-sprite actors.  Both index lists are already sorted, so we
+        # merge-iterate them rather than using a set lookup per actor.
+        sprite_batch_pos = {idx: pos for pos, idx in enumerate(sprite_indices)}
+
+        def flush_sprite_run(run: list[int]) -> None:
+            """Emit a contiguous batch of sprite actors."""
+            if not run:
+                return
+            batch_pos = np.array(
+                [sprite_batch_pos[idx] for idx in run],
+                dtype=np.int32,
             )
+            self.graphics.draw_sprite_smooth_batch(
+                sprite_uvs=sprite_uvs[si[batch_pos]],
+                actor_colors=actor_colors[si[batch_pos]],
+                screen_x=screen_px_x[batch_pos],
+                screen_y=screen_px_y[batch_pos],
+                light_intensity=light_intensity[batch_pos],
+                scale_x=(visual_scales[si[batch_pos]] * viewport_scale_x).astype(
+                    np.float32,
+                ),
+                scale_y=(visual_scales[si[batch_pos]] * viewport_scale_y).astype(
+                    np.float32,
+                ),
+                ground_anchor_y=anchor_y[si[batch_pos]].astype(np.float32),
+                world_pos=world_pos_arr[si[batch_pos]],
+                tile_bg=tile_bg_arr[si[batch_pos]],
+            )
+
+        current_run: list[int] = []
+        ns_iter = iter(non_sprite_indices)
+        next_ns = next(ns_iter, n)  # sentinel: n is past end
+        for idx in range(n):
+            if idx < next_ns:
+                # This actor is a sprite (comes before the next non-sprite).
+                current_run.append(idx)
+            else:
+                # Hit a non-sprite boundary - flush the sprite run first.
+                flush_sprite_run(current_run)
+                current_run = []
+                self._render_single_actor(
+                    visible_actors[idx],
+                    viewport_bounds,
+                    vs,
+                    interpolation_alpha,
+                    game_map=game_map,
+                    camera_frac_offset=camera_frac_offset,
+                    view_origin=view_origin,
+                )
+                next_ns = next(ns_iter, n)
+        flush_sprite_run(current_run)
 
     def _get_viewport_display_scale(self) -> tuple[float, float]:
         """Return world-tile-to-root-console scaling for the current viewport."""

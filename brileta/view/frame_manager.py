@@ -103,6 +103,13 @@ _RENDER_METRICS: list[MetricSpec] = [
     MetricSpec("time.render.texture.fbo_bind_clear_ms", "FBO bind and clear"),
     MetricSpec("time.render.texture.vbo_update_ms", "VBO vertex encode and upload"),
     MetricSpec("time.render.texture.render_ms", "Render pass"),
+    MetricSpec(
+        "time.render.draw_updates_ms",
+        "System updates in draw() (particles, decals, animations, etc.)",
+    ),
+    MetricSpec("time.render.draw_updates.tile_anim_ms", "Tile animation update"),
+    MetricSpec("time.render.actor_filter_ms", "Actor sorting + visibility filtering"),
+    MetricSpec("time.render.render_actors_ms", "Actor rendering (all visible actors)"),
 ]
 live_variable_registry.register_metrics(_RENDER_METRICS)
 

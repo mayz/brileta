@@ -598,6 +598,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )
@@ -651,6 +652,93 @@ class TestRoofSubstitution:
         assert tuple(int(v) for v in fg_rgb[2]) == (100, 100, 100)
         assert tuple(int(v) for v in bg_rgb[2]) == (120, 120, 120)
 
+    def test_roof_fast_path_with_buffer_lookup_matches_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Direct footprint indexing should preserve the legacy substitution output."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=3,
+            building_type="house",
+            footprint=Rect(10, 20, 5, 4),
+            door_positions=[(10, 21)],
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        world_origin_x = 8
+        world_origin_y = 18
+        buf_width = 12
+        buf_height = 10
+
+        # Sparse explored subset inside the visible buffer; includes roof tiles,
+        # a doorway clearance tile, the chimney tile, and an outside tile.
+        world_x = np.array([11, 12, 10, 13, 9], dtype=np.int32)
+        world_y = np.array([21, 22, 21, 21, 19], dtype=np.int32)
+        buf_x = world_x - world_origin_x
+        buf_y = world_y - world_origin_y
+        tile_ids = np.array(
+            [
+                TileTypeID.FLOOR,
+                TileTypeID.FLOOR,
+                TileTypeID.DOOR_CLOSED,
+                TileTypeID.FLOOR,
+                TileTypeID.GRASS,
+            ],
+            dtype=np.uint8,
+        )
+        chars = np.array(
+            [ord("."), ord("."), ord("+"), ord("."), ord(",")], dtype=np.int32
+        )
+        fg_rgb = np.full((5, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((5, 3), 120, dtype=np.uint8)
+        building.chimney_offset = (3, 1)  # -> (13, 21), included above
+
+        chars_fallback = chars.copy()
+        fg_fallback = fg_rgb.copy()
+        bg_fallback = bg_rgb.copy()
+        ids_fallback = view._apply_roof_substitution(
+            chars_fallback,
+            fg_fallback,
+            bg_fallback,
+            tile_ids.copy(),
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        chars_fast = chars.copy()
+        fg_fast = fg_rgb.copy()
+        bg_fast = bg_rgb.copy()
+        ids_fast = view._apply_roof_substitution(
+            chars_fast,
+            fg_fast,
+            bg_fast,
+            tile_ids.copy(),
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+            buf_x=buf_x,
+            buf_y=buf_y,
+            buf_width=buf_width,
+            buf_height=buf_height,
+            world_origin_x=world_origin_x,
+            world_origin_y=world_origin_y,
+        )
+
+        np.testing.assert_array_equal(ids_fast, ids_fallback)
+        np.testing.assert_array_equal(chars_fast, chars_fallback)
+        np.testing.assert_array_equal(fg_fast, fg_fallback)
+        np.testing.assert_array_equal(bg_fast, bg_fallback)
+
     def test_entry_doorway_remains_visible_through_roof(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -658,6 +746,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )
@@ -732,6 +821,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )
@@ -776,6 +866,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )
@@ -895,6 +986,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )
@@ -972,6 +1064,7 @@ class TestRoofSubstitution:
         monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
 
         view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
         )

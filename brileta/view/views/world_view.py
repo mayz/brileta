@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -71,6 +72,17 @@ _LIGHT_OVERLAY_MASK_HIDDEN = np.uint8(0)
 _LIGHT_OVERLAY_MASK_ROOF_OPAQUE = np.uint8(128)
 _LIGHT_OVERLAY_MASK_ROOF_SUNLIT = np.uint8(192)
 _LIGHT_OVERLAY_MASK_VISIBLE = np.uint8(255)
+
+
+@dataclass(slots=True)
+class _RoofStamp:
+    """Cached roof visuals for one building footprint in local footprint coords."""
+
+    chars: np.ndarray
+    fg_rgb: np.ndarray
+    bg_rgb: np.ndarray
+    tile_ids: np.ndarray
+    draw_mask: np.ndarray
 
 
 def _compute_tile_edge_transition_metadata(
@@ -251,6 +263,9 @@ class WorldView(View):
         self._visible_mask_buffer: np.ndarray | None = None
         self._roof_state_cache_key: tuple[object, ...] | None = None
         self._roof_state_cache_value: tuple[int | None, list[Building]] | None = None
+        self._roof_stamp_cache: dict[
+            tuple[int, bool], tuple[tuple[object, ...], _RoofStamp]
+        ] = {}
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
         self._gpu_actor_lightmap_texture: Any | None = None
@@ -280,6 +295,8 @@ class WorldView(View):
         )
         # Cumulative game time for decal age tracking
         self._game_time: float = 0.0
+        # Numpy RNG for vectorized tile animation random walks.
+        self._tile_anim_rng = np.random.default_rng()
         # Lazily rebuilt when GameWorld actor membership changes.
         self._particle_emitter_actors: set[Actor] = set()
         self._particle_emitter_actors_revision: int = -1
@@ -656,19 +673,21 @@ class WorldView(View):
         # Visual effects like particles and environmental effects should update based
         # on the frame's delta_time for maximum smoothness, not the fixed
         # logic timestep or the interpolation alpha.
-        self.particle_system.update(delta_time)
-        self.environmental_system.update(delta_time)
-        self.floating_text_manager.update(delta_time)
-        self.atmospheric_system.update(delta_time)
-        # Update decals for age-based cleanup
-        self._game_time += delta_time
-        self.decal_system.update(delta_time, self._game_time)
+        with record_time_live_variable("time.render.draw_updates_ms"):
+            self.particle_system.update(delta_time)
+            self.environmental_system.update(delta_time)
+            self.floating_text_manager.update(delta_time)
+            self.atmospheric_system.update(delta_time)
+            # Update decals for age-based cleanup
+            self._game_time += delta_time
+            self.decal_system.update(delta_time, self._game_time)
 
-        # Update tile animations (color oscillation, glyph flicker)
-        self._update_tile_animations()
+            # Update tile animations (color oscillation, glyph flicker)
+            with record_time_live_variable("time.render.draw_updates.tile_anim_ms"):
+                self._update_tile_animations()
 
-        # Emit particles from actors with particle emitters
-        self._update_actor_particles()
+            # Emit particles from actors with particle emitters
+            self._update_actor_particles()
 
     def present(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Composite final frame layers in proper order."""
@@ -800,31 +819,32 @@ class WorldView(View):
         visible_actors_for_frame: list[Actor] | None = None
         dynamic_receivers_for_frame: list[Actor] | None = None
         actor_bounds = vs.get_visible_bounds()
-        if config.SHADOWS_ENABLED:
-            visible_actors_for_frame = [
-                actor
-                for actor in self.actor_renderer.get_sorted_visible_actors(
-                    actor_bounds, self.controller.gw
+        with record_time_live_variable("time.render.actor_filter_ms"):
+            if config.SHADOWS_ENABLED:
+                visible_actors_for_frame = [
+                    actor
+                    for actor in self.actor_renderer.get_sorted_visible_actors(
+                        actor_bounds, self.controller.gw
+                    )
+                    if self.controller.gw.game_map.visible[actor.x, actor.y]
+                ]
+                visible_actors_for_frame = self._filter_roof_occluded_actors(
+                    visible_actors_for_frame,
+                    actor_bounds,
                 )
-                if self.controller.gw.game_map.visible[actor.x, actor.y]
-            ]
-            visible_actors_for_frame = self._filter_roof_occluded_actors(
-                visible_actors_for_frame,
-                actor_bounds,
-            )
-            # Only dynamic actors (those with an energy component) need shadow
-            # receiver dimming. This turns the O(N*N) dimming loop into O(N*D)
-            # where D is the number of dynamic actors (typically 1-5).
-            dynamic_receivers_for_frame = [
-                a for a in visible_actors_for_frame if a.energy is not None
-            ]
-        else:
-            visible_actors_for_frame = self._filter_roof_occluded_actors(
-                self.actor_renderer.get_sorted_visible_actors(
-                    actor_bounds, self.controller.gw
-                ),
-                actor_bounds,
-            )
+                # Only dynamic actors (those with an energy component) need shadow
+                # receiver dimming. This turns the O(N*N) dimming loop into O(N*D)
+                # where D is the number of dynamic actors (typically 1-5).
+                dynamic_receivers_for_frame = [
+                    a for a in visible_actors_for_frame if a.energy is not None
+                ]
+            else:
+                visible_actors_for_frame = self._filter_roof_occluded_actors(
+                    self.actor_renderer.get_sorted_visible_actors(
+                        actor_bounds, self.controller.gw
+                    ),
+                    actor_bounds,
+                )
 
         set_gpu_actor_lighting_context = getattr(
             graphics, "set_actor_lighting_gpu_context", None
@@ -867,14 +887,15 @@ class WorldView(View):
         for mode in self.controller.mode_stack:
             mode.render_world_under_actors()
 
-        self.actor_renderer.render_actors(
-            alpha,
-            game_world=self.controller.gw,
-            camera_frac_offset=self.camera_frac_offset,
-            view_origin=(float(self.x), float(self.y)),
-            visible_actors=visible_actors_for_frame,
-            viewport_bounds=actor_bounds,
-        )
+        with record_time_live_variable("time.render.render_actors_ms"):
+            self.actor_renderer.render_actors(
+                alpha,
+                game_world=self.controller.gw,
+                camera_frac_offset=self.camera_frac_offset,
+                view_origin=(float(self.x), float(self.y)),
+                visible_actors=visible_actors_for_frame,
+                viewport_bounds=actor_bounds,
+            )
 
         if config.ATMOSPHERIC_EFFECTS_ENABLED:
             with record_time_live_variable("time.render.atmospheric_ms"):
@@ -1234,6 +1255,219 @@ class WorldView(View):
         b_offset = ((h >> 16) & 0xFF) % 17 - 8
         return (r_offset, g_offset, b_offset)
 
+    def _build_roof_stamp(
+        self,
+        building: Building,
+        *,
+        is_light: bool,
+        decoration_seed: int,
+        sun_dx: float,
+        sun_dy: float,
+    ) -> _RoofStamp:
+        """Build cached roof visuals for a building footprint rectangle."""
+        fp = building.footprint
+        width = int(fp.width)
+        height = int(fp.height)
+
+        chars = np.zeros((width, height), dtype=np.int32)
+        fg_rgb = np.zeros((width, height, 3), dtype=np.uint8)
+        bg_rgb = np.zeros((width, height, 3), dtype=np.uint8)
+        tile_ids = np.zeros((width, height), dtype=np.int32)
+        draw_mask = np.zeros((width, height), dtype=np.bool_)
+
+        if width <= 0 or height <= 0:
+            return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
+
+        roof_tile_id = tile_types.ROOF_STYLE_TILE_TYPES.get(
+            building.roof_style, tile_types.TileTypeID.ROOF_THATCH
+        )
+        roof_tile_id_int = int(roof_tile_id)
+
+        x_coords = np.arange(fp.x1, fp.x2, dtype=np.int32)
+        y_coords = np.arange(fp.y1, fp.y2, dtype=np.int32)
+        world_x_grid, world_y_grid = np.meshgrid(x_coords, y_coords, indexing="ij")
+
+        entrance_clear_mask = np.zeros((width, height), dtype=np.bool_)
+        for clear_x, clear_y in self._get_roof_entrance_clear_positions(building):
+            if fp.x1 <= clear_x < fp.x2 and fp.y1 <= clear_y < fp.y2:
+                entrance_clear_mask[clear_x - fp.x1, clear_y - fp.y1] = True
+
+        chimney_mask = np.zeros((width, height), dtype=np.bool_)
+        chimney_pos = building.chimney_world_pos
+        if chimney_pos is not None:
+            cx, cy = chimney_pos
+            if fp.x1 <= cx < fp.x2 and fp.y1 <= cy < fp.y2:
+                chimney_mask[cx - fp.x1, cy - fp.y1] = True
+
+        roof_mask = ~entrance_clear_mask & ~chimney_mask
+        draw_mask = roof_mask | chimney_mask
+        if not np.any(draw_mask):
+            return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
+
+        tile_ids[draw_mask] = roof_tile_id_int
+
+        if np.any(roof_mask):
+            roof_data = tile_types.get_tile_type_data_by_id(roof_tile_id_int)
+            roof_appearance = roof_data["light" if is_light else "dark"]
+
+            roof_count = int(np.count_nonzero(roof_mask))
+            roof_chars = np.full(
+                roof_count,
+                int(roof_appearance["ch"]),
+                dtype=chars.dtype,
+            )
+            roof_fg = np.tile(
+                np.asarray(roof_appearance["fg"], dtype=np.uint8),
+                (roof_count, 1),
+            )
+            roof_bg = np.tile(
+                np.asarray(roof_appearance["bg"], dtype=np.uint8),
+                (roof_count, 1),
+            )
+            roof_tile_ids = np.full(roof_count, roof_tile_id_int, dtype=np.int32)
+
+            roof_world_x = world_x_grid[roof_mask]
+            roof_world_y = world_y_grid[roof_mask]
+
+            tile_types.apply_terrain_decoration(
+                roof_chars,
+                roof_fg,
+                roof_bg,
+                roof_tile_ids,
+                roof_world_x,
+                roof_world_y,
+                decoration_seed,
+            )
+
+            roof_color_offset = np.asarray(
+                self._building_roof_color_offset(building, decoration_seed),
+                dtype=np.int16,
+            )
+            roof_bg = np.clip(
+                roof_bg.astype(np.int16) + roof_color_offset, 0, 255
+            ).astype(np.uint8)
+
+            # Ridge shading matches the live path exactly, but is precomputed once
+            # per building for the current sun direction cache bucket.
+            if building.ridge_axis == "horizontal":
+                center = (fp.y1 + fp.y2) / 2.0
+                offset = roof_world_y + 0.5 - center
+                sun_component = sun_dy
+            else:  # vertical
+                center = (fp.x1 + fp.x2) / 2.0
+                offset = roof_world_x + 0.5 - center
+                sun_component = sun_dx
+
+            is_ridge = np.abs(offset) < 0.6
+            is_sun_side = (offset * sun_component) > 0
+            intensity = abs(sun_component)
+            ridge_brightness = np.where(
+                is_ridge,
+                np.int16(round(6 * intensity)),
+                np.where(
+                    is_sun_side,
+                    np.int16(round(18 * intensity)),
+                    np.int16(round(-18 * intensity)),
+                ),
+            )
+
+            roof_bg = np.clip(
+                roof_bg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            ).astype(np.uint8)
+            roof_fg = np.clip(
+                roof_fg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            ).astype(np.uint8)
+
+            chars[roof_mask] = roof_chars
+            fg_rgb[roof_mask] = roof_fg
+            bg_rgb[roof_mask] = roof_bg
+
+        if np.any(chimney_mask):
+            stone_color = (
+                colors.CHIMNEY_STONE_LIGHT if is_light else colors.CHIMNEY_STONE_DARK
+            )
+            flue_color = (
+                colors.CHIMNEY_FLUE_LIGHT if is_light else colors.CHIMNEY_FLUE_DARK
+            )
+            chars[chimney_mask] = ord("\u2022")  # • bullet
+            bg_rgb[chimney_mask] = stone_color
+            fg_rgb[chimney_mask] = flue_color
+
+        # Darken the outer ring of roof tiles (not the chimney/entrance carve-outs)
+        # to preserve eave definition when cached and blitted later.
+        is_left_edge = world_x_grid == fp.x1
+        is_right_edge = world_x_grid == fp.x2 - 1
+        is_top_edge = world_y_grid == fp.y1
+        is_bottom_edge = world_y_grid == fp.y2 - 1
+        perimeter_mask = roof_mask & (
+            is_left_edge | is_right_edge | is_top_edge | is_bottom_edge
+        )
+        if np.any(perimeter_mask):
+            bg_rgb[perimeter_mask] = np.clip(
+                bg_rgb[perimeter_mask].astype(np.int16) - 6,
+                0,
+                255,
+            ).astype(np.uint8)
+
+        corner_mask = roof_mask & (
+            (is_left_edge | is_right_edge) & (is_top_edge | is_bottom_edge)
+        )
+        if np.any(corner_mask):
+            bg_rgb[corner_mask] = np.clip(
+                bg_rgb[corner_mask].astype(np.int16) - 4,
+                0,
+                255,
+            ).astype(np.uint8)
+
+        return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
+
+    def _get_cached_roof_stamp(
+        self,
+        building: Building,
+        *,
+        is_light: bool,
+        decoration_seed: int,
+        sun_dx: float,
+        sun_dy: float,
+        sun_direction_key: tuple[float, float] | None,
+    ) -> _RoofStamp:
+        """Return a cached roof stamp, rebuilding when inputs changed."""
+        cache_key = (
+            int(building.id),
+            int(building.footprint.x1),
+            int(building.footprint.y1),
+            int(building.footprint.x2),
+            int(building.footprint.y2),
+            str(building.roof_style),
+            tuple((int(x), int(y)) for x, y in building.door_positions),
+            (
+                None
+                if building.chimney_offset is None
+                else (
+                    int(building.chimney_offset[0]),
+                    int(building.chimney_offset[1]),
+                )
+            ),
+            bool(is_light),
+            int(decoration_seed),
+            sun_direction_key,
+        )
+
+        cache_slot = (int(building.id), bool(is_light))
+        cached = self._roof_stamp_cache.get(cache_slot)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        stamp = self._build_roof_stamp(
+            building,
+            is_light=is_light,
+            decoration_seed=decoration_seed,
+            sun_dx=sun_dx,
+            sun_dy=sun_dy,
+        )
+        self._roof_stamp_cache[cache_slot] = (cache_key, stamp)
+        return stamp
+
     def _apply_roof_substitution(
         self,
         chars: np.ndarray,
@@ -1245,6 +1479,12 @@ class WorldView(View):
         *,
         is_light: bool,
         decoration_seed: int,
+        buf_x: np.ndarray | None = None,
+        buf_y: np.ndarray | None = None,
+        buf_width: int | None = None,
+        buf_height: int | None = None,
+        world_origin_x: int | None = None,
+        world_origin_y: int | None = None,
     ) -> np.ndarray:
         """Overlay virtual roof visuals onto building footprints for this frame.
 
@@ -1263,10 +1503,47 @@ class WorldView(View):
         if directional_light is not None:
             sun_dx = directional_light.direction.x
             sun_dy = directional_light.direction.y
+            sun_direction_key = (
+                round(float(sun_dx), 3),
+                round(float(sun_dy), 3),
+            )
         else:
             # Default: light from northwest when no directional light is active.
             # TODO: connect to real sun direction
             sun_dx, sun_dy = -0.7, -0.7
+            sun_direction_key = None
+
+        direct_indexing_available = (
+            buf_x is not None
+            and buf_y is not None
+            and buf_width is not None
+            and buf_height is not None
+            and world_origin_x is not None
+            and world_origin_y is not None
+            and len(buf_x) == len(tile_ids)
+            and len(buf_y) == len(tile_ids)
+        )
+        buffer_index_lookup: np.ndarray | None = None
+        if direct_indexing_available:
+            assert buf_x is not None
+            assert buf_y is not None
+            assert buf_width is not None
+            assert buf_height is not None
+            buffer_index_lookup = np.full(
+                (int(buf_width), int(buf_height)),
+                -1,
+                dtype=np.int32,
+            )
+            buffer_index_lookup[buf_x, buf_y] = np.arange(len(tile_ids), dtype=np.int32)
+
+        # Evict cached stamps for buildings no longer in the viewport so the
+        # cache doesn't grow unboundedly over a long session.
+        viewport_building_ids = {b.id for b in viewport_buildings}
+        stale_keys = [
+            k for k in self._roof_stamp_cache if k[0] not in viewport_building_ids
+        ]
+        for k in stale_keys:
+            del self._roof_stamp_cache[k]
 
         effective_tile_ids: np.ndarray | None = None
         any_roof_applied = False
@@ -1275,181 +1552,86 @@ class WorldView(View):
             if building.id == player_building_id:
                 continue
 
-            roof_tile_id = tile_types.ROOF_STYLE_TILE_TYPES.get(
-                building.roof_style, tile_types.TileTypeID.ROOF_THATCH
+            stamp = self._get_cached_roof_stamp(
+                building,
+                is_light=is_light,
+                decoration_seed=decoration_seed,
+                sun_dx=float(sun_dx),
+                sun_dy=float(sun_dy),
+                sun_direction_key=sun_direction_key,
             )
 
-            in_footprint = (
-                (world_x >= building.footprint.x1)
-                & (world_x < building.footprint.x2)
-                & (world_y >= building.footprint.y1)
-                & (world_y < building.footprint.y2)
-            )
-            if not np.any(in_footprint):
-                continue
+            fp = building.footprint
 
-            entrance_clear_positions = self._get_roof_entrance_clear_positions(building)
+            if direct_indexing_available and buffer_index_lookup is not None:
+                assert buf_width is not None
+                assert buf_height is not None
+                assert world_origin_x is not None
+                assert world_origin_y is not None
 
-            entrance_clear_mask = np.zeros_like(in_footprint)
-            if entrance_clear_positions:
-                for clear_x, clear_y in entrance_clear_positions:
-                    entrance_clear_mask |= (world_x == clear_x) & (world_y == clear_y)
+                footprint_buf_x1 = int(fp.x1) - int(world_origin_x)
+                footprint_buf_y1 = int(fp.y1) - int(world_origin_y)
+                footprint_buf_x2 = int(fp.x2) - int(world_origin_x)
+                footprint_buf_y2 = int(fp.y2) - int(world_origin_y)
 
-            # Exclude the chimney tile from the normal roof mask so it can
-            # be rendered as a stone square with a dark flue opening.
-            chimney_mask = np.zeros_like(in_footprint)
-            chimney_pos = building.chimney_world_pos
-            if chimney_pos is not None:
-                cx, cy = chimney_pos
-                chimney_mask = (world_x == cx) & (world_y == cy)
+                slice_buf_x1 = max(0, footprint_buf_x1)
+                slice_buf_y1 = max(0, footprint_buf_y1)
+                slice_buf_x2 = min(int(buf_width), footprint_buf_x2)
+                slice_buf_y2 = min(int(buf_height), footprint_buf_y2)
+                if slice_buf_x1 >= slice_buf_x2 or slice_buf_y1 >= slice_buf_y2:
+                    continue
 
-            roof_mask = in_footprint & ~entrance_clear_mask & ~chimney_mask
-            roof_indices = np.nonzero(roof_mask)[0]
-            chimney_indices = np.nonzero(in_footprint & chimney_mask)[0]
+                local_x1 = slice_buf_x1 - footprint_buf_x1
+                local_y1 = slice_buf_y1 - footprint_buf_y1
+                local_x2 = local_x1 + (slice_buf_x2 - slice_buf_x1)
+                local_y2 = local_y1 + (slice_buf_y2 - slice_buf_y1)
 
-            if len(roof_indices) == 0 and len(chimney_indices) == 0:
+                stamp_mask_view = stamp.draw_mask[local_x1:local_x2, local_y1:local_y2]
+                if not np.any(stamp_mask_view):
+                    continue
+
+                lookup_view = buffer_index_lookup[
+                    slice_buf_x1:slice_buf_x2, slice_buf_y1:slice_buf_y2
+                ]
+                visible_stamp_mask = stamp_mask_view & (lookup_view >= 0)
+                if not np.any(visible_stamp_mask):
+                    continue
+
+                hit_local_x, hit_local_y = np.nonzero(visible_stamp_mask)
+                target_indices = lookup_view[hit_local_x, hit_local_y]
+                stamp_x = hit_local_x + local_x1
+                stamp_y = hit_local_y + local_y1
+            else:
+                in_footprint = (
+                    (world_x >= fp.x1)
+                    & (world_x < fp.x2)
+                    & (world_y >= fp.y1)
+                    & (world_y < fp.y2)
+                )
+                if not np.any(in_footprint):
+                    continue
+
+                footprint_indices = np.nonzero(in_footprint)[0]
+                local_x = world_x[footprint_indices] - int(fp.x1)
+                local_y = world_y[footprint_indices] - int(fp.y1)
+                drawn = stamp.draw_mask[local_x, local_y]
+                if not np.any(drawn):
+                    continue
+
+                target_indices = footprint_indices[drawn]
+                stamp_x = local_x[drawn]
+                stamp_y = local_y[drawn]
+
+            if len(target_indices) == 0:
                 continue
 
             any_roof_applied = True
             if effective_tile_ids is None:
                 effective_tile_ids = tile_ids.copy()
-            if len(roof_indices) > 0:
-                effective_tile_ids[roof_indices] = int(roof_tile_id)
-            # Chimney tiles keep the roof tile ID for sub-tile metadata.
-            if len(chimney_indices) > 0:
-                effective_tile_ids[chimney_indices] = int(roof_tile_id)
-
-            roof_data = tile_types.get_tile_type_data_by_id(int(roof_tile_id))
-            roof_appearance = roof_data["light" if is_light else "dark"]
-
-            roof_chars = np.full(
-                len(roof_indices),
-                int(roof_appearance["ch"]),
-                dtype=chars.dtype,
-            )
-            roof_fg = np.tile(
-                np.asarray(roof_appearance["fg"], dtype=np.uint8),
-                (len(roof_indices), 1),
-            )
-            roof_bg = np.tile(
-                np.asarray(roof_appearance["bg"], dtype=np.uint8),
-                (len(roof_indices), 1),
-            )
-            roof_tile_ids = np.full(
-                len(roof_indices), int(roof_tile_id), dtype=tile_ids.dtype
-            )
-
-            tile_types.apply_terrain_decoration(
-                roof_chars,
-                roof_fg,
-                roof_bg,
-                roof_tile_ids,
-                world_x[roof_indices],
-                world_y[roof_indices],
-                decoration_seed,
-            )
-
-            roof_color_offset = np.asarray(
-                self._building_roof_color_offset(building, decoration_seed),
-                dtype=np.int16,
-            )
-            roof_bg = np.clip(
-                roof_bg.astype(np.int16) + roof_color_offset, 0, 255
-            ).astype(np.uint8)
-
-            # --- Ridge shading: apply sun-directional brightness ---
-            # Compute signed offset from the ridge center using tile centers.
-            # Tiles on the same side as the sun direction are brighter.
-            fp = building.footprint
-            rx = world_x[roof_indices]
-            ry = world_y[roof_indices]
-
-            if building.ridge_axis == "horizontal":
-                center = (fp.y1 + fp.y2) / 2.0
-                offset = ry + 0.5 - center
-                sun_component = sun_dy
-            else:  # vertical
-                center = (fp.x1 + fp.x2) / 2.0
-                offset = rx + 0.5 - center
-                sun_component = sun_dx
-
-            # Ridge tiles sit at the peak. Sun-facing tiles have their slope
-            # normal pointing toward the sun (offset and sun_component same sign).
-            # Scale brightness by |sun_component| so shading fades smoothly as
-            # the sun rotates perpendicular to the ridge axis rather than
-            # snapping abruptly between full sun and full shadow.
-            is_ridge = np.abs(offset) < 0.6
-            is_sun_side = (offset * sun_component) > 0
-            intensity = abs(sun_component)
-
-            # Base: +18 sun-facing, -18 shadow, +6 ridge cap highlight,
-            # scaled by how aligned the sun is with the ridge-perpendicular axis.
-            ridge_brightness = np.where(
-                is_ridge,
-                np.int16(round(6 * intensity)),
-                np.where(
-                    is_sun_side,
-                    np.int16(round(18 * intensity)),
-                    np.int16(round(-18 * intensity)),
-                ),
-            )
-
-            roof_bg = np.clip(
-                roof_bg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
-            ).astype(np.uint8)
-            roof_fg = np.clip(
-                roof_fg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
-            ).astype(np.uint8)
-
-            chars[roof_indices] = roof_chars
-            fg_rgb[roof_indices] = roof_fg
-            bg_rgb[roof_indices] = roof_bg
-
-            # --- Chimney: stone tile with dark flue dot ---
-            # The bullet glyph (•) in a dark soot color sits on a stone
-            # background, reading as a chimney opening seen from above.
-            # Chars are Unicode codepoints; ord("•") = 8226 → CP437 index 7.
-            if len(chimney_indices) > 0:
-                stone_color = (
-                    colors.CHIMNEY_STONE_LIGHT
-                    if is_light
-                    else colors.CHIMNEY_STONE_DARK
-                )
-                flue_color = (
-                    colors.CHIMNEY_FLUE_LIGHT if is_light else colors.CHIMNEY_FLUE_DARK
-                )
-                chars[chimney_indices] = ord("\u2022")  # • bullet
-                bg_rgb[chimney_indices] = stone_color
-                fg_rgb[chimney_indices] = flue_color
-
-            # Darken the outer ring of substituted roof tiles to suggest eaves.
-            # Rect.x2/y2 are exclusive bounds, so the last footprint tiles are x2-1/y2-1.
-            footprint = building.footprint
-            is_left_edge = world_x == footprint.x1
-            is_right_edge = world_x == footprint.x2 - 1
-            is_top_edge = world_y == footprint.y1
-            is_bottom_edge = world_y == footprint.y2 - 1
-            perimeter_mask = roof_mask & (
-                is_left_edge | is_right_edge | is_top_edge | is_bottom_edge
-            )
-            if np.any(perimeter_mask):
-                perimeter_indices = np.where(perimeter_mask)
-                bg_rgb[perimeter_indices] = np.clip(
-                    bg_rgb[perimeter_indices].astype(np.int16) - 6,
-                    0,
-                    255,
-                ).astype(np.uint8)
-
-            corner_mask = roof_mask & (
-                (is_left_edge | is_right_edge) & (is_top_edge | is_bottom_edge)
-            )
-            if np.any(corner_mask):
-                corner_indices = np.where(corner_mask)
-                bg_rgb[corner_indices] = np.clip(
-                    bg_rgb[corner_indices].astype(np.int16) - 4,
-                    0,
-                    255,
-                ).astype(np.uint8)
+            effective_tile_ids[target_indices] = stamp.tile_ids[stamp_x, stamp_y]
+            chars[target_indices] = stamp.chars[stamp_x, stamp_y]
+            fg_rgb[target_indices] = stamp.fg_rgb[stamp_x, stamp_y]
+            bg_rgb[target_indices] = stamp.bg_rgb[stamp_x, stamp_y]
 
         if not any_roof_applied or effective_tile_ids is None:
             return tile_ids
@@ -1544,6 +1726,7 @@ class WorldView(View):
                 final_world_y,
                 game_map.decoration_seed,
             )
+
         effective_unlit_tile_ids = self._apply_roof_substitution(
             chars,
             fg_rgb,
@@ -1553,8 +1736,13 @@ class WorldView(View):
             final_world_y,
             is_light=False,
             decoration_seed=game_map.decoration_seed,
+            buf_x=final_buf_x,
+            buf_y=final_buf_y,
+            buf_width=buf_width,
+            buf_height=buf_height,
+            world_origin_x=world_origin_x,
+            world_origin_y=world_origin_y,
         )
-
         # Add alpha channel (255) to make RGBA
         alpha = np.full((len(chars), 1), 255, dtype=np.uint8)
         fg_rgba = np.hstack((fg_rgb, alpha))
@@ -1768,55 +1956,56 @@ class WorldView(View):
         world_right = min(game_map.width - 1, bounds.x2)
         world_bottom = min(game_map.height - 1, bounds.y2)
 
-        # Get animation params and state
-        animation_params = game_map.animation_params
-        animation_state = game_map.animation_state
+        # Vectorized: slice viewport region and find visible animated tiles
+        # using numpy boolean operations instead of a Python loop.
+        vp_slice = (
+            slice(world_left, world_right + 1),
+            slice(world_top, world_bottom + 1),
+        )
+        visible_slice = game_map.visible[vp_slice]
+        animates_slice = game_map.animation_params["animates"][vp_slice]
+        animated_mask = visible_slice & animates_slice
 
-        # Find all visible animated tiles in the viewport
-        animated_tiles = [
-            (world_x, world_y)
-            for world_x in range(world_left, world_right + 1)
-            for world_y in range(world_top, world_bottom + 1)
-            if (
-                game_map.visible[world_x, world_y]
-                and animation_params[world_x, world_y]["animates"]
-            )
-        ]
-
-        if not animated_tiles:
+        # Get local (within-slice) coordinates of animated tiles
+        local_x, local_y = np.nonzero(animated_mask)
+        num_animated = len(local_x)
+        if num_animated == 0:
             return
 
         # Select a random subset of tiles to update (percent_of_cells %)
-        num_to_update = max(1, len(animated_tiles) * percent_of_cells // 100)
-        tiles_to_update = _rng.sample(
-            animated_tiles, min(num_to_update, len(animated_tiles))
+        num_to_update = max(1, num_animated * percent_of_cells // 100)
+        if num_to_update < num_animated:
+            chosen = self._tile_anim_rng.choice(
+                num_animated, size=num_to_update, replace=False
+            )
+            local_x = local_x[chosen]
+            local_y = local_y[chosen]
+            num_to_update = len(local_x)
+
+        # Convert to world coordinates for the animation_state write
+        world_x = local_x + world_left
+        world_y = local_y + world_top
+
+        # Vectorized random walk: generate all offsets in one batch
+        # (num_to_update, 3) for fg and bg independently
+        step_size = 80
+        fg_offsets = self._tile_anim_rng.integers(
+            -step_size, step_size + 1, size=(num_to_update, 3), dtype=np.int16
+        )
+        bg_offsets = self._tile_anim_rng.integers(
+            -step_size, step_size + 1, size=(num_to_update, 3), dtype=np.int16
         )
 
-        # Update each selected tile using random walk
-        # Use small step size for subtle, organic color drift
-        step_size = 80
-
-        for world_x, world_y in tiles_to_update:
-            state = animation_state[world_x, world_y]
-
-            # Random walk for foreground RGB values
-            for i in range(3):
-                offset = _rng.randint(-step_size, step_size)
-                new_val = int(state["fg_values"][i]) + offset
-                state["fg_values"][i] = max(0, min(1000, new_val))
-
-            # Random walk for background RGB values
-            for i in range(3):
-                offset = _rng.randint(-step_size, step_size)
-                new_val = int(state["bg_values"][i]) + offset
-                state["bg_values"][i] = max(0, min(1000, new_val))
-
-            # Glyph is always visible - the "flicker" effect comes naturally
-            # when fg and bg colors drift close together, making the glyph
-            # blend into the background.
-
-            # Write back the updated state
-            animation_state[world_x, world_y] = state
+        # Read current state, apply offsets, clamp, write back
+        state = game_map.animation_state
+        fg_vals = state["fg_values"][world_x, world_y].astype(np.int16)
+        bg_vals = state["bg_values"][world_x, world_y].astype(np.int16)
+        fg_vals += fg_offsets
+        bg_vals += bg_offsets
+        np.clip(fg_vals, 0, 1000, out=fg_vals)
+        np.clip(bg_vals, 0, 1000, out=bg_vals)
+        state["fg_values"][world_x, world_y] = fg_vals
+        state["bg_values"][world_x, world_y] = bg_vals
 
     def _update_mouse_tile_location(self) -> None:
         """Update the stored world-space mouse tile based on the current camera."""
@@ -2159,6 +2348,12 @@ class WorldView(View):
                         valid_exp_y + world_top,
                         is_light=True,
                         decoration_seed=gw.game_map.decoration_seed,
+                        buf_x=final_buf_x,
+                        buf_y=final_buf_y,
+                        buf_width=buf_width,
+                        buf_height=buf_height,
+                        world_origin_x=world_left - vs.offset_x - pad,
+                        world_origin_y=world_top - vs.offset_y - pad,
                     )
                     roof_covered_mask = np.isin(
                         effective_world_tile_ids, _ROOF_TILE_IDS

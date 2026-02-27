@@ -637,6 +637,140 @@ class TestWGPUGraphicsContext:
 
 
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
+class TestDrawSpriteSmoothBatch:
+    """Tests for the vectorized draw_sprite_smooth_batch method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create a graphics context with a mock screen renderer."""
+        from brileta.backends.glfw.window import GlfwWindow
+
+        mock_glfw_window_handle = Mock()
+        mock_window = GlfwWindow(mock_glfw_window_handle)
+        mock_window.get_size = Mock(return_value=(800, 600))
+        mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
+        mock_window.flip = Mock()
+
+        self.ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
+        self.mock_screen_renderer = Mock()
+        self.ctx.screen_renderer = self.mock_screen_renderer
+
+        with patch("glfw.get_window_content_scale", return_value=(1.0, 1.0)):
+            yield
+
+    def _call_batch(
+        self, *, n: int = 2, gpu_lighting: bool = False
+    ) -> tuple[tuple[object, ...], dict[str, object]]:
+        """Helper: call draw_sprite_smooth_batch and return (args, kwargs)."""
+        self.ctx._gpu_actor_lighting_enabled = gpu_lighting
+
+        self.ctx.draw_sprite_smooth_batch(
+            sprite_uvs=np.array([[0.1, 0.2, 0.3, 0.4]] * n, dtype=np.float32),
+            actor_colors=np.full((n, 3), 128, dtype=np.uint8),
+            screen_x=np.arange(n, dtype=np.float32) * 20.0,
+            screen_y=np.zeros(n, dtype=np.float32),
+            light_intensity=np.full((n, 3), 0.5, dtype=np.float32),
+            scale_x=np.ones(n, dtype=np.float32),
+            scale_y=np.ones(n, dtype=np.float32),
+            ground_anchor_y=np.full(n, 1.0, dtype=np.float32),
+            world_pos=np.zeros((n, 2), dtype=np.int32),
+            tile_bg=np.full((n, 3), 64, dtype=np.uint8),
+        )
+
+        self.mock_screen_renderer.add_quad_batch.assert_called_once()
+        call = self.mock_screen_renderer.add_quad_batch.call_args
+        # Unpack Mock._Call into a plain (args, kwargs) tuple for the type checker.
+        return (call[0], call[1])
+
+    def test_cpu_lighting_blends_color(self) -> None:
+        """CPU path should apply base*light*0.7 + light*0.3 blending."""
+        args, _kwargs = self._call_batch(n=1, gpu_lighting=False)
+
+        # Colors are the 6th positional arg to add_quad_batch.
+        # With color=128/255~0.502 and light=0.5:
+        # result = min(1.0, 0.502*0.5*0.7 + 0.5*0.3) = min(1.0, 0.176+0.15) ~ 0.326
+        final_colors = args[5]
+        r = float(final_colors[0, 0])  # type: ignore[index]
+        assert 0.3 < r < 0.4, f"Expected blended color ~0.326, got {r}"
+        # Alpha should be 1.0.
+        assert float(final_colors[0, 3]) == 1.0  # type: ignore[index]
+
+    def test_gpu_lighting_passes_base_color_through(self) -> None:
+        """GPU path should pass base color unmodified (shader handles lighting)."""
+        args, _kwargs = self._call_batch(n=1, gpu_lighting=True)
+
+        final_colors = args[5]
+        r = float(final_colors[0, 0])  # type: ignore[index]
+        expected = 128.0 / 255.0
+        assert abs(r - expected) < 0.01, f"Expected {expected}, got {r}"
+
+    def test_gpu_flags_include_both_bits(self) -> None:
+        """GPU path should set both sprite_atlas (bit 1) and actor_lighting (bit 0)."""
+        _args, kwargs = self._call_batch(n=1, gpu_lighting=True)
+
+        flags = kwargs["flags"]
+        assert int(flags[0]) == 3  # type: ignore[index]  # bits 0 and 1 set
+
+    def test_cpu_flags_set_sprite_atlas_only(self) -> None:
+        """CPU path should set only the sprite_atlas flag (bit 1)."""
+        _args, kwargs = self._call_batch(n=1, gpu_lighting=False)
+
+        flags = kwargs["flags"]
+        assert int(flags[0]) == 2  # type: ignore[index]  # only bit 1 set
+
+    def test_tile_bg_normalized_for_gpu(self) -> None:
+        """GPU path should normalize tile_bg from 0-255 to 0-1."""
+        _args, kwargs = self._call_batch(n=1, gpu_lighting=True)
+
+        tile_bg = kwargs["tile_bg"]
+        expected = 64.0 / 255.0
+        np.testing.assert_allclose(tile_bg[0], [expected] * 3, atol=0.01)  # type: ignore[index]
+
+    def test_tile_bg_zeroed_for_cpu(self) -> None:
+        """CPU path should pass zero tile_bg (not used by shader)."""
+        _args, kwargs = self._call_batch(n=1, gpu_lighting=False)
+
+        tile_bg = kwargs["tile_bg"]
+        np.testing.assert_allclose(tile_bg[0], [0.0, 0.0, 0.0])  # type: ignore[index]
+
+    def test_noop_when_screen_renderer_is_none(self) -> None:
+        """Method should be a no-op when screen_renderer is not available."""
+        self.ctx.screen_renderer = None
+        self.ctx._gpu_actor_lighting_enabled = False
+
+        # Should not raise.
+        self.ctx.draw_sprite_smooth_batch(
+            sprite_uvs=np.zeros((1, 4), dtype=np.float32),
+            actor_colors=np.zeros((1, 3), dtype=np.uint8),
+            screen_x=np.zeros(1, dtype=np.float32),
+            screen_y=np.zeros(1, dtype=np.float32),
+            light_intensity=np.ones((1, 3), dtype=np.float32),
+            scale_x=np.ones(1, dtype=np.float32),
+            scale_y=np.ones(1, dtype=np.float32),
+            ground_anchor_y=np.ones(1, dtype=np.float32),
+            world_pos=np.zeros((1, 2), dtype=np.int32),
+            tile_bg=np.zeros((1, 3), dtype=np.uint8),
+        )
+
+    def test_noop_for_empty_input(self) -> None:
+        """Empty arrays should be a no-op."""
+        self.ctx._gpu_actor_lighting_enabled = False
+        self.ctx.draw_sprite_smooth_batch(
+            sprite_uvs=np.zeros((0, 4), dtype=np.float32),
+            actor_colors=np.zeros((0, 3), dtype=np.uint8),
+            screen_x=np.zeros(0, dtype=np.float32),
+            screen_y=np.zeros(0, dtype=np.float32),
+            light_intensity=np.ones((0, 3), dtype=np.float32),
+            scale_x=np.ones(0, dtype=np.float32),
+            scale_y=np.ones(0, dtype=np.float32),
+            ground_anchor_y=np.ones(0, dtype=np.float32),
+            world_pos=np.zeros((0, 2), dtype=np.int32),
+            tile_bg=np.zeros((0, 3), dtype=np.uint8),
+        )
+        self.mock_screen_renderer.add_quad_batch.assert_not_called()
+
+
+@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_window_parameters():
     """Test WGPUGraphicsContext window parameter handling."""
     from brileta.backends.glfw.window import GlfwWindow

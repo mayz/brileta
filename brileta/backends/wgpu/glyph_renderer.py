@@ -9,6 +9,7 @@ import numpy as np
 import wgpu
 
 from brileta.types import TileDimensions, WorldTilePos
+from brileta.util._native import build_glyph_vertices as _native_build_glyph_vertices
 from brileta.util.caching import ResourceCache
 from brileta.util.glyph_buffer import GlyphBuffer
 from brileta.util.live_vars import record_time_live_variable
@@ -422,9 +423,11 @@ class WGPUGlyphRenderer:
     def _build_glyph_vertices(
         self, glyph_buffer: GlyphBuffer, cpu_buffer: np.ndarray
     ) -> int:
-        """Build vertex data from a glyph buffer.
+        """Build vertex data from a glyph buffer using the native C encoder.
 
-        Fully vectorized - no Python loops over cells.
+        Encodes each glyph cell into 6 interleaved triangle vertices (two
+        triangles per quad) in a single pass through C, avoiding the overhead
+        of dozens of numpy structured-array field writes from Python.
 
         Args:
             glyph_buffer: The GlyphBuffer to encode
@@ -434,119 +437,20 @@ class WGPUGlyphRenderer:
             Number of vertices generated
         """
         w, h = glyph_buffer.data.shape
-        num_cells = w * h
-        if num_cells == 0:
+        if w * h == 0:
             return 0
 
-        num_vertices = num_cells * 6
-        if num_vertices > len(cpu_buffer):
-            raise ValueError(
-                f"GlyphBuffer too large: needs {num_vertices} vertices, "
-                f"buffer has {len(cpu_buffer)}"
-            )
+        tile_w = float(self.tile_dimensions[0])
+        tile_h = float(self.tile_dimensions[1])
 
-        tile_w, tile_h = self.tile_dimensions
-
-        # Build coordinate grids matching row-major iteration order (y outer, x inner).
-        # meshgrid with indexing="xy" gives (h, w) arrays where:
-        #   x_grid[y, x] = x, y_grid[y, x] = y
-        x_indices = np.arange(w, dtype=np.float32)
-        y_indices = np.arange(h, dtype=np.float32)
-        x_grid, y_grid = np.meshgrid(x_indices, y_indices, indexing="xy")
-
-        # Screen coordinates for each cell corner - shape (h, w)
-        x1 = x_grid * tile_w
-        y1 = y_grid * tile_h
-        x2 = x1 + tile_w
-        y2 = y1 + tile_h
-
-        # Swap axes from (w, h, ...) to (h, w, ...) to match grid order
-        fg_colors = (
-            np.swapaxes(glyph_buffer.data["fg"], 0, 1).astype(np.float32) / 255.0
-        )  # (h, w, 4)
-        bg_colors = (
-            np.swapaxes(glyph_buffer.data["bg"], 0, 1).astype(np.float32) / 255.0
+        return _native_build_glyph_vertices(
+            glyph_buffer.data,
+            cpu_buffer,
+            self.uv_map,
+            self.unicode_to_cp437_map,
+            tile_w,
+            tile_h,
         )
-
-        # Convert characters to CP437 indices for UV lookup
-        chars = glyph_buffer.data["ch"].T  # (w, h) -> (h, w)
-        # Clamp to lookup table range (chars outside the table map to '?')
-        table_size = len(self.unicode_to_cp437_map)
-        cp437_indices = self.unicode_to_cp437_map[np.clip(chars, 0, table_size - 1)]
-
-        # Look up UV coordinates: uv_map is (256, 4) -> (h, w, 4)
-        uvs = self.uv_map[cp437_indices]
-        u1 = uvs[..., 0]
-        v1 = uvs[..., 1]
-        u2 = uvs[..., 2]
-        v2 = uvs[..., 3]
-
-        # Reshape vertex buffer to (h, w, 6) - matches row-major iteration order
-        verts = cpu_buffer[:num_vertices].reshape(h, w, 6)
-
-        # Vertex 0: bottom-left
-        verts["position"][..., 0, 0] = x1
-        verts["position"][..., 0, 1] = y1
-        verts["uv"][..., 0, 0] = u1
-        verts["uv"][..., 0, 1] = v1
-
-        # Vertex 1: bottom-right
-        verts["position"][..., 1, 0] = x2
-        verts["position"][..., 1, 1] = y1
-        verts["uv"][..., 1, 0] = u2
-        verts["uv"][..., 1, 1] = v1
-
-        # Vertex 2: top-left
-        verts["position"][..., 2, 0] = x1
-        verts["position"][..., 2, 1] = y2
-        verts["uv"][..., 2, 0] = u1
-        verts["uv"][..., 2, 1] = v2
-
-        # Vertex 3: bottom-right (same as 1)
-        verts["position"][..., 3, 0] = x2
-        verts["position"][..., 3, 1] = y1
-        verts["uv"][..., 3, 0] = u2
-        verts["uv"][..., 3, 1] = v1
-
-        # Vertex 4: top-left (same as 2)
-        verts["position"][..., 4, 0] = x1
-        verts["position"][..., 4, 1] = y2
-        verts["uv"][..., 4, 0] = u1
-        verts["uv"][..., 4, 1] = v2
-
-        # Vertex 5: top-right
-        verts["position"][..., 5, 0] = x2
-        verts["position"][..., 5, 1] = y2
-        verts["uv"][..., 5, 0] = u2
-        verts["uv"][..., 5, 1] = v2
-
-        # Colors are the same for all 6 vertices of each cell
-        # Broadcast (h, w, 4) to (h, w, 6, 4)
-        for i in range(6):
-            verts["fg_color"][..., i, :] = fg_colors
-            verts["bg_color"][..., i, :] = bg_colors
-
-        # Broadcast noise amplitude from glyph buffer to all 6 vertices per cell.
-        # Swap from (w, h) to (h, w) to match grid order.
-        noise_values = glyph_buffer.data["noise"].T  # (h, w)
-        noise_pattern = glyph_buffer.data["noise_pattern"].T.astype(np.uint32)
-        edge_neighbor_mask = glyph_buffer.data["edge_neighbor_mask"].T.astype(np.uint32)
-        edge_blend = glyph_buffer.data["edge_blend"].T
-        edge_neighbor_bg = (
-            np.swapaxes(glyph_buffer.data["edge_neighbor_bg"], 0, 1).astype(np.float32)
-            / 255.0
-        )  # (h, w, 4, 3)
-        for i in range(6):
-            verts["noise_amplitude"][..., i] = noise_values
-            verts["noise_pattern"][..., i] = noise_pattern
-            verts["edge_neighbor_mask"][..., i] = edge_neighbor_mask
-            verts["edge_blend"][..., i] = edge_blend
-            for neighbor_idx in range(EDGE_NEIGHBOR_COUNT):
-                verts[f"edge_neighbor_bg_{neighbor_idx}"][..., i, :] = edge_neighbor_bg[
-                    ..., neighbor_idx, :
-                ]
-
-        return num_vertices
 
     def _has_changes(
         self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer

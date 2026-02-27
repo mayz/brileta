@@ -219,3 +219,14 @@ def sprite_nibble_boulder(
     seed: int,
     nibble_prob: float,
 ) -> None: ...
+
+# Glyph vertex encoding (from _native_glyph_vertices.c)
+
+def build_glyph_vertices(
+    glyph_data: object,
+    output: object,
+    uv_map: object,
+    cp437_map: object,
+    tile_w: float,
+    tile_h: float,
+) -> int: ...

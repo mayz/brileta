@@ -36,6 +36,9 @@ PyObject *brileta_native_sprite_paste_sprite(PyObject *self, PyObject *args);
 PyObject *brileta_native_sprite_darken_rim(PyObject *self, PyObject *args);
 PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args);
 PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args);
+/* Glyph vertex encoding provided by _native_glyph_vertices.c. */
+PyObject *brileta_native_build_glyph_vertices(PyObject *self, PyObject *args);
+
 /* Shared native WFC contradiction exception type. */
 PyObject *brileta_native_wfc_contradiction_error = NULL;
 
@@ -137,6 +140,12 @@ static PyMethodDef methods[] = {
      METH_VARARGS,
      "sprite_nibble_boulder(canvas, seed, nibble_prob) -> None\n\n"
      "Remove random edge pixels from upper half of boulder."},
+    {"build_glyph_vertices",
+     brileta_native_build_glyph_vertices,
+     METH_VARARGS,
+     "build_glyph_vertices(glyph_data, output, uv_map, cp437_map, tile_w, tile_h) -> int\n\n"
+     "Encode a GlyphBuffer into interleaved triangle vertices for the GPU.\n"
+     "Returns the number of vertices written."},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef module = {
