@@ -533,11 +533,14 @@ class ActorRenderer:
             bounds.x1, bounds.y1, bounds.x2, bounds.y2
         )
 
+        # Use `is` identity check instead of `==` equality to avoid
+        # Actor.__eq__ dispatch (isinstance + actor_id comparison).
+        player = game_world.player
         return sorted(
             actors_in_viewport,
             key=lambda actor: (
                 actor.y,
-                actor == game_world.player,
+                actor is player,
                 actor.visual_scale,
             ),
         )

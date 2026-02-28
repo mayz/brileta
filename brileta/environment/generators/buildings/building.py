@@ -106,34 +106,23 @@ class Building:
     chimney_projected_height: float = CHIMNEY_MIN_PROJECTED_HEIGHT
     chimney_shadow_height: float = CHIMNEY_MIN_SHADOW_HEIGHT
 
-    @property
-    def perspective_north_offset(self) -> float:
-        """Fractional tile offset for pseudo-3D roof shift.
+    # Cached perspective values - computed once in __post_init__ from
+    # floor_count (which is immutable after building generation).
+    perspective_north_offset: float = field(init=False, repr=False)
+    perspective_ceil_offset: int = field(init=False, repr=False)
+    perspective_floor_offset: int = field(init=False, repr=False)
+    perspective_frac: float = field(init=False, repr=False)
+    perspective_has_frac: bool = field(init=False, repr=False)
 
-        The roof visual is shifted north by this many tile units, exposing a
-        south-facing wall strip. Computed from floor_count and constants.
-        """
-        return min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
-
-    @property
-    def perspective_ceil_offset(self) -> int:
-        """Number of full tile rows the roof extends north of the footprint."""
-        return math.ceil(self.perspective_north_offset)
-
-    @property
-    def perspective_floor_offset(self) -> int:
-        """Number of full wall-face rows at the south end of the footprint."""
-        return math.floor(self.perspective_north_offset)
-
-    @property
-    def perspective_frac(self) -> float:
-        """Fractional part of the perspective offset (0.0 if exact integer)."""
-        return self.perspective_north_offset - math.floor(self.perspective_north_offset)
-
-    @property
-    def perspective_has_frac(self) -> bool:
-        """Whether the perspective offset has a meaningful fractional part."""
-        return self.perspective_frac > 0.001
+    def __post_init__(self) -> None:
+        """Pre-compute perspective values from floor_count."""
+        pno = min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
+        self.perspective_north_offset = pno
+        self.perspective_ceil_offset = math.ceil(pno)
+        self.perspective_floor_offset = math.floor(pno)
+        frac = pno - math.floor(pno)
+        self.perspective_frac = frac
+        self.perspective_has_frac = frac > 0.001
 
     @property
     def interior_bounds(self) -> Rect:

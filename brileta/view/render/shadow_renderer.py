@@ -72,6 +72,32 @@ class _SunShadowParams(NamedTuple):
     length_scale: float
 
 
+class _ActorBatchData(NamedTuple):
+    """Pre-extracted actor data shared by sun and point-light shadow passes.
+
+    Eliminates duplicate per-actor attribute access and numpy array construction
+    that was happening independently in both shadow passes. Intermediate arrays
+    (interpolation sources, drift, animation flags) are computed inside
+    _extract_actor_batch_data but kept as locals - only the final consumed
+    values are stored here.
+    """
+
+    # Integer tile positions.
+    actor_x: np.ndarray  # int32
+    actor_y: np.ndarray  # int32
+    shadow_heights: np.ndarray  # float64
+    visual_scale: np.ndarray  # float64
+    # Sprite data.
+    sprite_anchor_y: np.ndarray  # float64
+    sprite_uvs: np.ndarray  # float32 (N, 4)
+    sprite_batchable: np.ndarray  # bool
+    # Pre-computed screen positions (root console and pixel coords).
+    root_x: np.ndarray  # float64
+    root_y: np.ndarray  # float64
+    screen_x: np.ndarray  # float64
+    screen_y: np.ndarray  # float64
+
+
 class ShadowRenderer:
     """Render projected terrain and actor shadows for a world view."""
 
@@ -203,6 +229,11 @@ class ShadowRenderer:
         if not shadow_casters:
             return
 
+        # Extract actor data into numpy arrays once and share between both
+        # shadow passes. Previously each pass independently iterated actors
+        # and built its own arrays, duplicating ~50 per-actor attribute reads.
+        batch_data = self._extract_actor_batch_data(shadow_casters, interpolation_alpha)
+
         self._render_sun_actor_shadows(
             shadow_casters,
             interpolation_alpha,
@@ -211,6 +242,7 @@ class ShadowRenderer:
             dynamic_receivers=dynamic_receivers,
             sun_params=sun_params,
             directional_light=directional_light,
+            batch_data=batch_data,
         )
         self._render_point_light_actor_shadows(
             shadow_casters,
@@ -219,6 +251,7 @@ class ShadowRenderer:
             receivers=visible_actors,
             dynamic_receivers=dynamic_receivers,
             lights=lights,
+            batch_data=batch_data,
         )
 
     @staticmethod
@@ -317,6 +350,123 @@ class ShadowRenderer:
             float(offset_y) + console_y * (float(scaled_h) / float(console_h)),
         )
 
+    def _extract_actor_batch_data(
+        self,
+        actors: list[Actor],
+        interpolation_alpha: InterpolationAlpha,
+    ) -> _ActorBatchData:
+        """Extract actor attributes into numpy arrays and pre-compute positions.
+
+        Collects per-actor data (positions, drift, visual scale, sprite info)
+        into contiguous arrays and computes interpolated world positions and
+        screen coordinates in one vectorized pass. Called once by
+        render_actor_shadows and consumed by both the sun and point-light
+        shadow passes, eliminating the duplicate extraction.
+        """
+        n = len(actors)
+        actor_x = np.empty(n, dtype=np.int32)
+        actor_y = np.empty(n, dtype=np.int32)
+        shadow_heights = np.empty(n, dtype=np.float64)
+        prev_x = np.empty(n, dtype=np.float64)
+        prev_y = np.empty(n, dtype=np.float64)
+        curr_x = np.empty(n, dtype=np.float64)
+        curr_y = np.empty(n, dtype=np.float64)
+        render_x = np.empty(n, dtype=np.float64)
+        render_y = np.empty(n, dtype=np.float64)
+        animation_controlled = np.zeros(n, dtype=bool)
+        drift_x = np.zeros(n, dtype=np.float64)
+        drift_y = np.zeros(n, dtype=np.float64)
+        visual_scale = np.ones(n, dtype=np.float64)
+        sprite_anchor_y = np.ones(n, dtype=np.float64)
+        sprite_uvs = np.zeros((n, 4), dtype=np.float32)
+        sprite_batchable = np.zeros(n, dtype=bool)
+
+        for idx, actor in enumerate(actors):
+            actor_x[idx] = int(actor.x)
+            actor_y[idx] = int(actor.y)
+            shadow_heights[idx] = float(actor.shadow_height)
+            prev_x[idx] = float(actor.prev_x)
+            prev_y[idx] = float(actor.prev_y)
+            curr_x[idx] = float(actor.x)
+            curr_y[idx] = float(actor.y)
+            render_x[idx] = float(actor.render_x)
+            render_y[idx] = float(actor.render_y)
+            animation_controlled[idx] = actor._animation_controlled
+            visual_scale[idx] = float(actor.visual_scale)
+
+            if (
+                actor.visual_effects is not None
+                and actor.health is not None
+                and actor.health.is_alive()
+            ):
+                dx, dy = actor.visual_effects.get_idle_drift_offset()
+                drift_x[idx] = float(dx)
+                drift_y[idx] = float(dy)
+
+            sprite_uv = actor.sprite_uv
+            if sprite_uv is not None:
+                sprite_anchor_y[idx] = float(actor.sprite_ground_anchor_y)
+                sprite_uvs[idx, 0] = float(sprite_uv.u1)
+                sprite_uvs[idx, 1] = float(sprite_uv.v1)
+                sprite_uvs[idx, 2] = float(sprite_uv.u2)
+                sprite_uvs[idx, 3] = float(sprite_uv.v2)
+                sprite_batchable[idx] = True
+
+        # Vectorized interpolation.
+        alpha_value = float(interpolation_alpha)
+        interpolated_x = np.where(
+            animation_controlled,
+            render_x,
+            prev_x * (1.0 - alpha_value) + curr_x * alpha_value,
+        )
+        interpolated_y = np.where(
+            animation_controlled,
+            render_y,
+            prev_y * (1.0 - alpha_value) + curr_y * alpha_value,
+        )
+        interpolated_x += drift_x
+        interpolated_y += drift_y
+
+        # Vectorized screen position computation.
+        viewport_pos = self._world_to_screen_float_batch(interpolated_x, interpolated_y)
+        if viewport_pos is not None:
+            vp_x, vp_y = viewport_pos
+            cam_frac_x, cam_frac_y = self._camera_frac_offset
+            root_x_arr = self._view_origin[0] + (vp_x - float(cam_frac_x))
+            root_y_arr = self._view_origin[1] + (vp_y - float(cam_frac_y))
+            screen_x_arr, screen_y_arr = self._console_to_screen_coords_batch(
+                root_x_arr, root_y_arr
+            )
+        else:
+            # Per-actor scalar fallback for test doubles.
+            root_x_arr = np.empty(n, dtype=np.float64)
+            root_y_arr = np.empty(n, dtype=np.float64)
+            screen_x_arr = np.empty(n, dtype=np.float64)
+            screen_y_arr = np.empty(n, dtype=np.float64)
+            for idx in range(n):
+                (
+                    _,
+                    _,
+                    root_x_arr[idx],
+                    root_y_arr[idx],
+                    screen_x_arr[idx],
+                    screen_y_arr[idx],
+                ) = self._get_actor_screen_position(actors[idx], interpolation_alpha)
+
+        return _ActorBatchData(
+            actor_x=actor_x,
+            actor_y=actor_y,
+            shadow_heights=shadow_heights,
+            visual_scale=visual_scale,
+            sprite_anchor_y=sprite_anchor_y,
+            sprite_uvs=sprite_uvs,
+            sprite_batchable=sprite_batchable,
+            root_x=root_x_arr,
+            root_y=root_y_arr,
+            screen_x=screen_x_arr,
+            screen_y=screen_y_arr,
+        )
+
     def _render_sun_actor_shadows(
         self,
         actors: list[Actor],
@@ -326,10 +476,11 @@ class ShadowRenderer:
         dynamic_receivers: list[Actor] | None = None,
         sun_params: _SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
+        batch_data: _ActorBatchData | None = None,
     ) -> None:
         """Render actor shadows cast by the directional light.
 
-        Vectorized implementation: collects actor data into numpy arrays,
+        Vectorized implementation: uses pre-extracted actor batch data,
         filters by outdoor eligibility, optionally clips by walls and
         computes receiver dimming (when LOD detail is enabled), then emits
         shadow geometry. Sprite actors use the batch sprite-shadow API
@@ -358,56 +509,19 @@ class ShadowRenderer:
         lod_detail: bool = self.viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD
 
         # ------------------------------------------------------------------
-        # 1. Collect actor data into parallel arrays.
+        # 1. Use pre-extracted batch data (or extract on demand for tests).
         # ------------------------------------------------------------------
+        if batch_data is None:
+            batch_data = self._extract_actor_batch_data(actors, interpolation_alpha)
+
         actor_count = len(actors)
-        actor_x = np.empty(actor_count, dtype=np.int32)
-        actor_y = np.empty(actor_count, dtype=np.int32)
-        shadow_heights = np.empty(actor_count, dtype=np.float64)
-        prev_x = np.empty(actor_count, dtype=np.float64)
-        prev_y = np.empty(actor_count, dtype=np.float64)
-        curr_x = np.empty(actor_count, dtype=np.float64)
-        curr_y = np.empty(actor_count, dtype=np.float64)
-        render_x = np.empty(actor_count, dtype=np.float64)
-        render_y = np.empty(actor_count, dtype=np.float64)
-        animation_controlled = np.zeros(actor_count, dtype=bool)
-        drift_x = np.zeros(actor_count, dtype=np.float64)
-        drift_y = np.zeros(actor_count, dtype=np.float64)
-        visual_scale = np.ones(actor_count, dtype=np.float64)
-        sprite_anchor_y = np.ones(actor_count, dtype=np.float64)
-        sprite_uvs = np.zeros((actor_count, 4), dtype=np.float32)
-        sprite_batchable = np.zeros(actor_count, dtype=bool)
-
-        for idx, actor in enumerate(actors):
-            actor_x[idx] = int(actor.x)
-            actor_y[idx] = int(actor.y)
-            shadow_heights[idx] = float(actor.shadow_height)
-            prev_x[idx] = float(actor.prev_x)
-            prev_y[idx] = float(actor.prev_y)
-            curr_x[idx] = float(actor.x)
-            curr_y[idx] = float(actor.y)
-            render_x[idx] = float(actor.render_x)
-            render_y[idx] = float(actor.render_y)
-            animation_controlled[idx] = actor._animation_controlled
-            visual_scale[idx] = float(actor.visual_scale)
-
-            if (
-                actor.visual_effects is not None
-                and actor.health is not None
-                and actor.health.is_alive()
-            ):
-                offset_x, offset_y = actor.visual_effects.get_idle_drift_offset()
-                drift_x[idx] = float(offset_x)
-                drift_y[idx] = float(offset_y)
-
-            sprite_uv = actor.sprite_uv
-            if sprite_uv is not None:
-                sprite_anchor_y[idx] = float(actor.sprite_ground_anchor_y)
-                sprite_uvs[idx, 0] = float(sprite_uv.u1)
-                sprite_uvs[idx, 1] = float(sprite_uv.v1)
-                sprite_uvs[idx, 2] = float(sprite_uv.u2)
-                sprite_uvs[idx, 3] = float(sprite_uv.v2)
-                sprite_batchable[idx] = True
+        actor_x = batch_data.actor_x
+        actor_y = batch_data.actor_y
+        shadow_heights = batch_data.shadow_heights
+        visual_scale = batch_data.visual_scale
+        sprite_anchor_y = batch_data.sprite_anchor_y
+        sprite_uvs = batch_data.sprite_uvs
+        sprite_batchable = batch_data.sprite_batchable
 
         # ------------------------------------------------------------------
         # 2. Shadow length filtering.
@@ -603,52 +717,12 @@ class ShadowRenderer:
                         )
 
         # ------------------------------------------------------------------
-        # 6. Compute screen positions.
+        # 6. Use pre-computed screen positions from batch data.
         # ------------------------------------------------------------------
-        alpha_value = float(interpolation_alpha)
-        interpolated_x = np.where(
-            animation_controlled,
-            render_x,
-            prev_x * (1.0 - alpha_value) + curr_x * alpha_value,
-        )
-        interpolated_y = np.where(
-            animation_controlled,
-            render_y,
-            prev_y * (1.0 - alpha_value) + curr_y * alpha_value,
-        )
-        interpolated_x += drift_x
-        interpolated_y += drift_y
-
-        # Try vectorized coordinate transforms. When the viewport/graphics
-        # don't support batch transforms (e.g. lightweight test doubles),
-        # fall back to per-actor scalar transforms.
-        viewport_pos = self._world_to_screen_float_batch(interpolated_x, interpolated_y)
-        if viewport_pos is not None:
-            vp_x, vp_y = viewport_pos
-            cam_frac_x, cam_frac_y = self._camera_frac_offset
-            root_x_arr = self._view_origin[0] + (vp_x - float(cam_frac_x))
-            root_y_arr = self._view_origin[1] + (vp_y - float(cam_frac_y))
-            screen_pos = self._console_to_screen_coords_batch(root_x_arr, root_y_arr)
-        else:
-            screen_pos = None
-
-        if screen_pos is not None:
-            screen_x_arr, screen_y_arr = screen_pos
-        else:
-            # Per-actor scalar coordinate transforms.
-            root_x_arr = np.empty(actor_count, dtype=np.float64)
-            root_y_arr = np.empty(actor_count, dtype=np.float64)
-            screen_x_arr = np.empty(actor_count, dtype=np.float64)
-            screen_y_arr = np.empty(actor_count, dtype=np.float64)
-            for idx in np.flatnonzero(eligible_mask):
-                (
-                    _,
-                    _,
-                    root_x_arr[idx],
-                    root_y_arr[idx],
-                    screen_x_arr[idx],
-                    screen_y_arr[idx],
-                ) = self._get_actor_screen_position(actors[idx], interpolation_alpha)
+        root_x_arr = batch_data.root_x
+        root_y_arr = batch_data.root_y
+        screen_x_arr = batch_data.screen_x
+        screen_y_arr = batch_data.screen_y
 
         # ------------------------------------------------------------------
         # 7. Emit shadow geometry.
@@ -872,8 +946,13 @@ class ShadowRenderer:
         receivers: list[Actor] | None = None,
         dynamic_receivers: list[Actor] | None = None,
         lights: Sequence[Any] | None = None,
+        batch_data: _ActorBatchData | None = None,
     ) -> None:
-        """Render actor shadows cast by nearby point lights."""
+        """Render actor shadows cast by nearby point lights.
+
+        Uses pre-computed batch data for screen positions, eliminating
+        per-actor compute_actor_screen_position calls.
+        """
         from brileta.game.lights import DirectionalLight
 
         # Use restricted dynamic_receivers for dimming when available.
@@ -892,21 +971,38 @@ class ShadowRenderer:
         min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
         lod_detail = self.viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD
 
-        for actor in actors:
-            shadow_height = float(actor.shadow_height)
-            if shadow_height <= 0.0:
-                continue
-            if shadow_height < min_shadow_length_tiles:
-                continue
+        # Use pre-extracted batch data (or extract on demand for tests).
+        if batch_data is None:
+            batch_data = self._extract_actor_batch_data(actors, interpolation_alpha)
 
-            (
-                _actor_world_x,
-                _actor_world_y,
-                root_x,
-                root_y,
-                screen_x,
-                screen_y,
-            ) = self._get_actor_screen_position(actor, interpolation_alpha)
+        shadow_heights_arr = batch_data.shadow_heights
+        root_x_arr = batch_data.root_x
+        root_y_arr = batch_data.root_y
+        screen_x_arr = batch_data.screen_x
+        screen_y_arr = batch_data.screen_y
+        actor_x_arr = batch_data.actor_x
+        actor_y_arr = batch_data.actor_y
+
+        # Pre-filter actors by shadow height to avoid per-light checks.
+        min_sh = float(min_shadow_length_tiles)
+        eligible_mask = (shadow_heights_arr > 0.0) & (shadow_heights_arr >= min_sh)
+        eligible_indices = np.flatnonzero(eligible_mask)
+        if len(eligible_indices) == 0:
+            return
+
+        # Cache config values outside the loop.
+        actor_shadow_alpha_cfg = float(config.ACTOR_SHADOW_ALPHA)
+        fade_tip = bool(config.ACTOR_SHADOW_FADE_TIP)
+
+        for idx_val in eligible_indices.tolist():
+            actor = actors[idx_val]
+            shadow_height = float(shadow_heights_arr[idx_val])
+            root_x = float(root_x_arr[idx_val])
+            root_y = float(root_y_arr[idx_val])
+            screen_x = float(screen_x_arr[idx_val])
+            screen_y = float(screen_y_arr[idx_val])
+            ax = int(actor_x_arr[idx_val])
+            ay = int(actor_y_arr[idx_val])
 
             for light in point_lights:
                 radius = float(light.radius)
@@ -914,31 +1010,29 @@ class ShadowRenderer:
                     continue
 
                 # Actors should not cast directional shadows from their own lights.
-                # A carried torch mainly creates local self-occlusion, not a stable
-                # ground-projected self shadow.
                 if light.owner is actor:
                     continue
 
                 light_x, light_y = light.position
                 # Guard against unstable direction when actor and light occupy
                 # the same tile (including sub-tile drift jitter).
-                if actor.x == int(light_x) and actor.y == int(light_y):
+                if ax == int(light_x) and ay == int(light_y):
                     continue
 
                 # Use tile-space positions for shadow direction. Idle drift should
                 # move the rendered glyph, but not rotate a cardinal shadow into
                 # a diagonal one when actor and light are horizontally aligned.
-                dir_x = float(actor.x) - float(light_x)
-                dir_y = float(actor.y) - float(light_y)
+                dir_x = float(ax) - float(light_x)
+                dir_y = float(ay) - float(light_y)
                 distance = math.hypot(dir_x, dir_y)
 
-                # Avoid undefined direction when actor and light share the same tile.
+                # Avoid undefined direction or out-of-range actors.
                 if distance <= 1e-6 or distance > radius:
                     continue
 
                 attenuation = max(0.0, 1.0 - distance / radius)
                 light_intensity = float(light.intensity)
-                shadow_alpha = config.ACTOR_SHADOW_ALPHA * attenuation * light_intensity
+                shadow_alpha = actor_shadow_alpha_cfg * attenuation * light_intensity
                 if shadow_alpha <= 0.0:
                     continue
 
@@ -947,12 +1041,9 @@ class ShadowRenderer:
 
                 if lod_detail:
                     clipped_length_tiles = self._clip_shadow_length_by_walls(
-                        actor.x, actor.y, dir_x, dir_y, shadow_height
+                        ax, ay, dir_x, dir_y, shadow_height
                     )
-                    if (
-                        clipped_length_tiles <= 0.0
-                        or clipped_length_tiles < min_shadow_length_tiles
-                    ):
+                    if clipped_length_tiles <= 0.0 or clipped_length_tiles < min_sh:
                         continue
                 else:
                     clipped_length_tiles = shadow_height
@@ -965,7 +1056,7 @@ class ShadowRenderer:
                         shadow_dir_y=dir_y,
                         shadow_length_tiles=clipped_length_tiles,
                         shadow_alpha=shadow_alpha,
-                        fade_tip=config.ACTOR_SHADOW_FADE_TIP,
+                        fade_tip=fade_tip,
                     )
 
                 self._emit_actor_shadow_quads(
@@ -978,7 +1069,7 @@ class ShadowRenderer:
                     shadow_dir_y=dir_y,
                     shadow_length_pixels=clipped_length_tiles * tile_height,
                     shadow_alpha=shadow_alpha,
-                    fade_tip=config.ACTOR_SHADOW_FADE_TIP,
+                    fade_tip=fade_tip,
                 )
 
     # CP437 solid block (█) used as a fallback when sprite-silhouette shadows

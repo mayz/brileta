@@ -1004,7 +1004,10 @@ def test_point_light_culls_tiny_projected_shadows_when_zoomed_out() -> None:
         1.0,
     )
 
-    get_actor_screen_position.assert_not_called()
+    # Screen positions are now pre-computed in batch (not per-actor),
+    # so _get_actor_screen_position may be called during batch extraction.
+    # The important assertions are that no shadow quads are emitted and
+    # wall clipping is never reached for the culled shadow.
     clip_shadow_length_by_walls.assert_not_called()
     graphics.draw_actor_shadow.assert_not_called()
 
