@@ -12,13 +12,21 @@ from __future__ import annotations
 
 import math
 import struct
+import traceback
 from contextlib import suppress
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import wgpu
 
-from brileta.config import AMBIENT_LIGHT_LEVEL
+from brileta.config import (
+    AMBIENT_LIGHT_LEVEL,
+    SKY_EXPOSURE_POWER,
+    SUN_SHADOW_INTENSITY,
+    TILE_EMISSION_ENABLED,
+)
+from brileta.environment.tile_types import get_emission_map
+from brileta.game.lights import DirectionalLight, DynamicLight
 from brileta.types import FixedTimestep
 from brileta.util.coordinates import Rect
 from brileta.util.live_vars import record_time_live_variable
@@ -110,13 +118,9 @@ class GPULightingSystem(LightingSystem):
         self._padded_bytes_per_row: int = 0
         self._unpadded_bytes_per_row: int = 0
 
-        # Performance optimization: Track light configuration changes
-        self._last_light_data_hash: int | None = None
+        # Performance optimization: cache light data between frames
         self._cached_light_data: list[float] | None = None
         self._cached_light_revision: int = -1
-
-        # Track first frame to force uniform update
-        self._first_frame = True
 
         # Sky exposure texture for directional lighting
         self._sky_exposure_texture: wgpu.GPUTexture | None = None
@@ -152,8 +156,6 @@ class GPULightingSystem(LightingSystem):
 
         except Exception as e:
             print(f"Failed to initialize WGPU GPU resources: {e}")
-            import traceback
-
             traceback.print_exc()
             return False
 
@@ -188,8 +190,6 @@ class GPULightingSystem(LightingSystem):
             return True
 
         except Exception as e:
-            import traceback
-
             print(f"Failed to initialize WGPU fragment-based lighting: {e}")
             print("Full traceback:")
             traceback.print_exc()
@@ -366,8 +366,6 @@ class GPULightingSystem(LightingSystem):
             Format: position.xy, radius, base_intensity, color.rgb,
                    flicker_enabled, flicker_speed, min_brightness, max_brightness
         """
-        from brileta.game.lights import DirectionalLight
-
         light_data = []
 
         for light in self.game_world.lights:
@@ -396,8 +394,6 @@ class GPULightingSystem(LightingSystem):
                 base_intensity = 1.0
 
                 # Extract flicker parameters from DynamicLight objects
-                from brileta.game.lights import DynamicLight
-
                 if isinstance(light, DynamicLight):
                     flicker_enabled = 1.0 if light.flicker_enabled else 0.0
                     flicker_speed = light.flicker_speed
@@ -502,7 +498,7 @@ class GPULightingSystem(LightingSystem):
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            memoryview(sky_exposure_data.tobytes()),
+            sky_exposure_data.tobytes(),
             {
                 "offset": 0,
                 "bytes_per_row": game_map.width * 4,  # 4 bytes per float32
@@ -561,7 +557,7 @@ class GPULightingSystem(LightingSystem):
                     "mip_level": 0,
                     "origin": (0, 0, 0),
                 },
-                memoryview(explored_data.tobytes()),
+                explored_data.tobytes(),
                 {
                     "offset": 0,
                     "bytes_per_row": game_map.width,  # 1 byte per uint8
@@ -620,7 +616,7 @@ class GPULightingSystem(LightingSystem):
                     "mip_level": 0,
                     "origin": (0, 0, 0),
                 },
-                memoryview(visible_data.tobytes()),
+                visible_data.tobytes(),
                 {
                     "offset": 0,
                     "bytes_per_row": game_map.width,  # 1 byte per uint8
@@ -648,9 +644,6 @@ class GPULightingSystem(LightingSystem):
         Args:
             viewport_bounds: The viewport area being rendered
         """
-        from brileta.config import TILE_EMISSION_ENABLED
-        from brileta.environment.tile_types import get_emission_map
-
         game_map = self.game_world.game_map
         if game_map is None:
             return
@@ -675,7 +668,7 @@ class GPULightingSystem(LightingSystem):
                         "mip_level": 0,
                         "origin": (0, 0, 0),
                     },
-                    memoryview(zeros.tobytes()),
+                    zeros.tobytes(),
                     {
                         "offset": 0,
                         "bytes_per_row": viewport_bounds.width * 16,
@@ -771,7 +764,7 @@ class GPULightingSystem(LightingSystem):
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            memoryview(emission_data.tobytes()),
+            emission_data.tobytes(),
             {
                 "offset": 0,
                 "bytes_per_row": viewport_bounds.width
@@ -830,7 +823,7 @@ class GPULightingSystem(LightingSystem):
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            memoryview(shadow_data.tobytes()),
+            shadow_data.tobytes(),
             {
                 "offset": 0,
                 "bytes_per_row": game_map.width,  # 1 byte per uint8
@@ -849,9 +842,6 @@ class GPULightingSystem(LightingSystem):
         viewport_bounds: Rect,
     ) -> bytes:
         """Pack uniform data into a byte buffer matching the WGSL struct layout."""
-        from brileta.config import SKY_EXPOSURE_POWER, SUN_SHADOW_INTENSITY
-        from brileta.game.lights import DirectionalLight
-
         buffer = bytearray()
 
         # viewport_data: vec4f
@@ -981,7 +971,7 @@ class GPULightingSystem(LightingSystem):
         )
 
         # Write to GPU buffer
-        self.queue.write_buffer(self._uniform_buffer, 0, memoryview(uniform_bytes))
+        self.queue.write_buffer(self._uniform_buffer, 0, uniform_bytes)
 
     def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update internal time-based state for dynamic effects."""
@@ -1076,8 +1066,6 @@ class GPULightingSystem(LightingSystem):
 
             except Exception as e:
                 print(f"Failed to ensure WGPU resources for viewport: {e}")
-                import traceback
-
                 traceback.print_exc()
                 return False
 
@@ -1107,12 +1095,6 @@ class GPULightingSystem(LightingSystem):
                 len(light_data) // 12, self.MAX_LIGHTS
             )  # 12 floats per light
 
-            if light_count > self.MAX_LIGHTS:
-                print(
-                    f"Warning: Too many lights ({light_count}), "
-                    f"limiting to {self.MAX_LIGHTS}"
-                )
-
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
 
@@ -1126,30 +1108,12 @@ class GPULightingSystem(LightingSystem):
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
 
-            # Only update the content hash when lights or viewport origin change.
-            light_data_hash = hash(
-                (
-                    tuple(light_data[: light_count * 12]),
-                    viewport_bounds.x1,
-                    viewport_bounds.y1,
-                )
+            # Uniforms must be updated every frame (time changes continuously)
+            self._update_uniform_buffer(
+                light_data,
+                light_count,
+                viewport_bounds,
             )
-            if self._last_light_data_hash != light_data_hash or self._first_frame:
-                self._update_uniform_buffer(
-                    light_data,
-                    light_count,
-                    viewport_bounds,
-                )
-                self._last_light_data_hash = light_data_hash
-                if self._first_frame:
-                    self._first_frame = False  # Unset the flag after the first update
-            else:
-                # Time changes every frame, so we still need to update the buffer
-                self._update_uniform_buffer(
-                    light_data,
-                    light_count,
-                    viewport_bounds,
-                )
 
             # Create bind group with current resources (only if needed)
             if self._bind_group is None:
@@ -1189,8 +1153,6 @@ class GPULightingSystem(LightingSystem):
 
         except Exception as e:
             print(f"Error in WGPU lightmap computation: {e}")
-            import traceback
-
             traceback.print_exc()
             return False
 
@@ -1378,4 +1340,3 @@ class GPULightingSystem(LightingSystem):
         # Clear cached data
         self._current_viewport = None
         self._cached_light_data = None
-        self._last_light_data_hash = None
