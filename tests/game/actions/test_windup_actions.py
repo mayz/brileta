@@ -67,6 +67,9 @@ class DummyGameWorld:
         """Add a light source to the world."""
         self.lights.append(light)
 
+    def reset_pending_actor_position_snapshots(self) -> None:
+        pass
+
 
 class DummyRenderer:
     def __init__(

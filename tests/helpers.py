@@ -329,6 +329,12 @@ class DummyGraphicsContext:
     def create_canvas(self, transparent: bool = True) -> Any:
         return MagicMock()
 
+    def create_sprite_atlas(self, _width: int, _height: int) -> Any:
+        return None
+
+    def set_sprite_atlas_texture(self, _texture: Any) -> None:
+        pass
+
     @property
     def coordinate_converter(self):
         return self._coordinate_converter

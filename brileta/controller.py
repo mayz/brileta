@@ -335,18 +335,16 @@ class Controller:
             visual_scale_with_height_jitter as tree_visual_scale_with_height_jitter,
         )
         from brileta.game.actors.trees import Tree
+        from brileta.util.parallel import parallel_map
 
-        trees = [a for a in self.gw.actors if isinstance(a, Tree)]
-        boulders = [a for a in self.gw.actors if isinstance(a, Boulder)]
+        trees: list[Tree] = []
+        boulders: list[Boulder] = []
+        for a in self.gw.actors:
+            if isinstance(a, Tree):
+                trees.append(a)
+            elif isinstance(a, Boulder):
+                boulders.append(a)
         if not trees and not boulders:
-            return
-
-        create_sprite_atlas = getattr(self.graphics, "create_sprite_atlas", None)
-        if not callable(create_sprite_atlas):
-            logger.debug(
-                "Graphics backend has no sprite atlas support; "
-                "tree actors will use fallback glyph rendering."
-            )
             return
 
         map_seed: MapDecorationSeed = int(self.gw.game_map.decoration_seed)
@@ -355,8 +353,6 @@ class Controller:
             # Phase 1: Pre-generate all sprites into CPU memory so we can
             # measure the total area before creating the GPU texture.
             with record_time_live_variable("time.sprites.generate_ms"):
-                from brileta.util.parallel import parallel_map
-
                 tree_sprites = parallel_map(
                     generate_tree_sprite_for_position,
                     [t.x for t in trees],
@@ -386,10 +382,10 @@ class Controller:
             gpu_max = getattr(self.graphics, "gpu_max_texture_dimension_2d", 8192)
             atlas_side = compute_atlas_size(all_sprites, gpu_max)
 
-            atlas = create_sprite_atlas(atlas_side, atlas_side)
+            atlas = self.graphics.create_sprite_atlas(atlas_side, atlas_side)
             if atlas is None:
                 logger.debug(
-                    "Graphics backend returned None for sprite atlas; "
+                    "Graphics backend has no sprite atlas support; "
                     "actors will use fallback glyph rendering."
                 )
                 return
@@ -428,11 +424,8 @@ class Controller:
 
                 atlas.flush()
 
-        set_sprite_atlas_texture = getattr(
-            self.graphics, "set_sprite_atlas_texture", None
-        )
-        if atlas.texture is not None and callable(set_sprite_atlas_texture):
-            set_sprite_atlas_texture(atlas.texture)
+        if atlas.texture is not None:
+            self.graphics.set_sprite_atlas_texture(atlas.texture)
 
         logger.info(
             "Sprite atlas: %dx%d (%d tree + %d boulder sprites, %d allocations)",
@@ -493,7 +486,7 @@ class Controller:
 
     def _get_sun(self) -> DirectionalLight | None:
         """Return the first DirectionalLight in the game world, if any."""
-        for light in self.gw.get_global_lights():
+        for light in self.gw.lights:
             if isinstance(light, DirectionalLight):
                 return light
         return None
@@ -817,11 +810,7 @@ class Controller:
         with record_time_live_variable("time.logic_ms"):
             with record_time_live_variable("time.logic.actor_snapshot_ms"):
                 # Reset only actors that moved since the prior logic step.
-                reset_snapshots = getattr(
-                    self.gw, "reset_pending_actor_position_snapshots", None
-                )
-                if reset_snapshots is not None:
-                    reset_snapshots()
+                self.gw.reset_pending_actor_position_snapshots()
 
             with record_time_live_variable("time.logic.animation_ms"):
                 # ANIMATIONS: Update frame-independent systems
@@ -962,20 +951,6 @@ class Controller:
 
         # Process all available NPC actions from TurnManager
         self.turn_manager.process_all_npc_reactions()
-
-    def _process_one_npc_action_if_available(self) -> None:
-        """Process one pending NPC action using the RAF scheduling system.
-
-        DEPRECATED: This method is deprecated in RAF V2.
-        Use _process_all_available_npc_actions() instead.
-        NPCs now act immediately rather than being queued,
-        maintaining perfect speed ratios.
-
-        This method is kept for backwards compatibility during transition.
-        """
-        # In RAF V2, this method does nothing since NPCs act immediately
-        # Left as no-op for backwards compatibility
-        pass
 
     def queue_action(self, action: GameIntent) -> None:
         """
