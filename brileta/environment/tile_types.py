@@ -889,51 +889,50 @@ TERRAIN_GLYPH_POOLS: dict[int, TerrainGlyphPool] = {
     for tid, dec in _TERRAIN_DECORATION_DEFS.items()
 }
 
+
+def _decoration_property_array(
+    field: str,
+    default: float,
+    dtype: type[np.generic],
+) -> np.ndarray:
+    """Build a per-TileTypeID array from TerrainDecorationDef, falling back to *default*."""
+    return np.array(
+        [
+            getattr(_TERRAIN_DECORATION_DEFS[tid], field)
+            if tid in _TERRAIN_DECORATION_DEFS
+            else default
+            for tid in TileTypeID
+        ],
+        dtype=dtype,
+    )
+
+
 # Sub-tile jitter amplitude per tile type, built from TerrainDecorationDef.
 # Non-zero values cause the fragment shader to apply per-pixel brightness
 # variation within each tile cell using a PCG hash.
-_tile_type_properties_sub_tile_jitter = np.array(
-    [
-        _TERRAIN_DECORATION_DEFS[tid].sub_tile_jitter
-        if tid in _TERRAIN_DECORATION_DEFS
-        else 0.0
-        for tid in TileTypeID
-    ],
-    dtype=np.float32,
+_tile_type_properties_sub_tile_jitter = _decoration_property_array(
+    "sub_tile_jitter",
+    0.0,
+    np.float32,
 )
-
 # Sub-tile noise pattern ID per tile type, built from TerrainDecorationDef.
-_tile_type_properties_sub_tile_pattern = np.array(
-    [
-        _TERRAIN_DECORATION_DEFS[tid].sub_tile_pattern
-        if tid in _TERRAIN_DECORATION_DEFS
-        else SUB_TILE_PATTERN_BLOCKS_2X2
-        for tid in TileTypeID
-    ],
-    dtype=np.uint8,
+_tile_type_properties_sub_tile_pattern = _decoration_property_array(
+    "sub_tile_pattern",
+    SUB_TILE_PATTERN_BLOCKS_2X2,
+    np.uint8,
 )
-
 # Organic edge feathering amplitude per tile type (0.0 = rigid edge).
-_tile_type_properties_edge_blend = np.array(
-    [
-        _TERRAIN_DECORATION_DEFS[tid].edge_blend
-        if tid in _TERRAIN_DECORATION_DEFS
-        else 0.0
-        for tid in TileTypeID
-    ],
-    dtype=np.float32,
+_tile_type_properties_edge_blend = _decoration_property_array(
+    "edge_blend",
+    0.0,
+    np.float32,
 )
-
 # Per-tile override amount for blending toward a darkened self color instead of
 # a neighbor color (0 disables the override).
-_tile_type_properties_edge_self_darken = np.array(
-    [
-        _TERRAIN_DECORATION_DEFS[tid].edge_self_darken
-        if tid in _TERRAIN_DECORATION_DEFS
-        else 0
-        for tid in TileTypeID
-    ],
-    dtype=np.uint8,
+_tile_type_properties_edge_self_darken = _decoration_property_array(
+    "edge_self_darken",
+    0,
+    np.uint8,
 )
 
 

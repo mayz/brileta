@@ -23,6 +23,15 @@ from brileta.util.coordinates import Rect
 
 _rng = rng.get("map.buildings")
 
+# Direction-to-delta mapping for stepping into a building interior from a door.
+# "N" door: step south (y+1) into the building; "E" door: step west (x-1), etc.
+_ENTRY_DELTAS: dict[str, tuple[int, int]] = {
+    "N": (0, 1),
+    "S": (0, -1),
+    "W": (1, 0),
+    "E": (-1, 0),
+}
+
 
 class BuildingPlacementLayer(GenerationLayer):
     """Places buildings on the map using templates.
@@ -112,7 +121,7 @@ class BuildingPlacementLayer(GenerationLayer):
                 continue
 
             # Pick a template that fits in the lot (respects weights and limits)
-            template = self._pick_template_for_lot(ctx, lot, template_counts)
+            template = self._pick_template_for_lot(lot, template_counts)
             if template is None:
                 continue
 
@@ -219,7 +228,6 @@ class BuildingPlacementLayer(GenerationLayer):
 
     def _pick_template_for_lot(
         self,
-        ctx: GenerationContext,
         lot: Rect,
         template_counts: dict[str, int],
     ) -> BuildingTemplate | None:
@@ -230,7 +238,6 @@ class BuildingPlacementLayer(GenerationLayer):
         specialty buildings (low weight, max 1 per settlement).
 
         Args:
-            ctx: The generation context.
             lot: The lot to fit a building into.
             template_counts: Dict tracking how many of each template placed so far.
 
@@ -241,55 +248,32 @@ class BuildingPlacementLayer(GenerationLayer):
         available_width = lot.width - 2 * margin
         available_height = lot.height - 2 * margin
 
-        # Filter templates that:
-        # 1. Fit in the lot
-        # 2. Haven't exceeded max_per_settlement
-        available = []
-        for t in self.templates:
-            # Check size fit
-            if t.min_width > available_width or t.min_height > available_height:
-                continue
-
-            # Check max_per_settlement limit
-            if t.max_per_settlement is not None:
-                current_count = template_counts.get(t.name, 0)
-                if current_count >= t.max_per_settlement:
-                    continue
-
-            available.append(t)
+        # Filter by settlement limits, then by size fit
+        available = [
+            t
+            for t in self._get_available_templates(template_counts)
+            if t.min_width <= available_width and t.min_height <= available_height
+        ]
 
         if not available:
             return None
 
         # Weighted random selection
-        return self._weighted_choice(ctx, available)
+        return self._weighted_choice(available)
 
     def _weighted_choice(
         self,
-        ctx: GenerationContext,
         templates: list[BuildingTemplate],
     ) -> BuildingTemplate:
         """Select a template using weighted random selection.
 
         Args:
-            ctx: The generation context (for RNG).
             templates: List of available templates.
 
         Returns:
             A randomly selected template, weighted by template.weight.
         """
-        total_weight = sum(t.weight for t in templates)
-        if total_weight <= 0:
-            return _rng.choice(templates)
-
-        r = _rng.random() * total_weight
-        cumulative = 0.0
-        for t in templates:
-            cumulative += t.weight
-            if r <= cumulative:
-                return t
-
-        return templates[-1]
+        return _rng.choices(templates, weights=[t.weight for t in templates], k=1)[0]
 
     def _get_available_templates(
         self,
@@ -329,7 +313,7 @@ class BuildingPlacementLayer(GenerationLayer):
             if not available:
                 break
 
-            template = self._weighted_choice(ctx, available)
+            template = self._weighted_choice(available)
             width, height = template.generate_size(_rng)
             position = self._find_random_position(ctx, width, height, placed_buildings)
 
@@ -448,26 +432,28 @@ class BuildingPlacementLayer(GenerationLayer):
         """
         fp = building.footprint
 
-        # Draw walls around the perimeter
-        for x in range(fp.x1, fp.x2):
-            if 0 <= x < ctx.width:
-                if 0 <= fp.y1 < ctx.height:
-                    ctx.tiles[x, fp.y1] = TileTypeID.WALL
-                if 0 <= fp.y2 - 1 < ctx.height:
-                    ctx.tiles[x, fp.y2 - 1] = TileTypeID.WALL
+        # Clamp footprint to map bounds for all slice operations.
+        x_lo = max(fp.x1, 0)
+        x_hi = min(fp.x2, ctx.width)
+        y_lo = max(fp.y1, 0)
+        y_hi = min(fp.y2, ctx.height)
 
-        for y in range(fp.y1, fp.y2):
-            if 0 <= y < ctx.height:
-                if 0 <= fp.x1 < ctx.width:
-                    ctx.tiles[fp.x1, y] = TileTypeID.WALL
-                if 0 <= fp.x2 - 1 < ctx.width:
-                    ctx.tiles[fp.x2 - 1, y] = TileTypeID.WALL
+        # Draw walls around the perimeter (horizontal then vertical edges).
+        if 0 <= fp.y1 < ctx.height:
+            ctx.tiles[x_lo:x_hi, fp.y1] = TileTypeID.WALL
+        if 0 <= fp.y2 - 1 < ctx.height:
+            ctx.tiles[x_lo:x_hi, fp.y2 - 1] = TileTypeID.WALL
+        if 0 <= fp.x1 < ctx.width:
+            ctx.tiles[fp.x1, y_lo:y_hi] = TileTypeID.WALL
+        if 0 <= fp.x2 - 1 < ctx.width:
+            ctx.tiles[fp.x2 - 1, y_lo:y_hi] = TileTypeID.WALL
 
-        # Fill interior with floor
-        for x in range(fp.x1 + 1, fp.x2 - 1):
-            for y in range(fp.y1 + 1, fp.y2 - 1):
-                if 0 <= x < ctx.width and 0 <= y < ctx.height:
-                    ctx.tiles[x, y] = TileTypeID.FLOOR
+        # Fill interior with floor.
+        ix_lo = max(fp.x1 + 1, 0)
+        ix_hi = min(fp.x2 - 1, ctx.width)
+        iy_lo = max(fp.y1 + 1, 0)
+        iy_hi = min(fp.y2 - 1, ctx.height)
+        ctx.tiles[ix_lo:ix_hi, iy_lo:iy_hi] = TileTypeID.FLOOR
 
     def _create_rooms(
         self,
@@ -570,10 +556,11 @@ class BuildingPlacementLayer(GenerationLayer):
                 bounds.x1, split_pos + 1, bounds.width, bounds.y2 - split_pos - 1
             )
 
-            # Carve the internal wall
-            for x in range(bounds.x1, bounds.x2):
-                if 0 <= x < ctx.width and 0 <= split_pos < ctx.height:
-                    ctx.tiles[x, split_pos] = TileTypeID.WALL
+            # Carve the internal wall.
+            if 0 <= split_pos < ctx.height:
+                x_lo = max(bounds.x1, 0)
+                x_hi = min(bounds.x2, ctx.width)
+                ctx.tiles[x_lo:x_hi, split_pos] = TileTypeID.WALL
         else:
             # Split vertically (creates left and right rooms)
             min_split = bounds.x1 + min_size
@@ -587,10 +574,11 @@ class BuildingPlacementLayer(GenerationLayer):
                 split_pos + 1, bounds.y1, bounds.x2 - split_pos - 1, bounds.height
             )
 
-            # Carve the internal wall
-            for y in range(bounds.y1, bounds.y2):
-                if 0 <= split_pos < ctx.width and 0 <= y < ctx.height:
-                    ctx.tiles[split_pos, y] = TileTypeID.WALL
+            # Carve the internal wall.
+            if 0 <= split_pos < ctx.width:
+                y_lo = max(bounds.y1, 0)
+                y_hi = min(bounds.y2, ctx.height)
+                ctx.tiles[split_pos, y_lo:y_hi] = TileTypeID.WALL
 
         # Distribute target count between the two halves
         # Larger half gets more rooms
@@ -639,11 +627,12 @@ class BuildingPlacementLayer(GenerationLayer):
         )
         ctx.add_region(map_region)
 
-        # Assign tiles to this region
-        for x in range(bounds.x1, bounds.x2):
-            for y in range(bounds.y1, bounds.y2):
-                if 0 <= x < ctx.width and 0 <= y < ctx.height:
-                    ctx.tile_to_region_id[x, y] = region_id
+        # Assign tiles to this region (clamped to map bounds).
+        x_lo = max(bounds.x1, 0)
+        x_hi = min(bounds.x2, ctx.width)
+        y_lo = max(bounds.y1, 0)
+        y_hi = min(bounds.y2, ctx.height)
+        ctx.tile_to_region_id[x_lo:x_hi, y_lo:y_hi] = region_id
 
         return Room(
             region_id=region_id,
@@ -716,55 +705,35 @@ class BuildingPlacementLayer(GenerationLayer):
         """
         candidates: list[WorldTilePos] = []
 
-        # Check for horizontal wall (rooms stacked vertically)
-        # Room A above Room B: A.y2 == wall_y, B.y1 == wall_y + 1
-        if bounds_a.y2 + 1 == bounds_b.y1:
-            wall_y = bounds_a.y2
-            x_start = max(bounds_a.x1, bounds_b.x1)
-            x_end = min(bounds_a.x2, bounds_b.x2)
-            if 0 <= wall_y < ctx.height:
-                candidates.extend(
-                    (x, wall_y)
-                    for x in range(x_start, x_end)
-                    if 0 <= x < ctx.width and ctx.tiles[x, wall_y] == TileTypeID.WALL
-                )
+        # Horizontal wall: one room directly above the other.
+        for top, bot in [(bounds_a, bounds_b), (bounds_b, bounds_a)]:
+            if top.y2 + 1 == bot.y1:
+                wall_y = top.y2
+                x_start = max(bounds_a.x1, bounds_b.x1)
+                x_end = min(bounds_a.x2, bounds_b.x2)
+                if 0 <= wall_y < ctx.height:
+                    candidates.extend(
+                        (x, wall_y)
+                        for x in range(x_start, x_end)
+                        if 0 <= x < ctx.width
+                        and ctx.tiles[x, wall_y] == TileTypeID.WALL
+                    )
+                break  # Only one ordering can match
 
-        # Room B above Room A
-        if bounds_b.y2 + 1 == bounds_a.y1:
-            wall_y = bounds_b.y2
-            x_start = max(bounds_a.x1, bounds_b.x1)
-            x_end = min(bounds_a.x2, bounds_b.x2)
-            if 0 <= wall_y < ctx.height:
-                candidates.extend(
-                    (x, wall_y)
-                    for x in range(x_start, x_end)
-                    if 0 <= x < ctx.width and ctx.tiles[x, wall_y] == TileTypeID.WALL
-                )
-
-        # Check for vertical wall (rooms side by side)
-        # Room A left of Room B: A.x2 == wall_x, B.x1 == wall_x + 1
-        if bounds_a.x2 + 1 == bounds_b.x1:
-            wall_x = bounds_a.x2
-            y_start = max(bounds_a.y1, bounds_b.y1)
-            y_end = min(bounds_a.y2, bounds_b.y2)
-            if 0 <= wall_x < ctx.width:
-                candidates.extend(
-                    (wall_x, y)
-                    for y in range(y_start, y_end)
-                    if 0 <= y < ctx.height and ctx.tiles[wall_x, y] == TileTypeID.WALL
-                )
-
-        # Room B left of Room A
-        if bounds_b.x2 + 1 == bounds_a.x1:
-            wall_x = bounds_b.x2
-            y_start = max(bounds_a.y1, bounds_b.y1)
-            y_end = min(bounds_a.y2, bounds_b.y2)
-            if 0 <= wall_x < ctx.width:
-                candidates.extend(
-                    (wall_x, y)
-                    for y in range(y_start, y_end)
-                    if 0 <= y < ctx.height and ctx.tiles[wall_x, y] == TileTypeID.WALL
-                )
+        # Vertical wall: one room directly left of the other.
+        for left, right in [(bounds_a, bounds_b), (bounds_b, bounds_a)]:
+            if left.x2 + 1 == right.x1:
+                wall_x = left.x2
+                y_start = max(bounds_a.y1, bounds_b.y1)
+                y_end = min(bounds_a.y2, bounds_b.y2)
+                if 0 <= wall_x < ctx.width:
+                    candidates.extend(
+                        (wall_x, y)
+                        for y in range(y_start, y_end)
+                        if 0 <= y < ctx.height
+                        and ctx.tiles[wall_x, y] == TileTypeID.WALL
+                    )
+                break  # Only one ordering can match
 
         if candidates:
             return _rng.choice(candidates)
@@ -799,31 +768,20 @@ class BuildingPlacementLayer(GenerationLayer):
         """
         walkable = {TileTypeID.FLOOR, TileTypeID.DOOR_CLOSED, TileTypeID.DOOR_OPEN}
 
+        # Map direction to (dx, dy) step into the building interior.
+        dx, dy = _ENTRY_DELTAS[direction]
+        step = dx + dy  # +1 or -1 (exactly one of dx/dy is non-zero)
+
         for d in range(1, min_depth + 1):
-            if direction == "N":
-                check_y = y + d
-                if check_y >= fp_inner_bound:
-                    break  # Reached opposite wall, that's fine
-                if ctx.tiles[x, check_y] not in walkable:
-                    return False
-            elif direction == "S":
-                check_y = y - d
-                if check_y <= fp_inner_bound:
-                    break
-                if ctx.tiles[x, check_y] not in walkable:
-                    return False
-            elif direction == "W":
-                check_x = x + d
-                if check_x >= fp_inner_bound:
-                    break
-                if ctx.tiles[check_x, y] not in walkable:
-                    return False
-            elif direction == "E":
-                check_x = x - d
-                if check_x <= fp_inner_bound:
-                    break
-                if ctx.tiles[check_x, y] not in walkable:
-                    return False
+            cx, cy = x + dx * d, y + dy * d
+            # The coordinate that changes is the one we compare to the bound.
+            check_coord = cx if dx != 0 else cy
+            if step > 0 and check_coord >= fp_inner_bound:
+                break  # Reached opposite wall, that's fine
+            if step < 0 and check_coord <= fp_inner_bound:
+                break
+            if ctx.tiles[cx, cy] not in walkable:
+                return False
 
         return True
 
