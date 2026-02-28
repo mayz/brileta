@@ -36,6 +36,7 @@ from brileta.constants.movement import MovementConstants as Movement
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.game.enums import ActionBlockReason
+from brileta.game.ranges import calculate_distance
 from brileta.types import DIRECTIONS, ActorId
 from brileta.util.coordinates import WorldTilePos
 
@@ -84,7 +85,7 @@ class TurnManager:
         """
         self.controller = controller
 
-        # Player action queue (preserved for compatibility)
+        # Queue for non-plan player actions (e.g. manual key-presses)
         self._player_action_queue: deque[GameIntent] = deque()
 
         # Action execution router (unchanged)
@@ -137,6 +138,16 @@ class TurnManager:
         """Mark actor cache as dirty (call when actors are added/removed)."""
         self._cache_dirty = True
 
+    def on_actor_removed(self, actor_id: ActorId) -> None:
+        """Purge retry state for a removed actor to prevent stale entries.
+
+        Without this, killed NPCs with adjacency-retried plans would leave
+        dangling entries in _adjacency_rewind_counts whose id-based keys
+        could collide with future objects.
+        """
+        for key in [k for k in self._adjacency_rewind_counts if k[0] == actor_id]:
+            del self._adjacency_rewind_counts[key]
+
     def is_presentation_complete(self) -> bool:
         """Check if the current action's presentation time has elapsed.
 
@@ -183,26 +194,22 @@ class TurnManager:
         # Update cache if needed for performance
         self._update_energy_actors_cache()
 
-        # Update energy for all actors with energy components.
+        # Single pass: accumulate energy and apply terrain hazards.
         # The cache only contains actors with non-None energy.
         for actor in self._energy_actors_cache:
             assert actor.energy is not None  # Guaranteed by cache filter
             actor.energy.accumulate_energy(actor.energy.get_speed_based_energy_amount())
-            # Cap NPC energy to prevent double-actions from accumulation.
-            # Without this, NPCs could store 200 energy (2 actions) while
-            # the player walks toward them, causing double-moves on contact.
             if actor is not self.player:
+                # Cap NPC energy to prevent double-actions from accumulation.
+                # Without this, NPCs could store 200 energy (2 actions) while
+                # the player walks toward them, causing double-moves on contact.
                 actor.energy.accumulated_energy = min(
                     actor.energy.accumulated_energy,
                     config.ACTION_COST,
                 )
-
-        # Apply terrain hazard damage to all NPCs once per player action.
-        # This ensures NPCs on hot coals take damage each turn, not each tick.
-        for actor in self._energy_actors_cache:
-            if actor is self.player:
-                continue
-            self._apply_terrain_hazard(actor)
+                # Apply terrain hazard damage (e.g. hot coals) once per player
+                # action so NPCs don't take damage every tick.
+                self._apply_terrain_hazard(actor)
 
     def process_all_npc_reactions(self) -> None:
         """Process ONE NPC who can currently afford an action.
@@ -214,64 +221,14 @@ class TurnManager:
         Note: Hazard damage is NOT applied here - it's applied once per player
         action in on_player_action() to avoid damage being applied every tick.
         """
-        from brileta.game.action_plan import ApproachStep
-        from brileta.game.actors.core import Character
-
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
-
-            # Cache only contains actors with non-None energy
-            assert actor.energy is not None
-
-            if actor.energy.can_afford(config.ACTION_COST):
-                action = actor.get_next_action(self.controller)
-
-                # If AI returned None but NPC has an active plan, get intent
-                # from plan (mirrors player autopilot in process_player_input).
-                if (
-                    action is None
-                    and isinstance(actor, Character)
-                    and actor.active_plan is not None
-                ):
-                    action = self._get_intent_from_plan(actor)
-
-                if action is not None:
-                    # Check if actor is prevented from acting BEFORE update_turn
-                    is_prevented = actor.status_effects.is_action_prevented()
-
-                    if is_prevented:
-                        # Actor is prevented - this counts as their turn.
-                        # Spend ALL energy so they can't attempt again this cycle.
-                        # Call update_turn to decrement effect duration.
-                        actor.update_turn(self.controller)
-                        actor.energy.accumulated_energy = 0
-                        continue
-
-                    # Actor can act - update their turn effects first
-                    actor.update_turn(self.controller)
-
-                    # Execute the action
-                    result = self.execute_intent(action)
-                    actor.energy.spend(config.ACTION_COST)
-
-                    # Handle plan advancement for NPCs with active plans
-                    if isinstance(actor, Character) and actor.active_plan is not None:
-                        plan = actor.active_plan
-                        step = plan.get_current_step()
-                        if isinstance(step, ApproachStep):
-                            self._on_approach_result(actor, result)
-                        if (
-                            not result.succeeded
-                            and result.block_reason == ActionBlockReason.NOT_ADJACENT
-                        ):
-                            self._handle_intent_step_result(actor, result)
-
-                    self.controller.invalidate_combat_tooltip()
-
-                    # Process only ONE NPC per call - presentation timing
-                    # will gate the next call, sequencing NPC actions
-                    return
+            if self._try_process_npc(actor, record_timing=True):
+                self.controller.invalidate_combat_tooltip()
+                # Process only ONE NPC per call - presentation timing
+                # will gate the next call, sequencing NPC actions.
+                return
 
     def process_all_ready_npcs_immediately(self) -> None:
         """Process all NPCs who can afford an action in one call.
@@ -281,51 +238,77 @@ class TurnManager:
         Used for held-key movement where the player is moving fast and
         presentation timing would starve NPCs of their turns.
         """
-        from brileta.game.action_plan import ApproachStep
-        from brileta.game.actors.core import Character
-
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
+            # Skip presentation timing so we don't overwrite the player's
+            # timing state during held-key movement.
+            self._try_process_npc(actor, record_timing=False)
 
-            assert actor.energy is not None
+    def _try_process_npc(self, actor: Actor, *, record_timing: bool) -> bool:
+        """Attempt to process one NPC action if the actor can afford it.
 
-            if actor.energy.can_afford(config.ACTION_COST):
-                action = actor.get_next_action(self.controller)
+        Handles energy checks, status effect prevention, action execution,
+        and plan advancement. Returns True if the actor acted (or was
+        prevented from acting), False if the actor couldn't afford an action.
 
-                if (
-                    action is None
-                    and isinstance(actor, Character)
-                    and actor.active_plan is not None
-                ):
-                    action = self._get_intent_from_plan(actor)
+        Args:
+            actor: The NPC to process.
+            record_timing: If True, record presentation timing via
+                execute_intent(). If False, use action_router directly.
+        """
+        from brileta.game.action_plan import ApproachStep
+        from brileta.game.actors.core import Character
 
-                if action is not None:
-                    is_prevented = actor.status_effects.is_action_prevented()
+        assert actor.energy is not None  # Guaranteed by _energy_actors_cache
 
-                    if is_prevented:
-                        actor.update_turn(self.controller)
-                        actor.energy.accumulated_energy = 0
-                        continue
+        if not actor.energy.can_afford(config.ACTION_COST):
+            return False
 
-                    actor.update_turn(self.controller)
-                    # Use action_router directly to avoid overwriting player's
-                    # presentation timing (execute_intent calls _record_action_timing).
-                    result = self.action_router.execute_intent(action)
-                    actor.energy.spend(config.ACTION_COST)
+        action = actor.get_next_action(self.controller)
 
-                    if isinstance(actor, Character) and actor.active_plan is not None:
-                        plan = actor.active_plan
-                        step = plan.get_current_step()
-                        if isinstance(step, ApproachStep):
-                            self._on_approach_result(actor, result)
-                        if (
-                            not result.succeeded
-                            and result.block_reason == ActionBlockReason.NOT_ADJACENT
-                        ):
-                            self._handle_intent_step_result(actor, result)
+        # If AI returned None but NPC has an active plan, get intent from plan
+        # (mirrors player autopilot in process_player_input).
+        if (
+            action is None
+            and isinstance(actor, Character)
+            and actor.active_plan is not None
+        ):
+            action = self._get_intent_from_plan(actor)
 
-                    # Continue to next NPC (don't return)
+        if action is None:
+            return False
+
+        # Check if actor is prevented from acting BEFORE update_turn
+        if actor.status_effects.is_action_prevented():
+            # Prevented - this counts as their turn. Spend ALL energy so they
+            # can't attempt again this cycle. update_turn decrements duration.
+            actor.update_turn(self.controller)
+            actor.energy.accumulated_energy = 0
+            return True
+
+        # Actor can act - update their turn effects first
+        actor.update_turn(self.controller)
+
+        # Execute the action (with or without presentation timing)
+        if record_timing:
+            result = self.execute_intent(action)
+        else:
+            result = self.action_router.execute_intent(action)
+        actor.energy.spend(config.ACTION_COST)
+
+        # Handle plan advancement for NPCs with active plans
+        if isinstance(actor, Character) and actor.active_plan is not None:
+            step = actor.active_plan.get_current_step()
+            if isinstance(step, ApproachStep):
+                self._on_approach_result(actor, result)
+            if (
+                not result.succeeded
+                and result.block_reason == ActionBlockReason.NOT_ADJACENT
+            ):
+                self._handle_intent_step_result(actor, result)
+
+        return True
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.
@@ -457,8 +440,7 @@ class TurnManager:
 
         # Plan complete?
         if step is None:
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+            self._cancel_plan(actor)
             return None
 
         # Skip steps whose conditions are met
@@ -469,8 +451,7 @@ class TurnManager:
             step = plan.get_current_step()
 
         if step is None:
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+            self._cancel_plan(actor)
             return None
 
         # Generate intent based on step type
@@ -521,14 +502,9 @@ class TurnManager:
         actor_can_open_doors = actor.can_open_doors
 
         # Determine target position
-        if plan.context.target_actor is not None:
-            target_pos = (plan.context.target_actor.x, plan.context.target_actor.y)
-        elif plan.context.target_position is not None:
-            target_pos = plan.context.target_position
-        else:
-            # No target - can't approach
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+        target_pos = plan.context.resolve_target_pos()
+        if target_pos is None:
+            self._cancel_plan(actor)
             return None
 
         # If a target actor moved since path computation, invalidate stale path.
@@ -539,18 +515,12 @@ class TurnManager:
             and plan.cached_hierarchical_path is None
         ):
             endpoint = plan.cached_path[-1]
-            endpoint_distance = max(
-                abs(target_pos[0] - endpoint[0]),
-                abs(target_pos[1] - endpoint[1]),
-            )
-            if endpoint_distance > step.stop_distance:
+            if calculate_distance(*endpoint, *target_pos) > step.stop_distance:
                 plan.cached_path = None
                 plan.cached_hierarchical_path = None
 
         # Check if we've arrived (based on stop_distance)
-        dx_to_target = target_pos[0] - actor.x
-        dy_to_target = target_pos[1] - actor.y
-        current_distance = max(abs(dx_to_target), abs(dy_to_target))  # Chebyshev
+        current_distance = calculate_distance(actor.x, actor.y, *target_pos)
 
         if current_distance <= step.stop_distance:
             # Arrived - advance to next step
@@ -567,7 +537,7 @@ class TurnManager:
             # First try direct path to target. Door-capable NPCs treat
             # closed doors as high-cost passable tiles so they can plan
             # routes through indoor/outdoor boundaries.
-            plan.cached_path = find_local_path(
+            direct = find_local_path(
                 gm,
                 asi,
                 actor,
@@ -575,6 +545,8 @@ class TurnManager:
                 target_pos,
                 can_open_doors=actor_can_open_doors,
             )
+            if direct:
+                plan.cached_path = deque(direct)
 
             # If direct path fails, try hierarchical (cross-region) pathfinding
             if not plan.cached_path:
@@ -585,7 +557,8 @@ class TurnManager:
                     can_open_doors=actor_can_open_doors,
                 )
                 if hierarchical:
-                    plan.cached_path, plan.cached_hierarchical_path = hierarchical
+                    local_path, plan.cached_hierarchical_path = hierarchical
+                    plan.cached_path = deque(local_path)
 
             # If still no path and we have a stop_distance, try adjacent tiles.
             # The target tile is likely occupied (e.g., by an enemy we're approaching).
@@ -614,12 +587,11 @@ class TurnManager:
                     ):
                         best_path = candidate
                 if best_path is not None:
-                    plan.cached_path = best_path
+                    plan.cached_path = deque(best_path)
 
         if not plan.cached_path:
             # Can't reach target - cancel plan
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+            self._cancel_plan(actor)
             return None
 
         # PEEK at next position - don't pop yet!
@@ -682,13 +654,11 @@ class TurnManager:
         key = self._plan_retry_key(actor, plan)
         retries = self._adjacency_rewind_counts.get(key, 0)
         if retries >= self._MAX_ADJACENCY_REWINDS:
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+            self._cancel_plan(actor)
             return
 
         if not plan.rewind_to_previous_approach_step():
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+            self._cancel_plan(actor)
             return
 
         self._adjacency_rewind_counts[key] = retries + 1
@@ -720,30 +690,22 @@ class TurnManager:
             # expected position. Door opens succeed without moving the actor,
             # so the path entry stays for the follow-up move next turn.
             if plan.cached_path and (actor.x, actor.y) == plan.cached_path[0]:
-                plan.cached_path.pop(0)
+                plan.cached_path.popleft()
 
             # After popping, check if we need to compute the next hierarchical segment
             if not plan.cached_path and plan.cached_hierarchical_path:
                 self._advance_hierarchical_path(actor, plan)
 
             # Check if we've now arrived at destination
-            if plan.context.target_actor is not None:
-                target_pos = (plan.context.target_actor.x, plan.context.target_actor.y)
-            elif plan.context.target_position is not None:
-                target_pos = plan.context.target_position
-            else:
+            target_pos = plan.context.resolve_target_pos()
+            if target_pos is None:
                 return
 
-            dx = target_pos[0] - actor.x
-            dy = target_pos[1] - actor.y
-            distance = max(abs(dx), abs(dy))
-
-            if distance <= step.stop_distance:
+            if calculate_distance(actor.x, actor.y, *target_pos) <= step.stop_distance:
                 # Arrived - advance to next step (or complete plan)
                 plan.advance()
                 if plan.is_complete():
-                    self._clear_plan_retry_state(actor, plan)
-                    actor.active_plan = None
+                    self._cancel_plan(actor)
         else:
             # Move failed (blocked) - invalidate path for recalculation
             plan.cached_path = None
@@ -854,16 +816,9 @@ class TurnManager:
         current_region_id = plan.cached_hierarchical_path.pop(0)
 
         # Determine target position
-        if plan.context.target_actor is not None:
-            target_pos: WorldTilePos = (
-                plan.context.target_actor.x,
-                plan.context.target_actor.y,
-            )
-        elif plan.context.target_position is not None:
-            target_pos = plan.context.target_position
-        else:
-            self._clear_plan_retry_state(actor, plan)
-            actor.active_plan = None
+        target_pos = plan.context.resolve_target_pos()
+        if target_pos is None:
+            self._cancel_plan(actor)
             return
 
         if plan.cached_hierarchical_path:
@@ -871,14 +826,12 @@ class TurnManager:
             next_region_id = plan.cached_hierarchical_path[0]
             current_region = gm.regions.get(current_region_id)
             if current_region is None:
-                self._clear_plan_retry_state(actor, plan)
-                actor.active_plan = None
+                self._cancel_plan(actor)
                 return
 
             connection_point = current_region.connections.get(next_region_id)
             if connection_point is None:
-                self._clear_plan_retry_state(actor, plan)
-                actor.active_plan = None
+                self._cancel_plan(actor)
                 return
 
             # Compute local path to connection point
@@ -891,11 +844,10 @@ class TurnManager:
                 can_open_doors=actor_can_open_doors,
             )
             if new_path:
-                plan.cached_path = new_path
+                plan.cached_path = deque(new_path)
             else:
                 # Can't reach connection - clear plan
-                self._clear_plan_retry_state(actor, plan)
-                actor.active_plan = None
+                self._cancel_plan(actor)
         else:
             # We're in the final region - path to target
             new_path = find_local_path(
@@ -907,7 +859,7 @@ class TurnManager:
                 can_open_doors=actor_can_open_doors,
             )
             if new_path:
-                plan.cached_path = new_path
+                plan.cached_path = deque(new_path)
             # If no path, leave cached_path empty - plan will handle it next turn
 
     @staticmethod
@@ -915,9 +867,16 @@ class TurnManager:
         """Build a stable key for retry bookkeeping of a specific active plan."""
         return (actor.actor_id, id(plan))
 
-    def _clear_plan_retry_state(self, actor: Character, plan: ActivePlan) -> None:
-        """Remove retry counters associated with a specific active plan."""
-        self._adjacency_rewind_counts.pop(self._plan_retry_key(actor, plan), None)
+    def _cancel_plan(self, actor: Character) -> None:
+        """Cancel an actor's active plan and clean up retry state.
+
+        This is the single point for plan cancellation, ensuring retry
+        bookkeeping is always cleaned up alongside the plan reference.
+        """
+        plan = actor.active_plan
+        if plan is not None:
+            self._adjacency_rewind_counts.pop(self._plan_retry_key(actor, plan), None)
+            actor.active_plan = None
 
     def _prune_actor_retry_state(
         self, actor: Character, active_plan: ActivePlan
@@ -929,80 +888,22 @@ class TurnManager:
             if actor_id == actor.actor_id and plan_id != current_plan_id:
                 self._adjacency_rewind_counts.pop(key, None)
 
-    # === Preserved Methods for Compatibility ===
-    # These methods are kept to maintain compatibility with existing code
-    # that might still reference them during the transition.
+    # === Player Action Queue ===
 
     def queue_action(self, action: GameIntent) -> None:
-        """Queue a player action (preserved for compatibility)."""
+        """Queue a non-plan player action (e.g. manual key-press)."""
         self._player_action_queue.append(action)
 
     def has_pending_actions(self) -> bool:
-        """Check if there are pending player actions (preserved for compatibility)."""
+        """Check if there are pending player actions in the queue."""
         return len(self._player_action_queue) > 0
 
     def dequeue_player_action(self) -> GameIntent | None:
-        """Dequeue and return a pending player action (preserved for compatibility)."""
+        """Dequeue and return the next pending player action, or None."""
         return (
             self._player_action_queue.popleft() if self._player_action_queue else None
         )
 
     def is_player_turn_available(self) -> bool:
         """Return True if player has pending actions or active plans."""
-        has_manual_action = self.has_pending_actions()
-        has_active_plan = self.player.active_plan is not None
-        return has_manual_action or has_active_plan
-
-    # Backwards compatibility for old name
-    def is_turn_available(self) -> bool:  # pragma: no cover - legacy
-        return self.is_player_turn_available()
-
-    # === Debug and Diagnostic Methods ===
-
-    def get_npc_queue_length(self) -> int:
-        """Return the current number of queued NPC actions (for debugging).
-
-        Note: In RAF V2, NPCs act immediately so this always returns 0.
-        Kept for compatibility with debugging code.
-        """
-        return 0
-
-    def clear_npc_queue(self) -> None:
-        """Clear all pending NPC actions (for testing/debugging).
-
-        Note: In RAF V2, NPCs act immediately so there's no queue to clear.
-        Kept for compatibility with testing code.
-        """
-        pass
-
-    def debug_energy_state(self) -> None:
-        """Print current energy state for all actors (debugging only)."""
-        print("=== RAF Energy State Debug ===")
-        for actor in self.controller.gw.actors:
-            if actor.energy is not None:
-                energy_per_action = actor.energy.get_speed_based_energy_amount()
-                energy_info = f"{actor.energy.energy:.1f}/{actor.energy.max_energy}"
-                speed_info = f"speed: {actor.energy.speed}, +{energy_per_action:.1f}"
-                print(f"{actor.name}: {energy_info} ({speed_info} per player action)")
-        print("NPC Queue Length: 0 (RAF V2 - immediate processing)")
-        print("==============================")
-
-    def get_speed_ratios(self) -> dict[str, float]:
-        """Get speed ratios for balancing analysis.
-
-        Returns:
-            Dictionary mapping actor names to their relative speed ratios
-        """
-        if not self.controller.gw.actors:
-            return {}
-
-        # Find base speed (usually player speed)
-        base_speed = self.player.energy.speed if self.player.energy is not None else 100
-
-        ratios = {}
-        for actor in self.controller.gw.actors:
-            if actor.energy is not None:
-                ratio = actor.energy.speed / base_speed
-                ratios[actor.name] = ratio
-
-        return ratios
+        return self.has_pending_actions() or self.player.active_plan is not None

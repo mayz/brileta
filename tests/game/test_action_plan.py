@@ -7,6 +7,7 @@ sequences.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import cast
 
@@ -280,7 +281,7 @@ def test_active_plan_advance() -> None:
     step2 = IntentStep(intent_class=DummyIntent, params=lambda ctx: {})
     plan = ActionPlan(name="Test", steps=[step1, step2])
     active = ActivePlan(plan=plan, context=context)
-    active.cached_path = [(1, 1), (2, 2)]
+    active.cached_path = deque([(1, 1), (2, 2)])
 
     active.advance()
 
@@ -326,7 +327,7 @@ def test_active_plan_cached_path() -> None:
     plan = ActionPlan(name="Test", steps=[ApproachStep()])
     active = ActivePlan(plan=plan, context=context)
 
-    path = [(1, 1), (2, 2), (3, 3)]
+    path = deque([(1, 1), (2, 2), (3, 3)])
     active.cached_path = path
 
     assert active.cached_path is path
@@ -345,7 +346,7 @@ def test_active_plan_rewind_to_previous_approach_step_resets_step_and_caches() -
         ],
     )
     active = ActivePlan(plan=plan, context=context, current_step_index=2)
-    active.cached_path = [(1, 1), (2, 2)]
+    active.cached_path = deque([(1, 1), (2, 2)])
     active.cached_hierarchical_path = [1, 2]
 
     rewound = active.rewind_to_previous_approach_step()

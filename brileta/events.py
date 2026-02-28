@@ -30,6 +30,7 @@ from enum import Enum, auto
 from typing import Any
 
 from brileta import colors
+from brileta.game.enums import CombatEndReason
 from brileta.types import ActorId, DeltaTime, FloatRange
 
 logger = logging.getLogger(__name__)
@@ -174,10 +175,10 @@ class CombatEndedEvent(GameEvent):
     Provides a hook for exit ceremony effects (sound, visual transition).
 
     Attributes:
-        reason: Why combat ended - "all_enemies_dead", "manual_exit", or "cancelled".
+        reason: Why combat ended.
     """
 
-    reason: str
+    reason: CombatEndReason
 
 
 class EventBus:

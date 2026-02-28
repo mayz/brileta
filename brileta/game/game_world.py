@@ -30,6 +30,7 @@ from brileta.game.actors.tree_sprites import (
 )
 from brileta.game.actors.trees import Tree
 from brileta.game.countables import CountableType
+from brileta.game.enums import GeneratorType
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import (
@@ -85,7 +86,7 @@ class GameWorld:
         self,
         map_width: TileCoord,
         map_height: TileCoord,
-        generator_type: str = "dungeon",  # "dungeon" or "settlement"
+        generator_type: GeneratorType = GeneratorType.DUNGEON,
         seed: int | str | None = None,
     ) -> None:
         self.mouse_tile_location_on_map: WorldTilePos | None = None
@@ -99,6 +100,10 @@ class GameWorld:
         # The Controller wires this to TurnManager.invalidate_cache so that
         # dynamically spawned NPCs are included in the energy tick loop.
         self.on_actors_changed: Callable[[], None] | None = None
+        # Optional callback invoked when a specific actor is removed, passing
+        # its ActorId. Wired to TurnManager.on_actor_removed to purge stale
+        # retry state for killed NPCs.
+        self.on_actor_removed: Callable[[ActorId], None] | None = None
 
         self.generator_type = generator_type
         self.seed = seed
@@ -141,11 +146,11 @@ class GameWorld:
         # The FOV system still controls what's "currently visible" vs
         # "remembered/dimmed." Other map types (dungeons, wilderness) start
         # unexplored and reveal as the player moves through them.
-        if self.generator_type == "settlement":
+        if self.generator_type == GeneratorType.SETTLEMENT:
             self.game_map.explored[:] = True
 
         # Populate NPCs using generator-appropriate method
-        if self.generator_type == "settlement":
+        if self.generator_type == GeneratorType.SETTLEMENT:
             self._populate_settlement_npcs()
         else:
             self._populate_npcs(rooms)
@@ -185,10 +190,13 @@ class GameWorld:
         except ValueError:
             pass
         # Always attempt to unregister from the id registry.
-        self._actor_id_registry.pop(actor.actor_id, None)
+        removed_id = actor.actor_id
+        self._actor_id_registry.pop(removed_id, None)
         self._actors_pending_prev_reset.discard(actor)
         if actor_collections_changed:
             self._actors_revision += 1
+        if self.on_actor_removed is not None:
+            self.on_actor_removed(removed_id)
         if self.on_actors_changed is not None:
             self.on_actors_changed()
 
@@ -347,7 +355,7 @@ class GameWorld:
         """Create the game map and return it along with generated rooms/buildings."""
         generator_type = self.generator_type
 
-        if generator_type == "settlement":
+        if generator_type == GeneratorType.SETTLEMENT:
             # Pipeline-based settlement generator
             from brileta.environment.generators.pipeline import create_pipeline
 
@@ -648,39 +656,27 @@ class GameWorld:
     ) -> list[Item]:
         """Get all pickable items at the specified location.
 
-        Currently, this includes items from dead actors' inventories and their
-        equipped weapons.
+        Checks dead actors' inventories/equipped weapons and non-Character
+        container actors (e.g. ItemPiles) at the tile using the spatial index.
         """
         items_found: list[Item] = []
-        # Check items from dead actors at this location
-        for actor in self.actors:
-            if (
-                actor.x == x
-                and actor.y == y
-                and isinstance(actor, Character)
-                and not actor.health.is_alive()  # Only from dead actors
-            ):
-                # Add all equipped items from all slots
+        for actor in self.actor_spatial_index.get_at_point(x, y):
+            if isinstance(actor, Character) and not actor.health.is_alive():
+                # Dead character: collect equipped items from all slots
                 ready_slots = actor.inventory.ready_slots
                 items_found.extend(item for item in ready_slots if item)
-
             elif (
-                actor.x == x
-                and actor.y == y
+                not isinstance(actor, Character)
                 and hasattr(actor, "inventory")
                 and actor.inventory is not None
-                and not isinstance(actor, Character)
             ):
+                # Container actor (e.g. ItemPile): collect stored items
                 items_found.extend(
                     item for item in list(actor.inventory) if isinstance(item, Item)
                 )
-                # Only check ready_slots for CharacterInventory, not ContainerStorage
                 ready_slots = getattr(actor.inventory, "ready_slots", None)
                 if ready_slots is not None:
                     items_found.extend(item for item in ready_slots if item is not None)
-
-        # Future: Add items directly on the ground if we implement that
-        # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
 
     def get_actor_at_location(
@@ -716,7 +712,11 @@ class GameWorld:
     def has_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord
     ) -> bool:
-        """Check if there are any pickable items or countables at the location."""
+        """Check if there are any pickable items or countables at the location.
+
+        Delegates to get_pickable_items_at_location for regular items, then
+        checks for countables-only ItemPiles via the spatial index.
+        """
         if self.get_pickable_items_at_location(x, y):
             return True
         # Check for countables in ItemPiles at this location. Use the spatial
@@ -1018,15 +1018,18 @@ class GameWorld:
 
         return npc_index
 
-    def _is_outdoor_tile(self, x: int, y: int) -> bool:
-        """Check if a tile is an outdoor tile type."""
-        outdoor_tiles = {
+    _OUTDOOR_TILES: ClassVar[frozenset[int]] = frozenset(
+        {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
-        return self.game_map.tiles[x, y] in outdoor_tiles
+    )
+
+    def _is_outdoor_tile(self, x: int, y: int) -> bool:
+        """Check if a tile is an outdoor tile type."""
+        return self.game_map.tiles[x, y] in self._OUTDOOR_TILES
 
     def _create_settlement_npc(
         self,

@@ -21,6 +21,7 @@ from brileta.game.actions.executors.stunts import PushExecutor
 from brileta.game.actions.stunts import PushIntent
 from brileta.game.actors import NPC, Character
 from brileta.game.consequences import Consequence, ConsequenceHandler
+from brileta.game.enums import CombatEndReason
 from brileta.game.items.item_types import FISTS_TYPE
 from tests.helpers import reset_dummy_controller
 
@@ -533,7 +534,7 @@ def test_combat_ended_event_published_on_auto_exit(
 
     # Verify event was published with correct reason
     assert len(received_events) == 1
-    assert received_events[0].reason == "all_enemies_dead"
+    assert received_events[0].reason == CombatEndReason.ALL_ENEMIES_DEAD
 
 
 def test_combat_ended_event_published_on_manual_exit(
@@ -563,11 +564,11 @@ def test_combat_ended_event_published_on_manual_exit(
     assert controller.is_combat_mode()
 
     # Manually exit combat
-    controller.exit_combat_mode("manual_exit")
+    controller.exit_combat_mode(CombatEndReason.MANUAL_EXIT)
 
     # Verify event was published with correct reason
     assert len(received_events) == 1
-    assert received_events[0].reason == "manual_exit"
+    assert received_events[0].reason == CombatEndReason.MANUAL_EXIT
     assert not controller.is_combat_mode()
 
 
@@ -606,7 +607,7 @@ def test_combat_ended_event_published_on_cancelled_exit(
 
     # Verify event was published with correct reason
     assert len(received_events) == 1
-    assert received_events[0].reason == "cancelled"
+    assert received_events[0].reason == CombatEndReason.CANCELLED
     assert not controller.is_combat_mode()
 
 

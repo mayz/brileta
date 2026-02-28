@@ -1,4 +1,5 @@
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -786,7 +787,7 @@ def test_handle_approach_step_peeks_at_path() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]  # Pre-populate the path
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])  # Pre-populate the path
     player.active_plan = active_plan
 
     # Get the approach step
@@ -824,7 +825,7 @@ def test_handle_approach_step_sets_duration_based_on_distance() -> None:
         target_position=(30, 0),
     )
     far_plan = ActivePlan(plan=WalkToPlan, context=far_context)
-    far_plan.cached_path = [(1, 0)]
+    far_plan.cached_path = deque([(1, 0)])
     player.active_plan = far_plan
 
     far_step = far_plan.get_current_step()
@@ -843,7 +844,7 @@ def test_handle_approach_step_sets_duration_based_on_distance() -> None:
         target_position=(1, 0),
     )
     near_plan = ActivePlan(plan=WalkToPlan, context=near_context)
-    near_plan.cached_path = [(1, 0)]
+    near_plan.cached_path = deque([(1, 0)])
     player.active_plan = near_plan
 
     near_step = near_plan.get_current_step()
@@ -871,7 +872,7 @@ def test_on_approach_result_pops_path_on_success() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])
     player.active_plan = active_plan
 
     # Simulate a successful move: the actor is now at path[0]
@@ -901,7 +902,7 @@ def test_on_approach_result_invalidates_path_on_failure() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])
     player.active_plan = active_plan
 
     # Simulate a failed move result
@@ -952,7 +953,7 @@ def test_handle_approach_step_returns_open_door_intent() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])
     player.active_plan = active_plan
 
     step = active_plan.get_current_step()
@@ -981,7 +982,7 @@ def test_on_approach_result_keeps_path_on_door_open() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])
     player.active_plan = active_plan
 
     # Simulate a successful door open: result.succeeded=True but the
@@ -1013,7 +1014,7 @@ def test_plan_completes_when_destination_reached() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(3, 0)]
+    active_plan.cached_path = deque([(3, 0)])
     player.active_plan = active_plan
 
     # Simulate executing the move: player moves to (3, 0)
@@ -1042,7 +1043,7 @@ def test_execute_player_intent_handles_plan_advancement() -> None:
         target_position=(3, 0),
     )
     active_plan = ActivePlan(plan=WalkToPlan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0), (3, 0)])
     player.active_plan = active_plan
 
     # Create and execute a move intent
@@ -1092,7 +1093,7 @@ def test_execute_player_intent_rewinds_on_not_adjacent() -> None:
         context=context,
         current_step_index=2,  # Simulates an advanced IntentStep
     )
-    active_plan.cached_path = [(1, 0)]
+    active_plan.cached_path = deque([(1, 0)])
     player.active_plan = active_plan
 
     def failed_not_adjacent(_intent) -> GameActionResult:
@@ -1202,7 +1203,7 @@ def test_execute_player_intent_does_not_rewind_when_plan_not_adjacency_required(
         context=context,
         current_step_index=2,
     )
-    active_plan.cached_path = [(1, 0)]
+    active_plan.cached_path = deque([(1, 0)])
     player.active_plan = active_plan
 
     def failed_not_adjacent(_intent) -> GameActionResult:
@@ -1216,7 +1217,8 @@ def test_execute_player_intent_does_not_rewind_when_plan_not_adjacency_required(
 
     assert player.active_plan is active_plan
     assert player.active_plan.current_step_index == 2
-    assert player.active_plan.cached_path == [(1, 0)]
+    assert player.active_plan.cached_path is not None
+    assert list(player.active_plan.cached_path) == [(1, 0)]
 
 
 def test_handle_approach_step_invalidates_stale_path_when_target_moves(
@@ -1254,7 +1256,7 @@ def test_handle_approach_step_invalidates_stale_path_when_target_moves(
         requires_target=True,
     )
     active_plan = ActivePlan(plan=approach_plan, context=context)
-    active_plan.cached_path = [(1, 0), (2, 0)]
+    active_plan.cached_path = deque([(1, 0), (2, 0)])
     player.active_plan = active_plan
 
     # Target moved after path was cached; endpoint is now stale.
@@ -1285,7 +1287,8 @@ def test_handle_approach_step_invalidates_stale_path_when_target_moves(
 
     assert isinstance(intent, MoveIntent)
     assert find_calls == [((0, 0), (9, 9))]
-    assert active_plan.cached_path == [(0, 1)]
+    assert active_plan.cached_path is not None
+    assert list(active_plan.cached_path) == [(0, 1)]
 
 
 def test_process_all_npc_reactions_rewinds_npc_plan_on_not_adjacent() -> None:

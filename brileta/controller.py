@@ -28,6 +28,7 @@ from .game.actions.discovery import ActionDiscovery
 from .game.actions.types import AnimationType
 from .game.actors import Actor
 from .game.actors.core import Character
+from .game.enums import CombatEndReason
 from .game.game_world import GameWorld
 from .game.lights import DirectionalLight, DynamicLight
 from .game.turn_manager import TurnManager
@@ -184,8 +185,9 @@ class Controller:
         # Create turn manager after world exists (accesses gw.player via property)
         self.turn_manager = TurnManager(self)
 
-        # Wire up the actor-change callback now that turn_manager exists.
+        # Wire up actor-change callbacks now that turn_manager exists.
         self.gw.on_actors_changed = self.turn_manager.invalidate_cache
+        self.gw.on_actor_removed = self.turn_manager.on_actor_removed
 
         # Initialize mode system - game always has an active mode
         # Modes are organized in a stack. ExploreMode is always at the bottom.
@@ -281,6 +283,7 @@ class Controller:
         # cache build anyway.
         if self._systems_initialized:
             self.gw.on_actors_changed = self.turn_manager.invalidate_cache
+            self.gw.on_actor_removed = self.turn_manager.on_actor_removed
 
         # Initialize GPU lighting system
         self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
@@ -1026,16 +1029,17 @@ class Controller:
         """Enter combat mode from current mode."""
         self.transition_to_mode(self.combat_mode)
 
-    def exit_combat_mode(self, reason: str = "manual_exit") -> None:
+    def exit_combat_mode(
+        self, reason: CombatEndReason = CombatEndReason.MANUAL_EXIT
+    ) -> None:
         """Exit combat mode back to explore mode.
 
         Warns the player if they voluntarily leave while hostiles are visible.
 
         Args:
-            reason: Why combat ended - "all_enemies_dead", "manual_exit",
-                    or "cancelled". Used for ceremony hooks.
+            reason: Why combat ended. Used for ceremony hooks.
         """
-        if reason != "all_enemies_dead" and self.has_visible_hostiles():
+        if reason != CombatEndReason.ALL_ENEMIES_DEAD and self.has_visible_hostiles():
             publish_event(
                 MessageEvent("Standing down despite hostile presence.", colors.YELLOW)
             )

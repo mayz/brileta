@@ -128,6 +128,7 @@ class DummyGameWorld(GameWorld):
         # Registry for O(1) actor lookup by actor_id.
         self._actor_id_registry: dict[ActorId, Actor] = {}
         self.on_actors_changed = None
+        self.on_actor_removed = None
 
         self.item_spawner = ItemSpawner(self)
 

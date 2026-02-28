@@ -8,6 +8,7 @@ Organized by functional area for easy maintenance.
 import sys
 from pathlib import Path
 
+from brileta.game.enums import GeneratorType
 from brileta.types import BackendConfig, RandomSeed
 
 # =============================================================================
@@ -155,9 +156,9 @@ PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 MAP_WIDTH = 120
 MAP_HEIGHT = 80
 
-# Generator type: "dungeon" (legacy rooms+corridors) or "settlement" (pipeline-based)
-# TODO: Add "wilderness" once CellularAutomataTerrainLayer is implemented
-MAP_GENERATOR_TYPE = "settlement"
+# Generator type: DUNGEON (legacy rooms+corridors) or SETTLEMENT (pipeline-based)
+# TODO: Add WILDERNESS once CellularAutomataTerrainLayer is implemented
+MAP_GENERATOR_TYPE = GeneratorType.SETTLEMENT
 
 # Room generation (for dungeon generator)
 MAX_ROOM_SIZE = 20

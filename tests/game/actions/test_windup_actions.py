@@ -62,6 +62,7 @@ class DummyGameWorld:
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actor_spatial_index.add(self.player)
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
+        self.on_actor_removed = None
 
     def add_light(self, light) -> None:
         """Add a light source to the world."""
@@ -172,6 +173,9 @@ class DummyTurnManager:
 
     def is_player_turn_available(self) -> bool:
         return bool(self._queue)
+
+    def on_actor_removed(self, actor_id: object) -> None:
+        pass
 
     def execute_intent(self, action: GameIntent) -> None:
         self.processed.append(action)

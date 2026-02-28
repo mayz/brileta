@@ -1,6 +1,21 @@
 from enum import Enum, auto
 
 
+class GeneratorType(Enum):
+    """Map generator algorithm selection."""
+
+    DUNGEON = "dungeon"
+    SETTLEMENT = "settlement"
+
+
+class CombatEndReason(Enum):
+    """Why combat mode ended, carried by CombatEndedEvent."""
+
+    ALL_ENEMIES_DEAD = "all_enemies_dead"
+    MANUAL_EXIT = "manual_exit"
+    CANCELLED = "cancelled"
+
+
 class ItemSize(Enum):
     """Size categories for items, used for inventory management."""
 

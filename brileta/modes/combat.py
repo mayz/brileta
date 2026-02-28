@@ -24,6 +24,7 @@ from brileta.game.actions.stunts import (
     TripPlan,
 )
 from brileta.game.actors import Character
+from brileta.game.enums import CombatEndReason
 from brileta.modes.base import Mode
 from brileta.modes.picker import PickerResult
 
@@ -160,7 +161,7 @@ class CombatMode(Mode):
                 # Otherwise let PickerMode handle target selection
 
             case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
-                self.controller.exit_combat_mode("manual_exit")
+                self.controller.exit_combat_mode(CombatEndReason.MANUAL_EXIT)
                 return True
 
             case input_events.KeyDown(sym=input_events.KeySym.RETURN):
@@ -264,7 +265,7 @@ class CombatMode(Mode):
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
-            self.controller.exit_combat_mode("all_enemies_dead")
+            self.controller.exit_combat_mode(CombatEndReason.ALL_ENEMIES_DEAD)
             return
 
         # Adjust index if needed
@@ -327,7 +328,7 @@ class CombatMode(Mode):
 
     def _on_target_cancelled(self) -> None:
         """Handle cancel from PickerMode - exit combat mode entirely."""
-        self.controller.exit_combat_mode("cancelled")
+        self.controller.exit_combat_mode(CombatEndReason.CANCELLED)
 
     def _is_valid_target(self, x: int, y: int) -> bool:
         """Check if a tile contains a valid attack target.

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from brileta import colors, config
 from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.constants.view import ViewConstants as View
+from brileta.game.enums import CombatEndReason
 from brileta.game.items.properties import WeaponProperty
 from brileta.types import InterpolationAlpha
 from brileta.util.caching import ResourceCache
@@ -331,7 +332,7 @@ class EquipmentView(TextView):
 
         # Toggle: if already in combat mode, exit
         if self.controller.is_combat_mode():
-            self.controller.exit_combat_mode("manual_exit")
+            self.controller.exit_combat_mode(CombatEndReason.MANUAL_EXIT)
             return True
 
         # Check if picker mode is active (consumable targeting) and exit if so

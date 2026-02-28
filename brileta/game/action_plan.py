@@ -21,6 +21,7 @@ with a unified, declarative approach to multi-step actions.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -56,6 +57,16 @@ class PlanContext:
     target_position: WorldTilePos | None = None
     weapon: Item | None = None
     item: Item | None = None
+
+    def resolve_target_pos(self) -> WorldTilePos | None:
+        """Return the current target position, preferring a live actor's location.
+
+        Checks target_actor first (for moving targets), then falls back to
+        the static target_position. Returns None if neither is set.
+        """
+        if self.target_actor is not None:
+            return (self.target_actor.x, self.target_actor.y)
+        return self.target_position
 
 
 @dataclass
@@ -178,6 +189,7 @@ class ActivePlan:
         context: The PlanContext captured when the plan started.
         current_step_index: Index of the step currently being executed.
         cached_path: For ApproachStep, the current path to the target.
+            Stored as a deque for O(1) popleft when consuming waypoints.
             Peek at [0] for next position. Pop only after move succeeds.
         cached_hierarchical_path: For cross-region paths, the sequence of
             region IDs to traverse. None for same-region paths.
@@ -186,7 +198,7 @@ class ActivePlan:
     plan: ActionPlan
     context: PlanContext
     current_step_index: int = 0
-    cached_path: list[WorldTilePos] | None = None
+    cached_path: deque[WorldTilePos] | None = None
     cached_hierarchical_path: list[int] | None = None
 
     def get_current_step(self) -> Step | None:

@@ -16,6 +16,7 @@ from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.discovery import ActionCategory, ActionOption
 from brileta.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
 from brileta.game.actors import NPC, Character
+from brileta.game.enums import CombatEndReason
 from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
@@ -136,7 +137,7 @@ class TestCombatModeActionSelection:
         assert controller.combat_mode.selected_action is not None
 
         # Exit combat
-        controller.exit_combat_mode("manual_exit")
+        controller.exit_combat_mode(CombatEndReason.MANUAL_EXIT)
 
         # selected_action should be cleared
         assert controller.combat_mode.selected_action is None
@@ -167,7 +168,7 @@ class TestCombatModeActionSelection:
         assert controller.combat_mode.selected_action.id == "push"
 
         # Exit and re-enter
-        controller.exit_combat_mode("manual_exit")
+        controller.exit_combat_mode(CombatEndReason.MANUAL_EXIT)
         controller.enter_combat_mode()
 
         # Should be back to Attack (COMBAT category)
