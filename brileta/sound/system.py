@@ -38,6 +38,14 @@ _rng = rng.get("audio.system")
 OPEN_DOOR_OCCLUSION = 0.6  # Each open door reduces volume to 60%
 CLOSED_DOOR_OCCLUSION = 0.15  # Each closed door reduces volume to 15%
 
+# How often (in ticks) to re-query the spatial index for nearby actors.
+# The spatial query scans a large radius and is expensive on big maps.
+# Throttling to every N ticks is safe because sound emitter positions
+# change infrequently (only on actor actions, not every frame), and
+# volume/panning interpolation still runs every tick for smooth audio.
+# Lower values = more responsive but more CPU. 6 ticks at 60Hz = 100ms.
+_SPATIAL_QUERY_THROTTLE_TICKS = 5
+
 
 @dataclass
 class PlayingSound:
@@ -85,6 +93,13 @@ class SoundSystem:
         self.teleport_threshold: float = 10.0  # Distance to consider as teleportation
         self.previous_listener_x: float = 0.0
         self.previous_listener_y: float = 0.0
+
+        # Spatial query throttling: cache the nearby-actors result and only
+        # re-query when the listener moves 1+ tiles or the tick counter expires.
+        self._spatial_query_ticks_remaining: int = 0
+        self._cached_nearby_actors: list[Actor] = []
+        self._cached_listener_x: float = 0.0
+        self._cached_listener_y: float = 0.0
 
         # Track last played variant per sound_id to avoid repeats
         self._last_played_variant: dict[str, str] = {}
@@ -142,6 +157,7 @@ class SoundSystem:
         self.current_time += delta_time
 
         # Initialize or interpolate audio listener position
+        teleported = False
         if not self._listener_initialized:
             # First update - set audio listener to actual player position
             self.audio_listener_x = listener_x
@@ -149,6 +165,7 @@ class SoundSystem:
             self.previous_listener_x = listener_x
             self.previous_listener_y = listener_y
             self._listener_initialized = True
+            teleported = True
         else:
             # Detect teleportation
             movement_distance = math.sqrt(
@@ -160,6 +177,7 @@ class SoundSystem:
                 # Instant update for teleportation
                 self.audio_listener_x = listener_x
                 self.audio_listener_y = listener_y
+                teleported = True
             else:
                 # Smooth interpolation using exponential smoothing
                 alpha = 1.0 - math.exp(-delta_time * 5.0)  # 5.0 = smoothing speed
@@ -170,13 +188,29 @@ class SoundSystem:
             self.previous_listener_x = listener_x
             self.previous_listener_y = listener_y
 
-        # Query only actors within maximum audio distance
+        # Throttled spatial query: only re-query when the listener moves 1+ tiles,
+        # the tick counter expires, or a teleportation occurred.
         audio_cull_distance = self._calculate_max_audio_distance()
-        nearby_actors = actor_spatial_index.get_in_radius(
-            int(self.audio_listener_x),  # Use interpolated position
-            int(self.audio_listener_y),
-            radius=int(audio_cull_distance),
+        needs_requery = (
+            teleported
+            or self._spatial_query_ticks_remaining <= 0
+            or abs(self.audio_listener_x - self._cached_listener_x) >= 1.0
+            or abs(self.audio_listener_y - self._cached_listener_y) >= 1.0
         )
+
+        if needs_requery:
+            nearby_actors = actor_spatial_index.get_in_radius(
+                int(self.audio_listener_x),
+                int(self.audio_listener_y),
+                radius=int(audio_cull_distance),
+            )
+            self._cached_nearby_actors = nearby_actors
+            self._cached_listener_x = self.audio_listener_x
+            self._cached_listener_y = self.audio_listener_y
+            self._spatial_query_ticks_remaining = _SPATIAL_QUERY_THROTTLE_TICKS
+        else:
+            nearby_actors = self._cached_nearby_actors
+            self._spatial_query_ticks_remaining -= 1
 
         # Collect active emitters from nearby actors only
         # Also build a position lookup dict for volume updates later
@@ -681,6 +715,12 @@ class SoundSystem:
         self.audio_listener_y = 0.0
         self.previous_listener_x = 0.0
         self.previous_listener_y = 0.0
+
+        # Clear spatial query cache so it re-queries on next update
+        self._spatial_query_ticks_remaining = 0
+        self._cached_nearby_actors.clear()
+        self._cached_listener_x = 0.0
+        self._cached_listener_y = 0.0
 
         logger.info("Sound system reset")
 
