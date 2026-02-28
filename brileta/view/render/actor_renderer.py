@@ -296,21 +296,22 @@ class ActorRenderer:
                 [sprite_batch_pos[idx] for idx in run],
                 dtype=np.int32,
             )
+            actor_idx = si[batch_pos]
             self.graphics.draw_sprite_smooth_batch(
-                sprite_uvs=sprite_uvs[si[batch_pos]],
-                actor_colors=actor_colors[si[batch_pos]],
+                sprite_uvs=sprite_uvs[actor_idx],
+                actor_colors=actor_colors[actor_idx],
                 screen_x=screen_px_x[batch_pos],
                 screen_y=screen_px_y[batch_pos],
                 light_intensity=light_intensity[batch_pos],
-                scale_x=(visual_scales[si[batch_pos]] * viewport_scale_x).astype(
+                scale_x=(visual_scales[actor_idx] * viewport_scale_x).astype(
                     np.float32,
                 ),
-                scale_y=(visual_scales[si[batch_pos]] * viewport_scale_y).astype(
+                scale_y=(visual_scales[actor_idx] * viewport_scale_y).astype(
                     np.float32,
                 ),
-                ground_anchor_y=anchor_y[si[batch_pos]].astype(np.float32),
-                world_pos=world_pos_arr[si[batch_pos]],
-                tile_bg=tile_bg_arr[si[batch_pos]],
+                ground_anchor_y=anchor_y[actor_idx].astype(np.float32),
+                world_pos=world_pos_arr[actor_idx],
+                tile_bg=tile_bg_arr[actor_idx],
             )
 
         current_run: list[int] = []

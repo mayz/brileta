@@ -217,6 +217,28 @@ class GraphicsContext(abc.ABC):
         """
         return
 
+    def draw_sprite_shadow_batch(
+        self,
+        *,
+        sprite_uvs: np.ndarray,
+        screen_x: np.ndarray,
+        screen_y: np.ndarray,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: np.ndarray,
+        shadow_alpha: np.ndarray | float,
+        scale_x: np.ndarray,
+        scale_y: np.ndarray,
+        ground_anchor_y: np.ndarray,
+        fade_tip: bool = True,
+    ) -> None:
+        """Batch-draw many sprite-silhouette shadows with vectorized geometry.
+
+        Vectorized version of :meth:`draw_sprite_shadow` for rendering many
+        actor shadows in one call, avoiding per-actor Python overhead.
+        """
+        return
+
     def create_sprite_atlas(self, width: int, height: int) -> Any | None:
         """Create a dynamic sprite atlas if supported by the backend.
 

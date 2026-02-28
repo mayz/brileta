@@ -532,6 +532,33 @@ class WorldView(View):
         return (bounds_key, map_key, exploration_key, player_pos_key, sun_key)
 
     @staticmethod
+    def _building_identity_key(building: Building) -> tuple[object, ...]:
+        """Return a hashable key capturing a building's structural identity.
+
+        Used by multiple cache systems to detect when a building's visual
+        representation should be considered changed.
+        """
+        return (
+            int(building.id),
+            int(building.footprint.x1),
+            int(building.footprint.y1),
+            int(building.footprint.x2),
+            int(building.footprint.y2),
+            str(building.roof_style),
+            int(building.floor_count),
+            tuple((int(x), int(y)) for x, y in building.door_positions),
+            (
+                None
+                if building.chimney_offset is None
+                else (
+                    int(building.chimney_offset[0]),
+                    int(building.chimney_offset[1]),
+                )
+            ),
+            round(building.chimney_projected_height, 3),
+        )
+
+    @staticmethod
     def _hash_array_view(array: np.ndarray) -> bytes:
         """Return a stable digest for a NumPy array view used in render cache keys."""
         if array.size == 0:
@@ -574,24 +601,7 @@ class WorldView(View):
         # visible buildings, and directional light (ridge shading).
         player_building_id, viewport_buildings = self._compute_roof_state()
         roof_buildings_key = tuple(
-            (
-                int(building.id),
-                int(building.footprint.x1),
-                int(building.footprint.y1),
-                int(building.footprint.x2),
-                int(building.footprint.y2),
-                str(building.roof_style),
-                tuple((int(x), int(y)) for x, y in building.door_positions),
-                (
-                    None
-                    if building.chimney_offset is None
-                    else (
-                        int(building.chimney_offset[0]),
-                        int(building.chimney_offset[1]),
-                    )
-                ),
-            )
-            for building in viewport_buildings
+            self._building_identity_key(building) for building in viewport_buildings
         )
 
         camera_pos_key = (
@@ -1948,23 +1958,7 @@ class WorldView(View):
     ) -> _RoofStamp:
         """Return a cached roof stamp, rebuilding when inputs changed."""
         cache_key = (
-            int(building.id),
-            int(building.footprint.x1),
-            int(building.footprint.y1),
-            int(building.footprint.x2),
-            int(building.footprint.y2),
-            str(building.roof_style),
-            int(building.floor_count),
-            tuple((int(x), int(y)) for x, y in building.door_positions),
-            (
-                None
-                if building.chimney_offset is None
-                else (
-                    int(building.chimney_offset[0]),
-                    int(building.chimney_offset[1]),
-                )
-            ),
-            round(building.chimney_projected_height, 3),
+            *self._building_identity_key(building),
             bool(is_light),
             int(decoration_seed),
             sun_direction_key,

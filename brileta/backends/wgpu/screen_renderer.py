@@ -24,6 +24,17 @@ if TYPE_CHECKING:
 # Maximum number of quads (2 triangles per quad) to draw per frame.
 MAX_QUADS = 10000
 
+# Constant local UV patterns for the two quad-emission methods.  Hoisted here
+# so we avoid re-creating identical numpy arrays on every batch call.
+_PARALLELOGRAM_LOCAL_UVS = np.array(
+    [(0.0, 1.0), (1.0, 1.0), (0.0, 0.0), (1.0, 1.0), (0.0, 0.0), (1.0, 0.0)],
+    dtype=np.float32,
+)
+_QUAD_LOCAL_UVS = np.array(
+    [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)],
+    dtype=np.float32,
+)
+
 VERTEX_DTYPE = np.dtype(
     [
         ("position", "2f4"),  # (x, y)
@@ -642,18 +653,7 @@ class WGPUScreenRenderer:
         vertices["uv"][:, 5, 0] = u2
         vertices["uv"][:, 5, 1] = v1
 
-        local_uv = np.array(
-            [
-                (0.0, 1.0),
-                (1.0, 1.0),
-                (0.0, 0.0),
-                (1.0, 1.0),
-                (0.0, 0.0),
-                (1.0, 0.0),
-            ],
-            dtype=np.float32,
-        )
-        vertices["uv_local"][:] = local_uv[np.newaxis, :, :]
+        vertices["uv_local"][:] = _PARALLELOGRAM_LOCAL_UVS[np.newaxis, :, :]
 
         if vertex_colors is not None:
             vertices["color"][:, 0] = vertex_colors[:, 0]
@@ -772,18 +772,7 @@ class WGPUScreenRenderer:
         vertices["uv"][:, 5, 1] = v2
 
         # Local UVs: constant pattern for axis-aligned quads.
-        local_uv = np.array(
-            [
-                (0.0, 0.0),  # TL
-                (1.0, 0.0),  # TR
-                (0.0, 1.0),  # BL
-                (1.0, 0.0),  # TR
-                (0.0, 1.0),  # BL
-                (1.0, 1.0),  # BR
-            ],
-            dtype=np.float32,
-        )
-        vertices["uv_local"][:] = local_uv[np.newaxis, :, :]
+        vertices["uv_local"][:] = _QUAD_LOCAL_UVS[np.newaxis, :, :]
 
         # Colors: broadcast per-quad RGBA to all 6 vertices.
         vertices["color"][:] = colors[:, np.newaxis, :]

@@ -443,17 +443,11 @@ class ShadowRenderer:
 
         # Use cached eligibility grid when available (vectorized),
         # otherwise fall back to per-actor tile check.
-        get_sun_shadow_eligibility_grid = getattr(
-            self.game_map, "get_sun_shadow_eligibility_grid", None
-        )
+        eligible_grid = self._get_sun_shadow_eligibility_grid()
         outdoor_mask = np.zeros(actor_count, dtype=bool)
         outdoor_indices = np.flatnonzero(eligible_mask & in_bounds)
         if len(outdoor_indices) > 0:
-            if callable(get_sun_shadow_eligibility_grid):
-                eligible_grid = get_sun_shadow_eligibility_grid(
-                    outdoor_region_types=self._SUN_SHADOW_OUTDOOR_REGION_TYPES,
-                    outdoor_tile_ids=self._SUN_SHADOW_OUTDOOR_TILE_IDS,
-                )
+            if eligible_grid is not None:
                 outdoor_mask[outdoor_indices] = np.asarray(
                     eligible_grid[actor_x[outdoor_indices], actor_y[outdoor_indices]],
                     dtype=bool,
@@ -759,19 +753,23 @@ class ShadowRenderer:
 
         flush_sprite_batch(sprite_run)
 
+    def _get_sun_shadow_eligibility_grid(self) -> np.ndarray | None:
+        """Return the cached eligibility grid, or None if the map doesn't support it."""
+        get_grid = getattr(self.game_map, "get_sun_shadow_eligibility_grid", None)
+        if not callable(get_grid):
+            return None
+        return get_grid(
+            outdoor_region_types=self._SUN_SHADOW_OUTDOOR_REGION_TYPES,
+            outdoor_tile_ids=self._SUN_SHADOW_OUTDOOR_TILE_IDS,
+        )
+
     def _can_render_sun_shadow_at_tile(self, x: int, y: int) -> bool:
         """Return whether a tile should receive directional sun-projected shadows."""
         if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
             return False
 
-        get_sun_shadow_eligibility_grid = getattr(
-            self.game_map, "get_sun_shadow_eligibility_grid", None
-        )
-        if callable(get_sun_shadow_eligibility_grid):
-            eligible_grid = get_sun_shadow_eligibility_grid(
-                outdoor_region_types=self._SUN_SHADOW_OUTDOOR_REGION_TYPES,
-                outdoor_tile_ids=self._SUN_SHADOW_OUTDOOR_TILE_IDS,
-            )
+        eligible_grid = self._get_sun_shadow_eligibility_grid()
+        if eligible_grid is not None:
             return bool(eligible_grid[x, y])
 
         region = self.game_map.get_region_at((x, y))
