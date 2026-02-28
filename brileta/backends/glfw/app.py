@@ -34,9 +34,17 @@ class GlfwApp(App[WGPUGraphicsContext]):
     _OUT_OF_BAND_STABLE_FRAMES = 2
     _OUT_OF_BAND_SCALE_MISMATCH_MAX_DEFER_FRAMES = 8
     _FULLSCREEN_TRANSITION_RESYNC_FRAMES = 120
+    # How often (in frames) to re-hide the cursor as a safety net for edge
+    # cases not covered by explicit callbacks (e.g. display hotplug, wake
+    # from sleep on older macOS).  ~0.5 s at 60 fps.
+    _CURSOR_REHIDE_INTERVAL = 30
 
     def __init__(self, app_config: AppConfig) -> None:
         super().__init__(app_config)
+        # Cursor-hiding state: re-apply only when an OS event may have
+        # restored the system cursor, plus a periodic safety net.
+        self._cursor_dirty = True
+        self._cursor_rehide_countdown = 0
         self._initialize_window(app_config)
         self._initialize_graphics()
         self._initialize_controller()
@@ -170,6 +178,8 @@ class GlfwApp(App[WGPUGraphicsContext]):
         glfw.set_cursor_pos_callback(self.window, self._on_cursor_pos)
         glfw.set_scroll_callback(self.window, self._on_scroll)
         glfw.set_window_size_callback(self.window, self._on_resize)
+        glfw.set_window_focus_callback(self.window, self._on_focus)
+        glfw.set_cursor_enter_callback(self.window, self._on_cursor_enter)
 
     def run(self) -> None:
         """Starts the main application loop and runs the game."""
@@ -183,12 +193,18 @@ class GlfwApp(App[WGPUGraphicsContext]):
                 self._sync_dimensions_outside_resize_callback()
                 self._maybe_force_dimension_resync()
 
-                # Force GLFW to re-apply cursor hiding every frame. We must
-                # transition through CURSOR_NORMAL first because GLFW skips
-                # the call when the mode is already CURSOR_HIDDEN, which fails
-                # to re-hide after OS-level cursor changes.
-                glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
-                glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
+                # Re-hide the cursor when a callback signals that macOS may
+                # have restored the system cursor (focus gain, cursor re-entry,
+                # fullscreen transition).  A periodic safety net catches any
+                # edge cases without explicit callbacks (display hotplug, wake
+                # from sleep).  We transition through CURSOR_NORMAL because
+                # GLFW skips the call when the mode is already CURSOR_HIDDEN.
+                self._cursor_rehide_countdown -= 1
+                if self._cursor_dirty or self._cursor_rehide_countdown <= 0:
+                    glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+                    glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
+                    self._cursor_dirty = False
+                    self._cursor_rehide_countdown = self._CURSOR_REHIDE_INTERVAL
 
                 # --- Time and Logic Phase ---
                 # Use clock.sync() for frame rate limiting
@@ -230,6 +246,8 @@ class GlfwApp(App[WGPUGraphicsContext]):
             self._FULLSCREEN_TRANSITION_RESYNC_FRAMES,
         )
         self._forced_resync_last_signature = None
+        # Fullscreen transitions on macOS can restore the system cursor.
+        self._cursor_dirty = True
 
     def _maybe_force_dimension_resync(self) -> None:
         """Attempt periodic dimension/surface resync after fullscreen transitions."""
@@ -532,6 +550,16 @@ class GlfwApp(App[WGPUGraphicsContext]):
         self.graphics.update_dimensions()
         if self.controller and self.controller.frame_manager:
             self.controller.frame_manager.on_window_resized()
+
+    def _on_focus(self, window: Any, focused: int) -> None:
+        """Handle window focus changes - re-hide cursor after app switch."""
+        if focused:
+            self._cursor_dirty = True
+
+    def _on_cursor_enter(self, window: Any, entered: int) -> None:
+        """Handle cursor entering/leaving window - re-hide after re-entry."""
+        if entered:
+            self._cursor_dirty = True
 
     def _glfw_key_to_keysym(self, key: int) -> input_events.KeySym:
         """Converts a GLFW key code to a KeySym."""
