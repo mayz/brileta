@@ -1029,10 +1029,16 @@ class Controller:
     def exit_combat_mode(self, reason: str = "manual_exit") -> None:
         """Exit combat mode back to explore mode.
 
+        Warns the player if they voluntarily leave while hostiles are visible.
+
         Args:
             reason: Why combat ended - "all_enemies_dead", "manual_exit",
                     or "cancelled". Used for ceremony hooks.
         """
+        if reason != "all_enemies_dead" and self.has_visible_hostiles():
+            publish_event(
+                MessageEvent("Standing down despite hostile presence.", colors.YELLOW)
+            )
         publish_event(CombatEndedEvent(reason=reason))
         self.transition_to_mode(self.explore_mode)
 

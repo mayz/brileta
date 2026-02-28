@@ -1029,11 +1029,8 @@ class TestCombatModeClickSelection:
             "frame_manager",
             create=True,
         ) as mock_fm:
-            # Configure the mock action_panel_view to return the second action
-            mock_fm.action_panel_view.x = 0
-            mock_fm.action_panel_view.y = 0
-            mock_fm.action_panel_view.width = 10
-            mock_fm.action_panel_view.height = 5
+            # Configure hit_test to report click inside panel
+            mock_fm.action_panel_view.hit_test.return_value = (50, 30, True)
             mock_fm.action_panel_view.get_action_at_pixel.return_value = second_action
 
             # Create a click event at position (50, 30) pixels
@@ -1067,14 +1064,10 @@ class TestCombatModeClickSelection:
             "frame_manager",
             create=True,
         ) as mock_fm:
-            # Configure panel bounds: panel is at (100, 100) with 160x80 pixel size
-            # (10x5 tiles * 16 pixels/tile)
-            mock_fm.action_panel_view.x = 100  # Panel starts at tile x=100
-            mock_fm.action_panel_view.y = 100  # Panel starts at tile y=100
-            mock_fm.action_panel_view.width = 10  # 10 tiles wide
-            mock_fm.action_panel_view.height = 5  # 5 tiles tall
+            # Configure hit_test to report click outside panel
+            mock_fm.action_panel_view.hit_test.return_value = (-1, -1, False)
 
-            # Click at (50, 50) pixels - outside the panel which starts at (1600, 1600)
+            # Click at (50, 50) pixels - outside the panel
             event = input_events.MouseButtonDown(
                 position=input_events.Point(50, 50),
                 button=input_events.MouseButton.LEFT,

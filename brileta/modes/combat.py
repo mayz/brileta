@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 from brileta import colors, config, input_events
 from brileta.events import (
     ActorDeathEvent,
-    MessageEvent,
-    publish_event,
     subscribe_to_event,
     unsubscribe_from_event,
 )
 from brileta.game import ranges
+from brileta.game.action_plan import ActionPlan
 from brileta.game.actions.base import GameIntent
 from brileta.game.actions.combat import AttackIntent, MeleeAttackPlan
 from brileta.game.actions.discovery import ActionCategory, ActionOption
@@ -30,6 +29,16 @@ from brileta.modes.picker import PickerResult
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
+    from brileta.game.actions.discovery import ActionDiscovery
+
+# Maps stunt intent classes to their corresponding ActionPlan instances.
+# Used in _create_intent_for_target to dispatch stunt actions.
+_STUNT_PLANS: dict[type[GameIntent], ActionPlan] = {
+    PushIntent: PushPlan,
+    TripIntent: TripPlan,
+    KickIntent: KickPlan,
+    PunchIntent: PunchPlan,
+}
 
 
 class CombatMode(Mode):
@@ -52,6 +61,10 @@ class CombatMode(Mode):
         # When in combat mode, the player first selects an action (Attack, Push, etc.)
         # then clicks on a target to execute it.
         self.selected_action: ActionOption | None = None
+
+        # Cached discovery instance - avoids re-creating six internal objects
+        # every frame during combat (action panel polls each frame).
+        self._discovery: ActionDiscovery | None = None
 
     def enter(self) -> None:
         """Enter combat mode and find all valid targets.
@@ -147,12 +160,6 @@ class CombatMode(Mode):
                 # Otherwise let PickerMode handle target selection
 
             case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
-                if self.controller.has_visible_hostiles():
-                    publish_event(
-                        MessageEvent(
-                            "Standing down despite hostile presence.", colors.YELLOW
-                        )
-                    )
                 self.controller.exit_combat_mode("manual_exit")
                 return True
 
@@ -320,10 +327,6 @@ class CombatMode(Mode):
 
     def _on_target_cancelled(self) -> None:
         """Handle cancel from PickerMode - exit combat mode entirely."""
-        if self.controller.has_visible_hostiles():
-            publish_event(
-                MessageEvent("Standing down despite hostile presence.", colors.YELLOW)
-            )
         self.controller.exit_combat_mode("cancelled")
 
     def _is_valid_target(self, x: int, y: int) -> bool:
@@ -377,16 +380,21 @@ class CombatMode(Mode):
 
     # --- Action-centric combat UI ---
 
+    def _get_discovery(self) -> ActionDiscovery:
+        """Return the cached ActionDiscovery, creating it on first use."""
+        if self._discovery is None:
+            from brileta.game.actions.discovery import ActionDiscovery
+
+            self._discovery = ActionDiscovery()
+        return self._discovery
+
     def _set_default_action(self) -> None:
         """Set the default combat action when entering combat mode.
 
         Selects the first action from discovery, which is already sorted by
         priority (PREFERRED attacks first).
         """
-        from brileta.game.actions.discovery import ActionDiscovery
-
-        discovery = ActionDiscovery()
-        actions = discovery.combat_discovery.get_player_combat_actions(
+        actions = self._get_discovery().combat_discovery.get_player_combat_actions(
             self.controller, self.controller.gw.player
         )
 
@@ -423,10 +431,7 @@ class CombatMode(Mode):
             target: Optional target for probability calculation. If None,
                     actions are returned without probability values.
         """
-        from brileta.game.actions.discovery import ActionDiscovery
-
-        discovery = ActionDiscovery()
-        actions = discovery.combat_discovery.get_player_combat_actions(
+        actions = self._get_discovery().combat_discovery.get_player_combat_actions(
             self.controller, self.controller.gw.player, target
         )
 
@@ -525,34 +530,14 @@ class CombatMode(Mode):
         fm = self.controller.frame_manager
         if fm is None or not hasattr(fm, "action_panel_view"):
             return False
-        action_panel_view = fm.action_panel_view
 
-        # Convert raw pixel position to scaled pixel position
-        graphics = self.controller.graphics
-        scale_x, scale_y = graphics.get_display_scale_factor()
-        scaled_px_x = int(event.position.x * scale_x)
-        scaled_px_y = int(event.position.y * scale_y)
-
-        # Calculate action panel's screen pixel bounds
-        tile_width, tile_height = graphics.tile_dimensions
-        panel_px_x = action_panel_view.x * tile_width
-        panel_px_y = action_panel_view.y * tile_height
-        panel_px_width = action_panel_view.width * tile_width
-        panel_px_height = action_panel_view.height * tile_height
-
-        # Check if click is within panel bounds
-        if not (
-            panel_px_x <= scaled_px_x < panel_px_x + panel_px_width
-            and panel_px_y <= scaled_px_y < panel_px_y + panel_px_height
-        ):
+        rel_px_x, rel_px_y, is_inside = fm.action_panel_view.hit_test(
+            event.position.x, event.position.y
+        )
+        if not is_inside:
             return False
 
-        # Convert to panel-relative pixel coordinates
-        rel_px_x = scaled_px_x - panel_px_x
-        rel_px_y = scaled_px_y - panel_px_y
-
-        # Check if click hit an action
-        action = action_panel_view.get_action_at_pixel(rel_px_x, rel_px_y)
+        action = fm.action_panel_view.get_action_at_pixel(rel_px_x, rel_px_y)
         if action is not None:
             self.select_action(action)
             return True
@@ -607,27 +592,14 @@ class CombatMode(Mode):
             )
             return None
 
-        if self.selected_action.category == ActionCategory.STUNT:
-            if self.selected_action.action_class == PushIntent:
+        if (
+            self.selected_action.category == ActionCategory.STUNT
+            and self.selected_action.action_class is not None
+        ):
+            plan = _STUNT_PLANS.get(self.selected_action.action_class)
+            if plan is not None:
                 self.controller.start_plan(
-                    player, PushPlan, target_actor=target, target_position=target_pos
-                )
-                return None
-            if self.selected_action.action_class == TripIntent:
-                self.controller.start_plan(
-                    player, TripPlan, target_actor=target, target_position=target_pos
-                )
-                return None
-            if self.selected_action.action_class == KickIntent:
-                self.controller.start_plan(
-                    player, KickPlan, target_actor=target, target_position=target_pos
-                )
-                return None
-            if self.selected_action.action_class == PunchIntent:
-                # Punch uses the ActionPlan system - it handles approach, holster,
-                # and punch as separate steps.
-                self.controller.start_plan(
-                    player, PunchPlan, target_actor=target, target_position=target_pos
+                    player, plan, target_actor=target, target_position=target_pos
                 )
                 return None
 

@@ -853,6 +853,38 @@ class ActionPanelView(TextView):
                 hotkeys[action.hotkey.lower()] = action
         return hotkeys
 
+    def hit_test(self, raw_px_x: float, raw_px_y: float) -> tuple[int, int, bool]:
+        """Convert raw (unscaled) pixel coordinates to panel-relative pixels.
+
+        Applies display scaling, checks panel bounds, and returns
+        panel-relative coordinates.
+
+        Args:
+            raw_px_x: Unscaled pixel X from the mouse event.
+            raw_px_y: Unscaled pixel Y from the mouse event.
+
+        Returns:
+            (rel_px_x, rel_px_y, is_inside). When outside panel bounds,
+            rel_px_x and rel_px_y are -1.
+        """
+        graphics = self.controller.graphics
+        scale_x, scale_y = graphics.get_display_scale_factor()
+        scaled_px_x = int(raw_px_x * scale_x)
+        scaled_px_y = int(raw_px_y * scale_y)
+
+        tw, th = graphics.tile_dimensions
+        panel_px_x = self.x * tw
+        panel_px_y = self.y * th
+        panel_px_w = self.width * tw
+        panel_px_h = self.height * th
+
+        if (
+            panel_px_x <= scaled_px_x < panel_px_x + panel_px_w
+            and panel_px_y <= scaled_px_y < panel_px_y + panel_px_h
+        ):
+            return (scaled_px_x - panel_px_x, scaled_px_y - panel_px_y, True)
+        return (-1, -1, False)
+
     def get_action_at_pixel(self, px: int, py: int) -> ActionOption | None:
         """Return the action at the given pixel coordinates, or None.
 

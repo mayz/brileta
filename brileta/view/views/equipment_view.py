@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 from brileta import colors, config
 from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.constants.view import ViewConstants as View
-from brileta.events import MessageEvent, publish_event
 from brileta.game.items.properties import WeaponProperty
 from brileta.types import InterpolationAlpha
 from brileta.util.caching import ResourceCache
@@ -332,12 +331,6 @@ class EquipmentView(TextView):
 
         # Toggle: if already in combat mode, exit
         if self.controller.is_combat_mode():
-            if self.controller.has_visible_hostiles():
-                publish_event(
-                    MessageEvent(
-                        "Standing down despite hostile presence.", colors.YELLOW
-                    )
-                )
             self.controller.exit_combat_mode("manual_exit")
             return True
 

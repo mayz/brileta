@@ -22,6 +22,7 @@ from brileta import colors, config, input_events
 from brileta.events import MessageEvent, publish_event
 from brileta.game.action_plan import WalkToPlan
 from brileta.game.actions.base import GameIntent
+from brileta.game.actions.discovery import ActionOption
 from brileta.game.actors import Actor, Character
 from brileta.input_events import Keys
 from brileta.modes.base import Mode
@@ -337,29 +338,33 @@ class ExploreMode(Mode):
             return False
 
         action_option = hotkeys[key_char]
-        action_executed = False
-
-        if hasattr(action_option, "execute") and action_option.execute:
-            result = action_option.execute()
-            if isinstance(result, GameIntent):
-                self.controller.queue_action(result)
-            # execute() handled the action (returns True/False or a GameIntent)
-            action_executed = True
-        elif action_option.action_class:
-            # Create action instance with static params
-            action_instance = action_option.action_class(
-                self.controller,
-                self.player,
-                **action_option.static_params,
-            )
-            self.controller.queue_action(action_instance)
-            action_executed = True
+        action_executed = self._execute_action_option(action_option)
 
         # If action was executed, check if it affects the hovered tile
         if action_executed and self._action_affects_hovered_tile(action_option):
             action_panel_view.invalidate_cache()
 
         return action_executed
+
+    def _execute_action_option(self, action_option: ActionOption) -> bool:
+        """Execute an ActionOption via its callback or action class.
+
+        Returns True if the action was dispatched.
+        """
+        if action_option.execute:
+            result = action_option.execute()
+            if isinstance(result, GameIntent):
+                self.controller.queue_action(result)
+            return True
+        if action_option.action_class:
+            action_instance = action_option.action_class(
+                self.controller,
+                self.player,
+                **action_option.static_params,
+            )
+            self.controller.queue_action(action_instance)
+            return True
+        return False
 
     def _action_affects_hovered_tile(self, action_option) -> bool:
         """Check if an action affects the currently hovered tile."""
@@ -383,47 +388,18 @@ class ExploreMode(Mode):
     # Mouse Click Handling
     # -------------------------------------------------------------------------
 
-    def _get_panel_relative_coords(
-        self, event: input_events.MouseState
-    ) -> tuple[int, int, bool]:
-        """Convert mouse event coordinates to action panel-relative pixel coords.
+    def _panel_hit_test(self, event: input_events.MouseState) -> tuple[int, int, bool]:
+        """Convert mouse event coords to action panel-relative pixel coords.
 
-        Args:
-            event: Mouse event with position in raw pixel coordinates.
+        Delegates to ActionPanelView.hit_test for the actual conversion.
 
         Returns:
-            Tuple of (rel_px_x, rel_px_y, is_inside_panel). If the mouse is
-            outside the panel bounds, rel_px_x and rel_px_y are set to -1.
+            (rel_px_x, rel_px_y, is_inside). When outside panel or no frame
+            manager, rel_px_x and rel_px_y are -1.
         """
         if self._fm is None:
             return (-1, -1, False)
-
-        action_panel_view = self._fm.action_panel_view
-        graphics = self.controller.graphics
-
-        # Convert raw pixel position to scaled pixel position
-        scale_x, scale_y = graphics.get_display_scale_factor()
-        scaled_px_x = int(event.position.x * scale_x)
-        scaled_px_y = int(event.position.y * scale_y)
-
-        # Calculate action panel's screen pixel bounds
-        tile_width, tile_height = graphics.tile_dimensions
-        panel_px_x = action_panel_view.x * tile_width
-        panel_px_y = action_panel_view.y * tile_height
-        panel_px_width = action_panel_view.width * tile_width
-        panel_px_height = action_panel_view.height * tile_height
-
-        # Check if mouse is within panel bounds
-        if (
-            panel_px_x <= scaled_px_x < panel_px_x + panel_px_width
-            and panel_px_y <= scaled_px_y < panel_px_y + panel_px_height
-        ):
-            # Convert to panel-relative pixel coordinates
-            rel_px_x = scaled_px_x - panel_px_x
-            rel_px_y = scaled_px_y - panel_px_y
-            return (rel_px_x, rel_px_y, True)
-
-        return (-1, -1, False)
+        return self._fm.action_panel_view.hit_test(event.position.x, event.position.y)
 
     def _handle_mouse_motion(self, event: input_events.MouseMotion) -> bool:
         """Handle mouse motion for hover state updates.
@@ -434,7 +410,7 @@ class ExploreMode(Mode):
             return False
 
         action_panel_view = self._fm.action_panel_view
-        rel_px_x, rel_px_y, _ = self._get_panel_relative_coords(event)
+        rel_px_x, rel_px_y, _ = self._panel_hit_test(event)
 
         # Update hover state (invalidates cache if changed)
         # When outside panel, rel_px_x/rel_px_y are -1, which clears hover
@@ -509,7 +485,7 @@ class ExploreMode(Mode):
         if self._fm is None:
             return False
 
-        rel_px_x, rel_px_y, is_inside = self._get_panel_relative_coords(event)
+        rel_px_x, rel_px_y, is_inside = self._panel_hit_test(event)
         if not is_inside:
             return False
 
@@ -522,18 +498,7 @@ class ExploreMode(Mode):
         # Then check for action option clicks
         action_option = action_panel_view.get_action_at_pixel(rel_px_x, rel_px_y)
         if action_option is not None:
-            # Execute the action (same logic as hotkey handling)
-            if hasattr(action_option, "execute") and action_option.execute:
-                result = action_option.execute()
-                if isinstance(result, GameIntent):
-                    self.controller.queue_action(result)
-            elif action_option.action_class:
-                action_instance = action_option.action_class(
-                    self.controller,
-                    self.player,
-                    **action_option.static_params,
-                )
-                self.controller.queue_action(action_instance)
+            self._execute_action_option(action_option)
             return True
 
         return False
@@ -677,21 +642,6 @@ class ExploreMode(Mode):
             return False
 
         return equipment_view.handle_click(clicked_row)
-
-    def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
-        """Quickly check if any actions are available for a target."""
-        if isinstance(target, Character):
-            # Always show menu for visible characters; menu handles empty options.
-            return True
-        if isinstance(target, Actor):
-            return False
-
-        world_x, world_y = target
-        game_map = self.gw.game_map
-        if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
-            return False
-
-        return bool(game_map.visible[world_x, world_y])
 
     def _convert_mouse_coordinates(
         self, event: input_events.MouseState
