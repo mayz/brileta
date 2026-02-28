@@ -206,40 +206,12 @@ class WGPULightOverlayComposer:
         - 128 = hidden under opaque roof (spillover disabled)
         - 255 = visible
         """
-        if visible_mask_buffer.ndim != 2:
-            raise ValueError("visible_mask_buffer must be a 2D array")
-
-        width = int(visible_mask_buffer.shape[0])
-        height = int(visible_mask_buffer.shape[1])
-        size = (width, height)
-        if self._visible_mask_texture is None or self._visible_mask_size != size:
-            self._visible_mask_texture = self.resource_manager.device.create_texture(
-                size=(width, height, 1),
-                format=wgpu.TextureFormat.r8unorm,
-                usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        self._visible_mask_texture, self._visible_mask_size = (
+            self.resource_manager.upload_mask_texture(
+                visible_mask_buffer,
+                self._visible_mask_texture,
+                self._visible_mask_size,
                 label="light_overlay_visible_mask_texture",
             )
-            self._visible_mask_size = size
-
-        if visible_mask_buffer.dtype == np.bool_:
-            visible_data = np.ascontiguousarray(
-                (visible_mask_buffer.T * 255).astype(np.uint8)
-            )
-        else:
-            visible_data = np.ascontiguousarray(visible_mask_buffer.T.astype(np.uint8))
-        assert self._visible_mask_texture is not None
-        self.resource_manager.queue.write_texture(
-            {
-                "texture": self._visible_mask_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(visible_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": width,
-                "rows_per_image": height,
-            },
-            (width, height, 1),
         )
         return self._visible_mask_texture

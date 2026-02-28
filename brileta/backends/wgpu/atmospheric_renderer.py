@@ -13,18 +13,12 @@ from PIL import Image as PILImage
 from brileta import colors, config
 from brileta.types import PixelPos, PixelRect, ViewOffset, WorldTilePos
 
+from .resource_manager import ALPHA_BLEND_STATE
+from .textured_quad_renderer import VERTEX_DTYPE
+
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
-
-# Vertex dtype matching the screen renderer for compatibility
-VERTEX_DTYPE = np.dtype(
-    [
-        ("position", "2f4"),  # (x, y) in pixels
-        ("uv", "2f4"),  # (u, v) texture coordinates
-        ("color", "4f4"),  # (r, g, b, a) - unused but required for layout
-    ]
-)
 
 
 class WGPUAtmosphericRenderer:
@@ -213,18 +207,7 @@ class WGPUAtmosphericRenderer:
             targets = [
                 {
                     "format": self.surface_format,
-                    "blend": {
-                        "color": {
-                            "operation": wgpu.BlendOperation.add,
-                            "src_factor": wgpu.BlendFactor.src_alpha,
-                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                        },
-                        "alpha": {
-                            "operation": wgpu.BlendOperation.add,
-                            "src_factor": wgpu.BlendFactor.one,
-                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                        },
-                    },
+                    "blend": ALPHA_BLEND_STATE,
                 }
             ]
 
@@ -277,21 +260,11 @@ class WGPUAtmosphericRenderer:
         if config.IS_TEST_ENVIRONMENT:
             return None
 
-        # Create 1x1 RGBA texture with white (fully explored)
-        pixels = np.array([[[255, 255, 255, 255]]], dtype="u1")
-        texture = self.resource_manager.device.create_texture(
-            size=(1, 1, 1),
-            format="rgba8unorm",
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        self._default_explored_texture = self.resource_manager.create_default_texture(
+            data=bytes([255, 255, 255, 255]),
+            label="atmospheric_default_explored",
         )
-        self.resource_manager.queue.write_texture(
-            destination={"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},
-            data=memoryview(pixels.tobytes()),
-            data_layout={"offset": 0, "bytes_per_row": 4, "rows_per_image": 1},
-            size=(1, 1, 1),
-        )
-        self._default_explored_texture = texture
-        return texture
+        return self._default_explored_texture
 
     def _get_default_visible_texture(self) -> wgpu.GPUTexture | None:
         """Return a 1x1 white texture to treat all tiles as visible."""
@@ -300,21 +273,11 @@ class WGPUAtmosphericRenderer:
         if config.IS_TEST_ENVIRONMENT:
             return None
 
-        # Create 1x1 RGBA texture with white (fully visible)
-        pixels = np.array([[[255, 255, 255, 255]]], dtype="u1")
-        texture = self.resource_manager.device.create_texture(
-            size=(1, 1, 1),
-            format="rgba8unorm",
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        self._default_visible_texture = self.resource_manager.create_default_texture(
+            data=bytes([255, 255, 255, 255]),
+            label="atmospheric_default_visible",
         )
-        self.resource_manager.queue.write_texture(
-            destination={"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},
-            data=memoryview(pixels.tobytes()),
-            data_layout={"offset": 0, "bytes_per_row": 4, "rows_per_image": 1},
-            size=(1, 1, 1),
-        )
-        self._default_visible_texture = texture
-        return texture
+        return self._default_visible_texture
 
     def _get_default_roof_surface_mask_texture(self) -> wgpu.GPUTexture | None:
         """Return a 1x1 black texture meaning no roof-surface override."""
@@ -323,20 +286,15 @@ class WGPUAtmosphericRenderer:
         if config.IS_TEST_ENVIRONMENT:
             return None
 
-        pixels = np.array([[0]], dtype="u1")
-        texture = self.resource_manager.device.create_texture(
-            size=(1, 1, 1),
-            format="r8unorm",
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        self._default_roof_surface_mask_texture = (
+            self.resource_manager.create_default_texture(
+                texture_format="r8unorm",
+                data=bytes([0]),
+                bytes_per_pixel=1,
+                label="atmospheric_default_roof_surface_mask",
+            )
         )
-        self.resource_manager.queue.write_texture(
-            destination={"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},
-            data=memoryview(pixels.tobytes()),
-            data_layout={"offset": 0, "bytes_per_row": 1, "rows_per_image": 1},
-            size=(1, 1, 1),
-        )
-        self._default_roof_surface_mask_texture = texture
-        return texture
+        return self._default_roof_surface_mask_texture
 
     def _upload_roof_surface_mask_texture(
         self,
@@ -353,45 +311,13 @@ class WGPUAtmosphericRenderer:
         if width <= 0 or height <= 0:
             return self._get_default_roof_surface_mask_texture()
 
-        size = (width, height)
-        if (
-            self._roof_surface_mask_texture is None
-            or self._roof_surface_mask_size != size
-        ):
-            self._roof_surface_mask_texture = (
-                self.resource_manager.device.create_texture(
-                    size=(width, height, 1),
-                    format="r8unorm",
-                    usage=wgpu.TextureUsage.TEXTURE_BINDING
-                    | wgpu.TextureUsage.COPY_DST,
-                    label="atmospheric_roof_surface_mask_texture",
-                )
+        self._roof_surface_mask_texture, self._roof_surface_mask_size = (
+            self.resource_manager.upload_mask_texture(
+                roof_surface_mask_buffer,
+                self._roof_surface_mask_texture,
+                self._roof_surface_mask_size,
+                label="atmospheric_roof_surface_mask_texture",
             )
-            self._roof_surface_mask_size = size
-
-        if roof_surface_mask_buffer.dtype == np.bool_:
-            mask_data = np.ascontiguousarray(
-                (roof_surface_mask_buffer.T * 255).astype(np.uint8)
-            )
-        else:
-            mask_data = np.ascontiguousarray(
-                roof_surface_mask_buffer.T.astype(np.uint8)
-            )
-
-        assert self._roof_surface_mask_texture is not None
-        self.resource_manager.queue.write_texture(
-            destination={
-                "texture": self._roof_surface_mask_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            data=memoryview(mask_data.tobytes()),
-            data_layout={
-                "offset": 0,
-                "bytes_per_row": width,
-                "rows_per_image": height,
-            },
-            size=(width, height, 1),
         )
         return self._roof_surface_mask_texture
 
@@ -499,7 +425,8 @@ class WGPUAtmosphericRenderer:
 
         # Build and upload uniform data
         uniform_data = self._build_uniforms(
-            letterbox_geometry=letterbox_geometry or (0, 0, 800, 600),
+            letterbox_geometry=letterbox_geometry
+            or (0, 0, int(window_size[0]), int(window_size[1])),
             viewport_offset=viewport_offset,
             viewport_size=viewport_size,
             map_size=map_size,

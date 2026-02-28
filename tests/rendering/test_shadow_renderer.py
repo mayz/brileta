@@ -734,6 +734,7 @@ def _build_screen_renderer_for_split_tests(
     renderer._shadow_bind_group = Mock(name="shadow_bind_group")
     renderer._actor_lighting_enabled = False
     renderer._actor_light_viewport_origin = (0, 0)
+    renderer._sun_direction = (0.0, 0.0)
     return renderer
 
 

@@ -11,6 +11,8 @@ import wgpu
 
 from brileta.types import PixelPos, PixelRect
 
+from .resource_manager import ALPHA_BLEND_STATE
+
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
@@ -119,18 +121,7 @@ class WGPUTexturedQuadRenderer:
         targets = [
             {
                 "format": self.surface_format,
-                "blend": {
-                    "color": {
-                        "operation": wgpu.BlendOperation.add,
-                        "src_factor": wgpu.BlendFactor.src_alpha,
-                        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                    },
-                    "alpha": {
-                        "operation": wgpu.BlendOperation.add,
-                        "src_factor": wgpu.BlendFactor.one,
-                        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                    },
-                },
+                "blend": ALPHA_BLEND_STATE,
                 "write_mask": wgpu.ColorWrite.ALL,
             }
         ]
@@ -203,7 +194,8 @@ class WGPUTexturedQuadRenderer:
         if letterbox_geometry is not None:
             offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
         else:
-            offset_x, offset_y, scaled_w, scaled_h = 0, 0, 800, 600  # Fallback
+            offset_x, offset_y = 0, 0
+            scaled_w, scaled_h = window_size
 
         letterbox_data = struct.pack(
             "4f", float(offset_x), float(offset_y), float(scaled_w), float(scaled_h)

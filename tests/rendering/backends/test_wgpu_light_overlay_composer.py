@@ -27,6 +27,7 @@ def _build_composer() -> tuple[WGPULightOverlayComposer, Mock, Mock]:
     resource_manager.device = device
     resource_manager.queue = queue
     resource_manager.get_or_create_render_texture.return_value = _mock_texture(4, 4)
+    resource_manager.upload_mask_texture.return_value = (_mock_texture(4, 4), (4, 4))
 
     shader_manager = Mock()
     shader_manager.create_render_pipeline.return_value = Mock()

@@ -1295,86 +1295,30 @@ class GPULightingSystem(LightingSystem):
 
     def _create_default_sky_exposure_texture(self) -> None:
         """Create a default 1x1 sky exposure texture for when no map is available."""
-
-        # Create 1x1 texture with 0.0 sky exposure
-        self._sky_exposure_texture = self.device.create_texture(
-            size=(1, 1, 1),
-            format=wgpu.TextureFormat.rgba8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
-        self._bind_group = None  # Invalidate bind group when texture is created
-
-        # Write zero sky exposure (RGBA8 format)
-        sky_data = np.array([0, 0, 0, 255], dtype=np.uint8)  # [R, G, B, A]
-        self.queue.write_texture(
-            {
-                "texture": self._sky_exposure_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(sky_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": 4,  # 1 pixel * 4 bytes (RGBA8)
-                "rows_per_image": 1,
-            },
-            (1, 1, 1),
+        assert self._resource_manager is not None
+        self._sky_exposure_texture = self._resource_manager.create_default_texture(
+            data=bytes([0, 0, 0, 255]),
+            label="default_sky_exposure",
         )
 
     def _create_default_emission_texture(self) -> None:
         """Create a default 1x1 emission texture for when no map is available."""
-
-        # Create 1x1 texture with zero emission (RGBA32float format)
-        self._emission_texture = self.device.create_texture(
-            size=(1, 1, 1),
-            format=wgpu.TextureFormat.rgba32float,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
-        self._bind_group = None  # Invalidate bind group when texture is created
-
-        # Write zero emission (RGBA32float format - 16 bytes per pixel)
-        emission_data = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-        self.queue.write_texture(
-            {
-                "texture": self._emission_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(emission_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": 16,  # 1 pixel * 4 components * 4 bytes
-                "rows_per_image": 1,
-            },
-            (1, 1, 1),
+        assert self._resource_manager is not None
+        self._emission_texture = self._resource_manager.create_default_texture(
+            texture_format=wgpu.TextureFormat.rgba32float,
+            data=bytes(16),  # 4 float32 zeros
+            bytes_per_pixel=16,
+            label="default_emission",
         )
 
     def _create_default_shadow_grid_texture(self) -> None:
         """Create a default 1x1 shadow grid texture for when no map is available."""
-
-        # Create 1x1 texture with no shadow blocking (r8unorm format)
-        self._shadow_grid_texture = self.device.create_texture(
-            size=(1, 1, 1),
-            format=wgpu.TextureFormat.r8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
-        self._bind_group = None  # Invalidate bind group when texture is created
-
-        # Write zero shadow blocking (R8 format - 1 byte per pixel)
-        shadow_data = np.array([0], dtype=np.uint8)  # No shadow
-        self.queue.write_texture(
-            {
-                "texture": self._shadow_grid_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(shadow_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": 1,  # 1 pixel * 1 byte (R8)
-                "rows_per_image": 1,
-            },
-            (1, 1, 1),
+        assert self._resource_manager is not None
+        self._shadow_grid_texture = self._resource_manager.create_default_texture(
+            texture_format=wgpu.TextureFormat.r8unorm,
+            data=bytes([0]),
+            bytes_per_pixel=1,
+            label="default_shadow_grid",
         )
 
     # LightingSystem event handlers

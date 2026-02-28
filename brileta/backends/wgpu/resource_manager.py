@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+import numpy as np
 import wgpu
 
-if TYPE_CHECKING:
-    from collections.abc import Hashable
+# Standard premultiplied alpha-blend state used by most renderers.
+# Extracted here so pipeline creation sites can reference a single constant
+# instead of repeating the same 10-line dict.
+ALPHA_BLEND_STATE: dict = {
+    "color": {
+        "operation": wgpu.BlendOperation.add,
+        "src_factor": wgpu.BlendFactor.src_alpha,
+        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
+    },
+    "alpha": {
+        "operation": wgpu.BlendOperation.add,
+        "src_factor": wgpu.BlendFactor.one,
+        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
+    },
+}
 
 
 class WGPUResourceManager:
@@ -37,9 +49,6 @@ class WGPUResourceManager:
 
         # Cache for render target textures keyed by (width, height, format, suffix)
         self._texture_cache: dict[tuple[int, int, str, str], wgpu.GPUTexture] = {}
-
-        # Track custom cache keys for specialized textures
-        self._custom_texture_cache: dict[Hashable, wgpu.GPUTexture] = {}
 
         # Cache for vertex buffers by usage and size
         self._buffer_cache: dict[tuple[int, int], wgpu.GPUBuffer] = {}
@@ -202,7 +211,7 @@ class WGPUResourceManager:
 
         Args:
             texture: The texture to create a view for
-            format: Optional format override
+            texture_format: Optional format override
 
         Returns:
             Texture view for the given texture
@@ -230,7 +239,7 @@ class WGPUResourceManager:
             width: Width of the texture
             height: Height of the texture
             data: Raw texture data bytes
-            format: Texture format
+            texture_format: Texture format
 
         Returns:
             WGPU texture loaded with the provided data
@@ -259,6 +268,73 @@ class WGPUResourceManager:
 
         return texture
 
+    def create_default_texture(
+        self,
+        *,
+        texture_format: str = "rgba8unorm",
+        data: bytes,
+        bytes_per_pixel: int = 4,
+        label: str = "",
+    ) -> wgpu.GPUTexture:
+        """Create a 1x1 fallback texture with the given pixel data.
+
+        Reduces boilerplate at call sites that need tiny placeholder textures
+        for bind group slots (e.g., "all white" explored masks, transparent
+        sprite atlas placeholders).
+        """
+        texture = self.device.create_texture(
+            size=(1, 1, 1),
+            format=texture_format,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            label=label,
+        )
+        self.queue.write_texture(
+            {"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},
+            memoryview(data),
+            {"offset": 0, "bytes_per_row": bytes_per_pixel, "rows_per_image": 1},
+            (1, 1, 1),
+        )
+        return texture
+
+    def upload_mask_texture(
+        self,
+        buffer: np.ndarray,
+        existing_texture: wgpu.GPUTexture | None,
+        existing_size: tuple[int, int] | None,
+        label: str = "",
+    ) -> tuple[wgpu.GPUTexture, tuple[int, int]]:
+        """Upload a 2D boolean/uint8 mask to an r8unorm GPU texture.
+
+        Handles dtype conversion (bool -> uint8 * 255), transpose from
+        column-major game arrays to row-major texture layout, and texture
+        reuse when the size is unchanged.
+
+        Returns the (possibly new) texture and its (width, height) for caching.
+        """
+        if buffer.ndim != 2:
+            raise ValueError("mask buffer must be a 2D array")
+        width = int(buffer.shape[0])
+        height = int(buffer.shape[1])
+        size = (width, height)
+        if existing_texture is None or existing_size != size:
+            existing_texture = self.device.create_texture(
+                size=(width, height, 1),
+                format=wgpu.TextureFormat.r8unorm,
+                usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+                label=label,
+            )
+        if buffer.dtype == np.bool_:
+            data = np.ascontiguousarray((buffer.T * 255).astype(np.uint8))
+        else:
+            data = np.ascontiguousarray(buffer.T.astype(np.uint8))
+        self.queue.write_texture(
+            {"texture": existing_texture, "mip_level": 0, "origin": (0, 0, 0)},
+            memoryview(data.tobytes()),
+            {"offset": 0, "bytes_per_row": width, "rows_per_image": height},
+            (width, height, 1),
+        )
+        return existing_texture, size
+
     def release_all(self) -> None:
         """Release all cached GPU resources.
 
@@ -269,11 +345,6 @@ class WGPUResourceManager:
         for texture in self._texture_cache.values():
             texture.destroy()
         self._texture_cache.clear()
-
-        # Release custom texture cache
-        for texture in self._custom_texture_cache.values():
-            texture.destroy()
-        self._custom_texture_cache.clear()
 
         # Release buffer cache
         for buffer in self._buffer_cache.values():
@@ -288,19 +359,3 @@ class WGPUResourceManager:
         self._standard_bind_group_layout = None
         self._nearest_sampler = None
         self._linear_sampler = None
-
-    def get_cache_info(self) -> dict[str, int]:
-        """Get information about cached resources.
-
-        Returns:
-            Dictionary with cache statistics
-        """
-        return {
-            "texture_count": len(self._texture_cache),
-            "custom_texture_count": len(self._custom_texture_cache),
-            "buffer_count": len(self._buffer_cache),
-            "texture_view_count": len(self._texture_view_cache),
-            "total_resource_count": len(self._texture_cache)
-            + len(self._custom_texture_cache)
-            + len(self._buffer_cache),
-        }

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import wgpu
 
-if TYPE_CHECKING:
-    pass
+from .resource_manager import ALPHA_BLEND_STATE
 
 logger = logging.getLogger(__name__)
 
@@ -155,18 +153,7 @@ class WGPUShaderManager:
             targets = [
                 {
                     "format": "bgra8unorm",  # Common swap chain format
-                    "blend": {
-                        "color": {
-                            "operation": wgpu.BlendOperation.add,
-                            "src_factor": wgpu.BlendFactor.src_alpha,
-                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                        },
-                        "alpha": {
-                            "operation": wgpu.BlendOperation.add,
-                            "src_factor": wgpu.BlendFactor.one,
-                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                        },
-                    },
+                    "blend": ALPHA_BLEND_STATE,
                     "write_mask": wgpu.ColorWrite.ALL,
                 }
             ]

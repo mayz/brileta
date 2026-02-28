@@ -17,6 +17,8 @@ from brileta.types import (
     WorldTilePos,
 )
 
+from .resource_manager import ALPHA_BLEND_STATE
+
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
@@ -240,18 +242,7 @@ class WGPUScreenRenderer:
         targets = [
             {
                 "format": self.surface_format,
-                "blend": {
-                    "color": {
-                        "operation": wgpu.BlendOperation.add,
-                        "src_factor": wgpu.BlendFactor.src_alpha,
-                        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                    },
-                    "alpha": {
-                        "operation": wgpu.BlendOperation.add,
-                        "src_factor": wgpu.BlendFactor.one,
-                        "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
-                    },
-                },
+                "blend": ALPHA_BLEND_STATE,
                 "write_mask": wgpu.ColorWrite.ALL,
             }
         ]
@@ -831,7 +822,7 @@ class WGPUScreenRenderer:
         actor_lighting_enabled = self._actor_lighting_enabled
         actor_light_viewport_origin = self._actor_light_viewport_origin
         actor_lighting_flag = 1.0 if actor_lighting_enabled else 0.0
-        sun_dx, sun_dy = getattr(self, "_sun_direction", (0.0, 0.0))
+        sun_dx, sun_dy = self._sun_direction
         letterbox_data = struct.pack(
             "12f",
             float(offset_x),

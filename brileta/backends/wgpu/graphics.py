@@ -48,6 +48,38 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Blend weights for CPU actor lighting: 70% multiplicative + 30% additive.
+_LIGHT_MUL = 0.7
+_LIGHT_ADD = 0.3
+
+
+def _apply_light_tint(
+    base: tuple[float, float, float],
+    light: ColorRGBf,
+) -> tuple[float, float, float, float]:
+    """Blend actor base color with light intensity for CPU lighting path.
+
+    Uses a mix of multiplication (for shading) and addition (for color tint)
+    so actors are visibly tinted by colored lights.
+    """
+    return (
+        min(1.0, base[0] * light[0] * _LIGHT_MUL + light[0] * _LIGHT_ADD),
+        min(1.0, base[1] * light[1] * _LIGHT_MUL + light[1] * _LIGHT_ADD),
+        min(1.0, base[2] * light[2] * _LIGHT_MUL + light[2] * _LIGHT_ADD),
+        1.0,
+    )
+
+
+def _normalize_tile_bg(tile_bg: colors.Color | None) -> ColorRGBf:
+    """Clamp and normalize a 0-255 RGB tile background to 0.0-1.0."""
+    if tile_bg is None:
+        return (0.0, 0.0, 0.0)
+    return (
+        max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
+        max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
+        max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class AtmosphericLayerState:
@@ -267,41 +299,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Set up dimensions and coordinate converter
         self.update_dimensions()
 
-        # Note: Shader precompilation is not needed here because all renderers
-        # compile their shaders during pipeline creation above. The shader manager
-        # caches compiled modules, so calling _precompile_shaders() would just
-        # do redundant cache lookups.
-
-    def _precompile_shaders(self) -> None:
-        """Pre-compile commonly used shaders to avoid runtime compilation stutters.
-
-        This ensures that shaders are compiled during initialization rather than
-        on first use, preventing frame drops when particles/effects first appear.
-        """
-        if self.shader_manager is None:
-            return
-
-        # Pre-load commonly used shaders
-        shaders_to_precompile = [
-            "wgsl/screen/main.wgsl",  # Main screen rendering (particles, actors)
-            "wgsl/glyph/main.wgsl",  # Glyph buffer rendering
-            "wgsl/ui/texture.wgsl",  # UI texture rendering
-        ]
-
-        for shader_path in shaders_to_precompile:
-            try:
-                # Loading the shader source triggers caching
-                self.shader_manager.load_shader_source(shader_path)
-                # Create shader module to trigger compilation
-                self.shader_manager.create_shader_module(shader_path, shader_path)
-            except Exception as e:
-                # Log but don't fail initialization if a shader can't be pre-compiled
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    f"Failed to pre-compile shader {shader_path}: {e}"
-                )
-
     def create_sprite_atlas(self, width: int, height: int) -> SpriteAtlas:
         """Create a new SpriteAtlas backed by this context's GPU resources.
 
@@ -448,40 +445,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         use_gpu_actor_lighting = (
             self._gpu_actor_lighting_enabled and world_pos is not None
         )
-        normalized_tile_bg = (0.0, 0.0, 0.0)
-        if use_gpu_actor_lighting and tile_bg is not None:
-            normalized_tile_bg = (
-                max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
-                max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
-                max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
-            )
+        normalized_tile_bg = (
+            _normalize_tile_bg(tile_bg) if use_gpu_actor_lighting else (0.0, 0.0, 0.0)
+        )
 
         if use_gpu_actor_lighting:
-            final_color = (
-                base_color[0],
-                base_color[1],
-                base_color[2],
-                1.0,
-            )
+            final_color = (base_color[0], base_color[1], base_color[2], 1.0)
         else:
-            # Apply colored lighting using a blend that preserves actor color and light tint
-            # This approach ensures actors are visibly tinted by colored lights
-            # We use a mix of multiplication (for shading) and addition (for color tint)
-            final_color = (
-                min(
-                    1.0,
-                    base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3,
-                ),
-                min(
-                    1.0,
-                    base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3,
-                ),
-                min(
-                    1.0,
-                    base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3,
-                ),
-                1.0,  # Always fully opaque
-            )
+            final_color = _apply_light_tint(base_color, light_intensity)
         uv_coords = self.uv_map[self._cp437_index_for_char(char)]
 
         # Use integer tile dimensions for consistent positioning
@@ -547,32 +518,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         use_gpu_actor_lighting = (
             self._gpu_actor_lighting_enabled and world_pos is not None
         )
-        normalized_tile_bg = (0.0, 0.0, 0.0)
-        if use_gpu_actor_lighting and tile_bg is not None:
-            normalized_tile_bg = (
-                max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
-                max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
-                max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
-            )
+        normalized_tile_bg = (
+            _normalize_tile_bg(tile_bg) if use_gpu_actor_lighting else (0.0, 0.0, 0.0)
+        )
 
         if use_gpu_actor_lighting:
             final_color = (base_color[0], base_color[1], base_color[2], 1.0)
         else:
-            final_color = (
-                min(
-                    1.0,
-                    base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3,
-                ),
-                min(
-                    1.0,
-                    base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3,
-                ),
-                min(
-                    1.0,
-                    base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3,
-                ),
-                1.0,
-            )
+            final_color = _apply_light_tint(base_color, light_intensity)
 
         uv_coords = (sprite_uv.u1, sprite_uv.v1, sprite_uv.u2, sprite_uv.v2)
 
@@ -665,9 +618,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             lb = light_intensity[:, 2]
             final_colors = np.column_stack(
                 [
-                    np.minimum(1.0, base_r * lr * 0.7 + lr * 0.3),
-                    np.minimum(1.0, base_g * lg * 0.7 + lg * 0.3),
-                    np.minimum(1.0, base_b * lb * 0.7 + lb * 0.3),
+                    np.minimum(1.0, base_r * lr * _LIGHT_MUL + lr * _LIGHT_ADD),
+                    np.minimum(1.0, base_g * lg * _LIGHT_MUL + lg * _LIGHT_ADD),
+                    np.minimum(1.0, base_b * lb * _LIGHT_MUL + lb * _LIGHT_ADD),
                     np.ones(n, dtype=np.float32),
                 ]
             )
