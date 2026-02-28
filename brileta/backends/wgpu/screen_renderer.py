@@ -283,7 +283,9 @@ class WGPUScreenRenderer:
                 },
                 {
                     "binding": 3,
-                    "resource": lightmap_texture.create_view(),
+                    "resource": self.resource_manager.get_texture_view(
+                        lightmap_texture
+                    ),
                 },
                 {
                     "binding": 4,

@@ -548,6 +548,7 @@ class WGPUAtmosphericRenderer:
         roof_surface_mask_texture: wgpu.GPUTexture,
     ) -> wgpu.GPUBindGroup:
         """Create bind group for the current frame's textures."""
+        get_view = self.resource_manager.get_texture_view
         return self.shader_manager.create_bind_group(
             layout=self._bind_group_layout,
             entries=[
@@ -557,25 +558,25 @@ class WGPUAtmosphericRenderer:
                 },
                 {
                     "binding": 1,
-                    "resource": sky_exposure_texture.create_view(),
+                    "resource": get_view(sky_exposure_texture),
                 },
                 {
                     "binding": 2,
-                    "resource": explored_texture.create_view(),
+                    "resource": get_view(explored_texture),
                 },
                 {
                     "binding": 3,
-                    "resource": visible_texture.create_view(),
+                    "resource": get_view(visible_texture),
                 },
                 {
                     "binding": 4,
-                    "resource": roof_surface_mask_texture.create_view(),
+                    "resource": get_view(roof_surface_mask_texture),
                 },
                 {
                     "binding": 5,
-                    "resource": self._noise_texture.create_view()
+                    "resource": get_view(self._noise_texture)
                     if self._noise_texture
-                    else explored_texture.create_view(),
+                    else get_view(explored_texture),
                 },
                 {
                     "binding": 6,

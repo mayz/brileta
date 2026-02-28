@@ -1081,6 +1081,7 @@ class GPULightingSystem(LightingSystem):
             assert self._render_pipeline is not None
             assert self._output_texture is not None
             assert self._vertex_buffer is not None
+            assert self._resource_manager is not None
 
             # Use cached light data if revision hasn't changed
             if (
@@ -1127,7 +1128,9 @@ class GPULightingSystem(LightingSystem):
             render_pass = command_encoder.begin_render_pass(
                 color_attachments=[
                     {
-                        "view": self._output_texture.create_view(),
+                        "view": self._resource_manager.get_texture_view(
+                            self._output_texture
+                        ),
                         "resolve_target": None,
                         "clear_value": (0.0, 0.0, 0.0, 1.0),
                         "load_op": wgpu.LoadOp.clear,
@@ -1229,6 +1232,8 @@ class GPULightingSystem(LightingSystem):
         assert self._shadow_grid_texture is not None
 
         assert self._render_pipeline is not None
+        assert self._resource_manager is not None
+        get_view = self._resource_manager.get_texture_view
         self._bind_group = self.device.create_bind_group(
             layout=self._render_pipeline.get_bind_group_layout(0),
             entries=[
@@ -1238,7 +1243,7 @@ class GPULightingSystem(LightingSystem):
                 },
                 {
                     "binding": 22,
-                    "resource": self._sky_exposure_texture.create_view(),
+                    "resource": get_view(self._sky_exposure_texture),
                 },
                 {
                     "binding": 23,
@@ -1246,11 +1251,11 @@ class GPULightingSystem(LightingSystem):
                 },
                 {
                     "binding": 24,
-                    "resource": self._emission_texture.create_view(),
+                    "resource": get_view(self._emission_texture),
                 },
                 {
                     "binding": 25,
-                    "resource": self._shadow_grid_texture.create_view(),
+                    "resource": get_view(self._shadow_grid_texture),
                 },
             ],
         )

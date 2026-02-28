@@ -17,6 +17,7 @@ def test_compute_lightmap_texture_path_skips_full_readback_copy() -> None:
     system._render_pipeline = Mock()
     system._vertex_buffer = Mock()
     system._output_texture = Mock()
+    system._resource_manager = Mock()
     system._bind_group = Mock()
     system._last_light_data_hash = None
     system._cached_light_revision = -1

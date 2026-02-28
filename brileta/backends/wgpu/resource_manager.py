@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import weakref
+
 import numpy as np
 import wgpu
 
@@ -53,8 +55,12 @@ class WGPUResourceManager:
         # Cache for vertex buffers by usage and size
         self._buffer_cache: dict[tuple[int, int], wgpu.GPUBuffer] = {}
 
-        # Track texture views for render targets
-        self._texture_view_cache: dict[int, wgpu.GPUTextureView] = {}
+        # Cache texture views keyed by the texture object itself.
+        # WeakKeyDictionary ensures entries are dropped when a texture is
+        # garbage-collected, preventing stale views and unbounded growth.
+        self._texture_view_cache: weakref.WeakKeyDictionary[
+            wgpu.GPUTexture, wgpu.GPUTextureView
+        ] = weakref.WeakKeyDictionary()
 
         # Shared bind group layouts and samplers (created lazily)
         self._standard_bind_group_layout: wgpu.GPUBindGroupLayout | None = None
@@ -216,18 +222,16 @@ class WGPUResourceManager:
         Returns:
             Texture view for the given texture
         """
-        # Use texture object id as cache key
-        texture_id = id(texture)
-
-        if texture_id in self._texture_view_cache:
-            return self._texture_view_cache[texture_id]
+        cached = self._texture_view_cache.get(texture)
+        if cached is not None:
+            return cached
 
         # Create new texture view
         if texture_format:
             view = texture.create_view(format=texture_format)
         else:
             view = texture.create_view()
-        self._texture_view_cache[texture_id] = view
+        self._texture_view_cache[texture] = view
         return view
 
     def create_atlas_texture(

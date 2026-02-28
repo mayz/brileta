@@ -124,6 +124,11 @@ class WGPUGlyphRenderer:
             label="glyph_renderer_uniform_buffer",
         )
 
+        # Cache last-written uniform data to skip redundant write_buffer calls.
+        # Within a single frame the glyph renderer is called multiple times
+        # (dark world, light world) with identical uniform parameters.
+        self._last_uniform_data: bytes = b""
+
         # Create pipeline and bind groups
         self._create_pipeline()
 
@@ -393,9 +398,13 @@ class WGPUGlyphRenderer:
             offset_y,
             self.noise_seed & 0xFFFFFFFF,
         )
-        self.resource_manager.queue.write_buffer(
-            self.uniform_buffer, 0, memoryview(uniform_data)
-        )
+        # Skip redundant uniform write when called multiple times per frame
+        # with the same parameters (e.g. dark world + light world renders).
+        if uniform_data != self._last_uniform_data:
+            self.resource_manager.queue.write_buffer(
+                self.uniform_buffer, 0, memoryview(uniform_data)
+            )
+            self._last_uniform_data = uniform_data
 
         with record_time_live_variable("time.render.texture.vbo_update_ms"):
             vertex_count = self._build_glyph_vertices(glyph_buffer, cpu_buffer_override)
@@ -423,11 +432,11 @@ class WGPUGlyphRenderer:
             render_pass = command_encoder.begin_render_pass(
                 color_attachments=[
                     {
-                        "view": render_texture.create_view(),
+                        "view": self.resource_manager.get_texture_view(render_texture),
                         "resolve_target": None,
                         "clear_value": (0.0, 0.0, 0.0, 0.0),  # Transparent background
-                        "load_op": "clear",
-                        "store_op": "store",
+                        "load_op": wgpu.LoadOp.clear,
+                        "store_op": wgpu.StoreOp.store,
                     }
                 ]
             )

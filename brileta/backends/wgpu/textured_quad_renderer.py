@@ -87,6 +87,10 @@ class WGPUTexturedQuadRenderer:
             wgpu.GPUTexture, wgpu.GPUBindGroup
         ] = weakref.WeakKeyDictionary()
 
+        # Cache last-written uniform data to skip redundant write_buffer calls.
+        # Letterbox parameters only change on window resize, so most frames skip.
+        self._last_uniform_data: bytes = b""
+
     def _create_pipeline(self) -> None:
         """Create the WGPU render pipeline for textured quad rendering."""
         # Use shared bind group layout from resource manager
@@ -200,9 +204,12 @@ class WGPUTexturedQuadRenderer:
         letterbox_data = struct.pack(
             "4f", float(offset_x), float(offset_y), float(scaled_w), float(scaled_h)
         )
-        self.resource_manager.queue.write_buffer(
-            self.uniform_buffer, 0, memoryview(letterbox_data)
-        )
+        # Skip redundant uniform write if letterbox hasn't changed since last frame.
+        if letterbox_data != self._last_uniform_data:
+            self.resource_manager.queue.write_buffer(
+                self.uniform_buffer, 0, memoryview(letterbox_data)
+            )
+            self._last_uniform_data = letterbox_data
 
         # Upload all vertex data to GPU in a single operation
         self.resource_manager.queue.write_buffer(

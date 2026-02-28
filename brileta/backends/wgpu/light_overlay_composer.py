@@ -159,14 +159,15 @@ class WGPULightOverlayComposer:
             self._uniform_buffer, 0, memoryview(uniform_data)
         )
 
+        get_view = self.resource_manager.get_texture_view
         bind_group = self.resource_manager.device.create_bind_group(
             layout=self._bind_group_layout,
             entries=[
                 {"binding": 0, "resource": {"buffer": self._uniform_buffer}},
-                {"binding": 1, "resource": dark_texture.create_view()},
-                {"binding": 2, "resource": light_texture.create_view()},
-                {"binding": 3, "resource": lightmap_texture.create_view()},
-                {"binding": 4, "resource": visible_texture.create_view()},
+                {"binding": 1, "resource": get_view(dark_texture)},
+                {"binding": 2, "resource": get_view(light_texture)},
+                {"binding": 3, "resource": get_view(lightmap_texture)},
+                {"binding": 4, "resource": get_view(visible_texture)},
             ],
             label="light_overlay_compose_bind_group",
         )
@@ -176,7 +177,7 @@ class WGPULightOverlayComposer:
             render_pass = command_encoder.begin_render_pass(
                 color_attachments=[
                     {
-                        "view": output_texture.create_view(),
+                        "view": get_view(output_texture),
                         "resolve_target": None,
                         "clear_value": (0.0, 0.0, 0.0, 0.0),
                         "load_op": wgpu.LoadOp.clear,
