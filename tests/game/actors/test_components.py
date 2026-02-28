@@ -256,7 +256,7 @@ class TestInventoryComponentGaps:
 
     Existing coverage in test_inventory.py:
     - get_used_inventory_slots() with various sizes
-    - can_add_to_inventory() capacity checks
+    - can_add_voluntary_item() capacity checks
     - equip_from_inventory() / unequip_to_inventory()
     - try_remove_item() from equipped and stored
     """

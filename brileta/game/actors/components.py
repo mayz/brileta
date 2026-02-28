@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from brileta.game.outfit import OutfitCapability
@@ -62,6 +62,15 @@ from .conditions import Condition, Exhaustion
 from .status_effects import EncumberedEffect, StatusEffect
 
 _DEFAULT_VISUAL_EFFECTS_DELTA_TIME = DeltaTime(0.016)
+
+# Map ItemSize to inventory slot count. TINY returns 0 because multiple tiny
+# items share a single slot (tracked separately via a has-tiny flag).
+_ITEM_SIZE_SLOTS: dict[ItemSize, int] = {
+    ItemSize.TINY: 0,
+    ItemSize.NORMAL: 1,
+    ItemSize.BIG: 2,
+    ItemSize.HUGE: 4,
+}
 
 
 @dataclass(slots=True)
@@ -418,51 +427,43 @@ class CharacterInventory(InventoryComponent):
 
     # === Storage Management ===
 
+    def _iter_all_items(self) -> list[Item]:
+        """Return all items across stored inventory, ready slots, and outfit.
+
+        Does not include Conditions. Used by slot-counting and display methods
+        to avoid duplicating the three-way iteration pattern.
+        """
+        items: list[Item] = [
+            entity for entity in self._stored_items if isinstance(entity, Item)
+        ]
+        items.extend(eq for eq in self.ready_slots if eq is not None)
+        if self._equipped_outfit is not None:
+            items.append(self._equipped_outfit[0])
+        return items
+
+    def _has_tiny_item(self) -> bool:
+        """Check if any tiny item exists in stored, equipped, or outfit slots."""
+        return any(item.size == ItemSize.TINY for item in self._iter_all_items())
+
     def get_used_inventory_slots(self) -> int:
         """Calculate inventory slots currently used (includes equipped items)."""
         used_space = 0
-        has_tiny_items = False
+        has_tiny = False
 
-        # Count stored items
-        for entity_in_slot in self._stored_items:
-            if isinstance(entity_in_slot, Item):
-                item = entity_in_slot
-                if item.size == ItemSize.TINY:
-                    has_tiny_items = True
-                elif item.size == ItemSize.NORMAL:
-                    used_space += 1
-                elif item.size == ItemSize.BIG:
-                    used_space += 2
-                elif item.size == ItemSize.HUGE:
-                    used_space += 4
-            elif isinstance(entity_in_slot, Condition):
-                used_space += 1
+        # Count all items (stored, equipped, outfit)
+        for item in self._iter_all_items():
+            slots = _ITEM_SIZE_SLOTS[item.size]
+            if slots == 0:  # TINY items share a single slot
+                has_tiny = True
+            else:
+                used_space += slots
 
-        # Count equipped weapons
-        for equipped_item in self.ready_slots:
-            if equipped_item:
-                if equipped_item.size == ItemSize.TINY:
-                    has_tiny_items = True
-                elif equipped_item.size == ItemSize.NORMAL:
-                    used_space += 1
-                elif equipped_item.size == ItemSize.BIG:
-                    used_space += 2
-                elif equipped_item.size == ItemSize.HUGE:
-                    used_space += 4
+        # Conditions each take 1 slot
+        used_space += sum(
+            1 for entity in self._stored_items if isinstance(entity, Condition)
+        )
 
-        # Count equipped outfit
-        if self._equipped_outfit is not None:
-            outfit_item, _ = self._equipped_outfit
-            if outfit_item.size == ItemSize.TINY:
-                has_tiny_items = True
-            elif outfit_item.size == ItemSize.NORMAL:
-                used_space += 1
-            elif outfit_item.size == ItemSize.BIG:
-                used_space += 2
-            elif outfit_item.size == ItemSize.HUGE:
-                used_space += 4
-
-        if has_tiny_items:
+        if has_tiny:
             used_space += 1
 
         return used_space
@@ -487,26 +488,15 @@ class CharacterInventory(InventoryComponent):
         return (current_used + additional_space) <= self.stats.inventory_slots
 
     def _calculate_space_needed(self, item: Item | Condition) -> int:
-        """Calculate how many slots an item needs."""
-        if isinstance(item, Item):
-            if item.size == ItemSize.TINY:
-                has_tiny = any(
-                    isinstance(i, Item) and i.size == ItemSize.TINY
-                    for i in self._stored_items
-                ) or any(
-                    eq_item is not None and eq_item.size == ItemSize.TINY
-                    for eq_item in self.ready_slots
-                )
-                return 0 if has_tiny else 1
-            if item.size == ItemSize.NORMAL:
-                return 1
-            if item.size == ItemSize.BIG:
-                return 2
-            if item.size == ItemSize.HUGE:
-                return 4
+        """Calculate how many additional slots an item would need."""
         if isinstance(item, Condition):
             return 1
-        return 1
+        # TINY items share a single slot. If one already exists, adding
+        # another costs 0 extra slots. Otherwise it costs 1.
+        slots = _ITEM_SIZE_SLOTS[item.size]
+        if slots == 0:
+            return 0 if self._has_tiny_item() else 1
+        return slots
 
     def add_voluntary_item(self, item: Item) -> tuple[bool, str]:
         """Add a voluntary item if space allows."""
@@ -562,12 +552,6 @@ class CharacterInventory(InventoryComponent):
                 )
             )
 
-    def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
-        """DEPRECATED. Use ``can_add_voluntary_item`` or ``add_condition``."""
-        if isinstance(item_to_add, Item):
-            return self.can_add_voluntary_item(item_to_add)
-        return True
-
     def add_to_inventory(self, item: Item | Condition) -> tuple[bool, str, list[Item]]:
         """Add item to inventory. Returns (success, message, dropped_items)."""
         if isinstance(item, Condition):
@@ -618,58 +602,24 @@ class CharacterInventory(InventoryComponent):
     def get_inventory_slot_colors(self) -> list[colors.Color]:
         """Get colors representing filled inventory slots."""
         slot_colors: list[colors.Color] = []
-        has_processed_tiny_slot = False
+        has_tiny = False
 
-        # Process stored items
-        for entity_in_slot in self._stored_items:
-            if isinstance(entity_in_slot, Item):
-                item = entity_in_slot
-                item_bar_color = colors.WHITE
+        # All items (stored, equipped, outfit) use WHITE
+        for item in self._iter_all_items():
+            slots = _ITEM_SIZE_SLOTS[item.size]
+            if slots == 0:  # TINY items share a single slot
+                if not has_tiny:
+                    slot_colors.append(colors.WHITE)
+                    has_tiny = True
+            else:
+                slot_colors.extend([colors.WHITE] * slots)
 
-                if item.size == ItemSize.TINY:
-                    if not has_processed_tiny_slot:
-                        slot_colors.append(item_bar_color)
-                        has_processed_tiny_slot = True
-                elif item.size == ItemSize.NORMAL:
-                    slot_colors.append(item_bar_color)
-                elif item.size == ItemSize.BIG:
-                    slot_colors.extend([item_bar_color] * 2)
-                elif item.size == ItemSize.HUGE:
-                    slot_colors.extend([item_bar_color] * 4)
-            elif isinstance(entity_in_slot, Condition):
-                slot_colors.append(entity_in_slot.display_color)
-
-        # Process equipped weapons
-        for equipped_item in self.ready_slots:
-            if equipped_item:
-                item_bar_color = colors.WHITE
-
-                if equipped_item.size == ItemSize.TINY:
-                    if not has_processed_tiny_slot:
-                        slot_colors.append(item_bar_color)
-                        has_processed_tiny_slot = True
-                elif equipped_item.size == ItemSize.NORMAL:
-                    slot_colors.append(item_bar_color)
-                elif equipped_item.size == ItemSize.BIG:
-                    slot_colors.extend([item_bar_color] * 2)
-                elif equipped_item.size == ItemSize.HUGE:
-                    slot_colors.extend([item_bar_color] * 4)
-
-        # Process equipped outfit
-        if self._equipped_outfit is not None:
-            outfit_item, _ = self._equipped_outfit
-            armor_color = colors.WHITE
-
-            if outfit_item.size == ItemSize.TINY:
-                if not has_processed_tiny_slot:
-                    slot_colors.append(armor_color)
-                    has_processed_tiny_slot = True
-            elif outfit_item.size == ItemSize.NORMAL:
-                slot_colors.append(armor_color)
-            elif outfit_item.size == ItemSize.BIG:
-                slot_colors.extend([armor_color] * 2)
-            elif outfit_item.size == ItemSize.HUGE:
-                slot_colors.extend([armor_color] * 4)
+        # Conditions use their own display color, 1 slot each
+        slot_colors.extend(
+            entity.display_color
+            for entity in self._stored_items
+            if isinstance(entity, Condition)
+        )
 
         return slot_colors
 
@@ -1148,26 +1098,28 @@ class ModifiersComponent:
         """
         multiplier = 1.0
 
+        # Fetch conditions once to avoid repeated filtering
+        all_conditions = self.get_all_conditions()
+
         # Apply condition-based modifiers (e.g., leg injury)
-        for condition in self.get_all_conditions():
+        exhaustion_count = 0
+        for condition in all_conditions:
             multiplier *= condition.get_movement_cost_modifier()
+            if isinstance(condition, Exhaustion):
+                exhaustion_count += 1
 
         # Apply exhaustion penalty: 0.9x per stack
-        exhaustion_count = self.get_exhaustion_count()
         if exhaustion_count:
             multiplier *= (
                 MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK**exhaustion_count
             )
 
         # Apply graduated encumbrance penalty: 0.85^slots_over
-        # Only CharacterInventory has get_slots_over_capacity()
         inventory = self.actor.inventory
-        if inventory is not None:
-            get_slots_over = getattr(inventory, "get_slots_over_capacity", None)
-            if callable(get_slots_over):
-                slots_over = cast(int, get_slots_over())
-                if slots_over > 0:
-                    multiplier *= MovementConstants.ENCUMBRANCE_SPEED_BASE**slots_over
+        if isinstance(inventory, CharacterInventory):
+            slots_over = inventory.get_slots_over_capacity()
+            if slots_over > 0:
+                multiplier *= MovementConstants.ENCUMBRANCE_SPEED_BASE**slots_over
 
         return multiplier
 
