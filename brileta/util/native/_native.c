@@ -19,6 +19,8 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args);
 void brileta_native_init_popcount_table(void);
 /* Noise type registration provided by _native_noise.c. */
 int brileta_native_init_noise_type(PyObject *module);
+/* SpatialHashGrid type registration provided by _native_spatial.c. */
+int brileta_native_init_spatial_type(PyObject *module);
 
 /* Sprite drawing primitives provided by _native_sprites.c. */
 PyObject *brileta_native_sprite_alpha_blend(PyObject *self, PyObject *args);
@@ -176,6 +178,12 @@ PyMODINIT_FUNC PyInit__native(void) {
 
     /* Register the _NoiseState type (FastNoiseLite wrapper). */
     if (brileta_native_init_noise_type(m) < 0) {
+        Py_DECREF(m);
+        return NULL;
+    }
+
+    /* Register the SpatialHashGrid type. */
+    if (brileta_native_init_spatial_type(m) < 0) {
         Py_DECREF(m);
         return NULL;
     }

@@ -19,7 +19,7 @@ from tests.helpers import dt
 
 def create_spatial_index(actors: list[Actor]) -> SpatialIndex[Actor]:
     """Create a spatial index from a list of actors for testing."""
-    spatial_index = SpatialHashGrid[Actor](cell_size=16)
+    spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
     for actor in actors:
         spatial_index.add(actor)
     return spatial_index
@@ -729,7 +729,7 @@ class TestSoundSystemAudioStopping:
         )
 
         # Move just beyond max distance
-        actor.x = 8.1  # Distance = 8.1, just beyond max_distance
+        actor.x = 9  # Distance = 9, just beyond max_distance of 8.0
 
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
