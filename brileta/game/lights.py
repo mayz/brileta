@@ -56,6 +56,10 @@ class LightSource(ABC):
         self.position = position
         self.radius = radius
         self.color = color
+        # Defaults for attributes that only some subclasses override.
+        # Avoids getattr lookups in hot rendering loops.
+        self.owner: Actor | None = None
+        self.intensity: float = 1.0
 
     @abstractmethod
     def is_static(self) -> bool:

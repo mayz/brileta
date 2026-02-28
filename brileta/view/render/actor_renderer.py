@@ -261,18 +261,16 @@ class ActorRenderer:
         draw_root_y = root_y + (viewport_scale_y - 1.0) * anchor_y[si]
 
         # Vectorized console-to-screen-coords.
+        # letterbox_geometry is not on the GraphicsContext ABC, so one getattr
+        # is needed.  console_width_tiles / console_height_tiles / tile_dimensions
+        # are guaranteed by the ABC and accessed directly.
         letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
-        if isinstance(letterbox_geometry, tuple) and len(letterbox_geometry) == 4:
-            console_w = getattr(self.graphics, "console_width_tiles", None)
-            console_h = getattr(self.graphics, "console_height_tiles", None)
-            if console_w is not None and console_h is not None:
-                lx, ly, lw, lh = letterbox_geometry
-                screen_px_x = float(lx) + draw_root_x * (float(lw) / float(console_w))
-                screen_px_y = float(ly) + draw_root_y * (float(lh) / float(console_h))
-            else:
-                tile_dims = self.graphics.tile_dimensions
-                screen_px_x = np.trunc(draw_root_x * float(tile_dims[0]))
-                screen_px_y = np.trunc(draw_root_y * float(tile_dims[1]))
+        if isinstance(letterbox_geometry, tuple):
+            lx, ly, lw, lh = letterbox_geometry
+            console_w = self.graphics.console_width_tiles
+            console_h = self.graphics.console_height_tiles
+            screen_px_x = float(lx) + draw_root_x * (float(lw) / float(console_w))
+            screen_px_y = float(ly) + draw_root_y * (float(lh) / float(console_h))
         else:
             tile_dims = self.graphics.tile_dimensions
             screen_px_x = np.trunc(draw_root_x * float(tile_dims[0]))
@@ -405,7 +403,7 @@ class ActorRenderer:
         # Convert actor position to screen coordinates.
         # Use animation-controlled sub-tile positions when available so outlines
         # stay in sync with moving glyphs.
-        if getattr(actor, "_animation_controlled", False):
+        if actor._animation_controlled:
             world_x = actor.render_x
             world_y = actor.render_y
         else:
@@ -425,7 +423,6 @@ class ActorRenderer:
             draw_root_x, draw_root_y
         )
 
-        visual_scale = getattr(actor, "visual_scale", 1.0)
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
 
         self.graphics.draw_actor_outline(
@@ -434,8 +431,8 @@ class ActorRenderer:
             screen_y,
             color,
             alpha,
-            scale_x=visual_scale * viewport_scale_x,
-            scale_y=visual_scale * viewport_scale_y,
+            scale_x=actor.visual_scale * viewport_scale_x,
+            scale_y=actor.visual_scale * viewport_scale_y,
         )
 
     def render_selection_and_hover_outlines(
@@ -541,7 +538,7 @@ class ActorRenderer:
             key=lambda actor: (
                 actor.y,
                 actor == game_world.player,
-                getattr(actor, "visual_scale", 1.0),
+                actor.visual_scale,
             ),
         )
 
@@ -645,7 +642,6 @@ class ActorRenderer:
         screen_x, screen_y = self.graphics.console_to_screen_coords(
             draw_root_x, draw_root_y
         )
-        visual_scale = getattr(actor, "visual_scale", 1.0)
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
 
         self.graphics.draw_actor_outline(
@@ -654,8 +650,8 @@ class ActorRenderer:
             screen_y,
             colors.WHITE,
             _ROOF_OCCLUDED_OUTLINE_ALPHA,
-            scale_x=visual_scale * viewport_scale_x,
-            scale_y=visual_scale * viewport_scale_y,
+            scale_x=actor.visual_scale * viewport_scale_x,
+            scale_y=actor.visual_scale * viewport_scale_y,
         )
 
     @record_time_live_variable("time.render.actors_smooth_ms")
@@ -695,7 +691,7 @@ class ActorRenderer:
 
         # Get actor color with visual effects (reuse existing logic)
         final_color = self._get_actor_display_color(actor)
-        visual_scale = getattr(actor, "visual_scale", 1.0)
+        visual_scale = actor.visual_scale
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
 
         # Send tile background to GPU shader for actor-vs-tile contrast checks.
@@ -707,11 +703,9 @@ class ActorRenderer:
         )
 
         # Priority 1: Sprite atlas path (procedurally generated sprites).
-        sprite_uv = getattr(actor, "sprite_uv", None)
+        sprite_uv = actor.sprite_uv
         if sprite_uv is not None:
-            sprite_ground_anchor_y = float(
-                getattr(actor, "sprite_ground_anchor_y", 1.0)
-            )
+            sprite_ground_anchor_y = float(actor.sprite_ground_anchor_y)
             draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
                 root_x,
                 root_y,
@@ -870,7 +864,7 @@ class ActorRenderer:
             view_origin: Root console origin of the viewport (x, y).
         """
         if (
-            getattr(actor, "sprite_uv", None) is not None
+            actor.sprite_uv is not None
             or actor.character_layers
             or actor.has_complex_visuals
         ):

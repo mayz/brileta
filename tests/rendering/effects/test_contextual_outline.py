@@ -28,6 +28,11 @@ class DummyActor:
         self.color = (255, 255, 255)
         self.character_layers: list[object] = []
         self.has_complex_visuals = has_complex_visuals
+        self.visual_scale = 1.0
+        self.sprite_uv = None
+        self._animation_controlled = False
+        self.render_x = float(x)
+        self.render_y = float(y)
 
 
 class DummyGameMap:

@@ -133,13 +133,8 @@ class ShadowRenderer:
         self._frame_lights = lights
 
     def _get_viewport_display_scale_factors(self) -> tuple[float, float]:
-        """Return viewport display scale, tolerating lightweight test doubles."""
-        get_scale_factors = getattr(
-            self.viewport_system, "get_display_scale_factors", None
-        )
-        if callable(get_scale_factors):
-            return get_scale_factors()
-        return (1.0, 1.0)
+        """Return viewport display scale factors."""
+        return self.viewport_system.get_display_scale_factors()
 
     def _zoomed_tile_draw_origin(
         self,
@@ -301,32 +296,25 @@ class ShadowRenderer:
         self,
         console_x: np.ndarray,
         console_y: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray] | None:
-        """Vectorized ``GraphicsContext.console_to_screen_coords`` when supported."""
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized ``GraphicsContext.console_to_screen_coords``."""
+        # letterbox_geometry is not on the GraphicsContext ABC, so we use
+        # getattr once.  The remaining attributes (tile_dimensions,
+        # console_width_tiles, console_height_tiles) are guaranteed by the ABC.
         letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
-        if letterbox_geometry is None:
-            tile_dimensions = getattr(self.graphics, "_tile_dimensions", None)
-            if tile_dimensions is None:
-                tile_dimensions = getattr(self.graphics, "tile_dimensions", None)
-            if tile_dimensions is None:
-                return None
-            tile_w, tile_h = tile_dimensions
+        if not isinstance(letterbox_geometry, tuple):
+            tile_w, tile_h = self.graphics.tile_dimensions
             return (
                 np.trunc(console_x * float(tile_w)),
                 np.trunc(console_y * float(tile_h)),
             )
 
-        console_width_tiles = getattr(self.graphics, "console_width_tiles", None)
-        console_height_tiles = getattr(self.graphics, "console_height_tiles", None)
-        if console_width_tiles is None or console_height_tiles is None:
-            return None
-
         offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
+        console_w = self.graphics.console_width_tiles
+        console_h = self.graphics.console_height_tiles
         return (
-            float(offset_x)
-            + console_x * (float(scaled_w) / float(console_width_tiles)),
-            float(offset_y)
-            + console_y * (float(scaled_h) / float(console_height_tiles)),
+            float(offset_x) + console_x * (float(scaled_w) / float(console_w)),
+            float(offset_y) + console_y * (float(scaled_h) / float(console_h)),
         )
 
     def _render_sun_actor_shadows(
@@ -671,13 +659,10 @@ class ShadowRenderer:
         fade_tip = bool(config.ACTOR_SHADOW_FADE_TIP)
         eligible_indices = np.flatnonzero(eligible_mask)
 
-        # Batch sprite-shadow API (WGPU). When unavailable, sprite actors
-        # fall through to _emit_actor_shadow_quads like non-sprite actors.
+        # Batch sprite-shadow API (WGPU). Resolved once per frame, not per-actor.
         draw_sprite_shadow_batch = getattr(
             self.graphics, "draw_sprite_shadow_batch", None
         )
-        if not callable(draw_sprite_shadow_batch):
-            draw_sprite_shadow_batch = None
 
         def flush_sprite_batch(batch_indices: list[int]) -> None:
             """Emit accumulated sprite shadow quads as a single batch."""
@@ -692,27 +677,25 @@ class ShadowRenderer:
                 draw_root_y = root_y_arr[batch_idx] + (
                     (float(viewport_scale_y) - 1.0) * sprite_anchor_y[batch_idx]
                 )
-                sprite_screen_pos = self._console_to_screen_coords_batch(
+                sprite_screen_x, sprite_screen_y = self._console_to_screen_coords_batch(
                     draw_root_x, draw_root_y
                 )
-                if sprite_screen_pos is not None:
-                    sprite_screen_x, sprite_screen_y = sprite_screen_pos
-                    draw_sprite_shadow_batch(
-                        sprite_uvs=sprite_uvs[batch_idx],
-                        screen_x=sprite_screen_x,
-                        screen_y=sprite_screen_y,
-                        shadow_dir_x=shadow_dir_x,
-                        shadow_dir_y=shadow_dir_y,
-                        shadow_length_pixels=shadow_length_pixels[batch_idx],
-                        shadow_alpha=shadow_alpha,
-                        scale_x=(visual_scale[batch_idx] * float(viewport_scale_x)),
-                        scale_y=(visual_scale[batch_idx] * float(viewport_scale_y)),
-                        ground_anchor_y=sprite_anchor_y[batch_idx],
-                        fade_tip=fade_tip,
-                    )
-                    return
+                draw_sprite_shadow_batch(
+                    sprite_uvs=sprite_uvs[batch_idx],
+                    screen_x=sprite_screen_x,
+                    screen_y=sprite_screen_y,
+                    shadow_dir_x=shadow_dir_x,
+                    shadow_dir_y=shadow_dir_y,
+                    shadow_length_pixels=shadow_length_pixels[batch_idx],
+                    shadow_alpha=shadow_alpha,
+                    scale_x=(visual_scale[batch_idx] * float(viewport_scale_x)),
+                    scale_y=(visual_scale[batch_idx] * float(viewport_scale_y)),
+                    ground_anchor_y=sprite_anchor_y[batch_idx],
+                    fade_tip=fade_tip,
+                )
+                return
 
-            # Per-actor emission when batch sprite API is unavailable.
+            # Per-actor fallback when batch sprite API is unavailable.
             for scalar_idx in batch_indices:
                 self._emit_actor_shadow_quads(
                     actor=actors[scalar_idx],
@@ -933,7 +916,7 @@ class ShadowRenderer:
                 # Actors should not cast directional shadows from their own lights.
                 # A carried torch mainly creates local self-occlusion, not a stable
                 # ground-projected self shadow.
-                if getattr(light, "owner", None) is actor:
+                if light.owner is actor:
                     continue
 
                 light_x, light_y = light.position
@@ -954,7 +937,7 @@ class ShadowRenderer:
                     continue
 
                 attenuation = max(0.0, 1.0 - distance / radius)
-                light_intensity = float(getattr(light, "intensity", 1.0))
+                light_intensity = float(light.intensity)
                 shadow_alpha = config.ACTOR_SHADOW_ALPHA * attenuation * light_intensity
                 if shadow_alpha <= 0.0:
                     continue
@@ -1026,9 +1009,10 @@ class ShadowRenderer:
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
 
         # Sprite actors: prefer sprite-silhouette shadow when supported.
+        # draw_sprite_shadow is defined on GraphicsContext with a no-op default,
+        # so it's always callable.
         sprite_uv = actor.sprite_uv
         if sprite_uv is not None:
-            draw_sprite_shadow = getattr(self.graphics, "draw_sprite_shadow", None)
             sprite_ground_anchor_y = float(actor.sprite_ground_anchor_y)
             draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
                 root_x,
@@ -1038,33 +1022,19 @@ class ShadowRenderer:
             screen_x, screen_y = self.graphics.console_to_screen_coords(
                 draw_root_x, draw_root_y
             )
-            if callable(draw_sprite_shadow):
-                draw_sprite_shadow(
-                    sprite_uv=sprite_uv,
-                    screen_x=screen_x,
-                    screen_y=screen_y,
-                    shadow_dir_x=shadow_dir_x,
-                    shadow_dir_y=shadow_dir_y,
-                    shadow_length_pixels=shadow_length_pixels,
-                    shadow_alpha=shadow_alpha,
-                    scale_x=visual_scale * viewport_scale_x,
-                    scale_y=visual_scale * viewport_scale_y,
-                    ground_anchor_y=sprite_ground_anchor_y,
-                    fade_tip=fade_tip,
-                )
-            else:
-                self.graphics.draw_actor_shadow(
-                    char=self._SOLID_BLOCK_CHAR,
-                    screen_x=screen_x,
-                    screen_y=screen_y,
-                    shadow_dir_x=shadow_dir_x,
-                    shadow_dir_y=shadow_dir_y,
-                    shadow_length_pixels=shadow_length_pixels,
-                    shadow_alpha=shadow_alpha,
-                    scale_x=visual_scale * viewport_scale_x,
-                    scale_y=visual_scale * viewport_scale_y,
-                    fade_tip=fade_tip,
-                )
+            self.graphics.draw_sprite_shadow(
+                sprite_uv=sprite_uv,
+                screen_x=screen_x,
+                screen_y=screen_y,
+                shadow_dir_x=shadow_dir_x,
+                shadow_dir_y=shadow_dir_y,
+                shadow_length_pixels=shadow_length_pixels,
+                shadow_alpha=shadow_alpha,
+                scale_x=visual_scale * viewport_scale_x,
+                scale_y=visual_scale * viewport_scale_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+                fade_tip=fade_tip,
+            )
             return
 
         # Character-layer actors: one shadow per glyph layer.

@@ -203,11 +203,7 @@ class BaseGraphicsContext(GraphicsContext):
         # Loop through active particles
         particle_scale = (1.0, 1.0)
         if viewport_system is not None:
-            get_scale_factors = getattr(
-                viewport_system, "get_display_scale_factors", None
-            )
-            if callable(get_scale_factors):
-                particle_scale = get_scale_factors()
+            particle_scale = viewport_system.get_display_scale_factors()
         for i in range(particle_system.active_count):
             if particle_system.layers[i] != layer.value:
                 continue
@@ -256,11 +252,7 @@ class BaseGraphicsContext(GraphicsContext):
             return
 
         # Iterate through all tiles with decals
-        get_scale_factors = getattr(viewport_system, "get_display_scale_factors", None)
-        if callable(get_scale_factors):
-            decal_scale_x, decal_scale_y = get_scale_factors()
-        else:
-            decal_scale_x, decal_scale_y = (1.0, 1.0)
+        decal_scale_x, decal_scale_y = viewport_system.get_display_scale_factors()
         for (tile_x, tile_y), decals in decal_system.decals.items():
             # Convert tile position to screen position for culling
             screen_tile_x, screen_tile_y = viewport_system.world_to_screen(

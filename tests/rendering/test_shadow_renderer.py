@@ -447,14 +447,17 @@ def test_shadow_geometry_respects_non_unit_scale() -> None:
 
 def test_shadow_geometry_point_light() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
-    light = SimpleNamespace(position=(1, 2), radius=6)
+    light = SimpleNamespace(position=(1, 2), radius=6, owner=None, intensity=1.0)
     renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -473,14 +476,17 @@ def test_point_light_shadow_direction_ignores_idle_drift() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     actor.visual_effects = SimpleNamespace(get_idle_drift_offset=lambda: (0.0, 0.45))
     actor.health = SimpleNamespace(is_alive=lambda: True)
-    light = SimpleNamespace(position=(4, 2), radius=6)
+    light = SimpleNamespace(position=(4, 2), radius=6, owner=None, intensity=1.0)
     renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -519,14 +525,17 @@ def test_shadow_fade_alpha() -> None:
 
 def test_point_light_shadow_attenuation() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=1)
-    light = SimpleNamespace(position=(0, 0), radius=10)
+    light = SimpleNamespace(position=(0, 0), radius=10, owner=None, intensity=1.0)
     renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -632,14 +641,17 @@ def test_sprite_shadow_geometry_respects_ground_anchor() -> None:
 
 def test_no_shadow_zero_height() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=0)
-    light = SimpleNamespace(position=(0, 0), radius=10)
+    light = SimpleNamespace(position=(0, 0), radius=10, owner=None, intensity=1.0)
     renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -804,7 +816,10 @@ def test_sun_shadow_skips_indoor_regions() -> None:
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -829,7 +844,10 @@ def test_sun_shadow_renders_outdoor_regions() -> None:
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -887,7 +905,10 @@ def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -909,7 +930,10 @@ def test_point_light_skips_owned_light_shadow() -> None:
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -929,14 +953,19 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
         get_idle_drift_offset=lambda: (0.03, 0.0),
     )
     actor.health = SimpleNamespace(is_alive=lambda: True)
-    colocated_light = SimpleNamespace(position=(3, 4), radius=10)
+    colocated_light = SimpleNamespace(
+        position=(3, 4), radius=10, owner=None, intensity=1.0
+    )
     renderer = _build_shadow_renderer([colocated_light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
-    viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
+    )
 
     renderer.graphics = cast(GraphicsContext, graphics)
     renderer.viewport_system = cast(ViewportSystem, viewport)
@@ -951,7 +980,7 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
 
 def test_point_light_culls_tiny_projected_shadows_when_zoomed_out() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=1)
-    light = SimpleNamespace(position=(0, 0), radius=10, intensity=1.0)
+    light = SimpleNamespace(position=(0, 0), radius=10, owner=None, intensity=1.0)
     renderer = _build_shadow_renderer([light])
     get_actor_screen_position = Mock(return_value=(3, 4, 3, 4, 3, 4))
     clip_shadow_length_by_walls = Mock(return_value=1.0)
