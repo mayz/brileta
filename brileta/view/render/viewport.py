@@ -54,7 +54,7 @@ A strict naming convention is used to make the code self-documenting.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from brileta.environment.map import TileCoord
@@ -138,8 +138,25 @@ class Viewport:
     map_width: TileCoord | None = None
     map_height: TileCoord | None = None
 
+    # Per-frame cache for get_world_bounds. The result is pure (depends only on
+    # camera position and viewport dimensions), and is called ~230 times per
+    # frame with the same inputs.
+    _cached_bounds: Rect | None = field(default=None, init=False, repr=False)
+    _cached_bounds_key: object = field(default=None, init=False, repr=False)
+
     def get_world_bounds(self, camera: Camera) -> Rect:
         """Return the clamped world-space bounds currently visible."""
+        key = (
+            camera.world_x,
+            camera.world_y,
+            self.width_tiles,
+            self.height_tiles,
+            self.map_width,
+            self.map_height,
+        )
+        if self._cached_bounds_key == key:
+            return self._cached_bounds  # type: ignore[return-value]
+
         half_w: TileCoord = self.width_tiles // 2
         half_h: TileCoord = self.height_tiles // 2
         center_x = round(camera.world_x)
@@ -156,7 +173,10 @@ class Viewport:
 
         right = left + self.width_tiles - 1
         bottom = top + self.height_tiles - 1
-        return Rect.from_bounds(left, top, right, bottom)
+        result = Rect.from_bounds(left, top, right, bottom)
+        self._cached_bounds = result
+        self._cached_bounds_key = key
+        return result
 
     def world_to_viewport(
         self, world_x: WorldTileCoord, world_y: WorldTileCoord, camera: Camera
@@ -178,6 +198,7 @@ class Viewport:
         """Updates the viewport's dimensions."""
         self.width_tiles = new_width
         self.height_tiles = new_height
+        self._cached_bounds_key = None  # Invalidate bounds cache
 
 
 class ViewportSystem:
@@ -188,6 +209,17 @@ class ViewportSystem:
         self.viewport = Viewport(viewport_width, viewport_height)
         self._display_width_tiles: float = float(viewport_width)
         self._display_height_tiles: float = float(viewport_height)
+        # Per-frame cache for get_display_scale_factors
+        self._cached_scale: tuple[float, float] | None = None
+        self._cached_scale_key: object = None
+        # Pre-computed scalars for world_to_screen_float (set by update_camera).
+        # Avoids method dispatch and cache-key construction in the hottest path.
+        self._wtsf_left: float = 0.0
+        self._wtsf_top: float = 0.0
+        self._wtsf_ox: float = 0.0
+        self._wtsf_oy: float = 0.0
+        self._wtsf_sx: float = 1.0
+        self._wtsf_sy: float = 1.0
 
     def set_display_size(
         self, display_width_tiles: TileCoord, display_height_tiles: TileCoord
@@ -195,12 +227,24 @@ class ViewportSystem:
         """Set the fixed on-screen viewport size in root-console tile units."""
         self._display_width_tiles = float(max(1, display_width_tiles))
         self._display_height_tiles = float(max(1, display_height_tiles))
+        self._cached_scale_key = None  # Invalidate scale cache
 
     def get_display_scale_factors(self) -> tuple[float, float]:
         """Return root-console tiles per visible world tile for this viewport."""
+        key = (
+            self._display_width_tiles,
+            self._display_height_tiles,
+            self.viewport.width_tiles,
+            self.viewport.height_tiles,
+        )
+        if self._cached_scale_key == key:
+            return self._cached_scale  # type: ignore[return-value]
         width_scale = self._display_width_tiles / max(1, self.viewport.width_tiles)
         height_scale = self._display_height_tiles / max(1, self.viewport.height_tiles)
-        return (width_scale, height_scale)
+        result = (width_scale, height_scale)
+        self._cached_scale = result
+        self._cached_scale_key = key
+        return result
 
     def update_camera(self, player: Actor, map_width: int, map_height: int) -> None:
         """Update camera to follow the player and compute viewport offsets."""
@@ -251,6 +295,17 @@ class ViewportSystem:
             )
             self.viewport.offset_y = 0
 
+        # Pre-compute values used by world_to_screen_float so the hot path
+        # reduces to pure arithmetic with no method calls or cache lookups.
+        bounds = self.viewport.get_world_bounds(self.camera)
+        sx, sy = self.get_display_scale_factors()
+        self._wtsf_left = float(bounds.x1)
+        self._wtsf_top = float(bounds.y1)
+        self._wtsf_ox = float(self.viewport.offset_x)
+        self._wtsf_oy = float(self.viewport.offset_y)
+        self._wtsf_sx = sx
+        self._wtsf_sy = sy
+
     def get_visible_bounds(self) -> Rect:
         """Get the world coordinates that are currently visible."""
         return self.viewport.get_world_bounds(self.camera)
@@ -263,22 +318,27 @@ class ViewportSystem:
     def world_to_screen(
         self, world_x: WorldTileCoord, world_y: WorldTileCoord
     ) -> ViewportTilePos:
-        """Converts world coordinates to viewport/screen coordinates."""
-        vp_x, vp_y = self.viewport.world_to_viewport(world_x, world_y, self.camera)
-        scale_x, scale_y = self.get_display_scale_factors()
-        return (round(vp_x * scale_x), round(vp_y * scale_y))
+        """Converts world coordinates to viewport/screen coordinates.
+
+        Uses pre-computed scalars set by update_camera, same as
+        world_to_screen_float but returns rounded ints.
+        """
+        return (
+            round((world_x - self._wtsf_left + self._wtsf_ox) * self._wtsf_sx),
+            round((world_y - self._wtsf_top + self._wtsf_oy) * self._wtsf_sy),
+        )
 
     def world_to_screen_float(
         self, world_x: float, world_y: float
     ) -> tuple[float, float]:
-        """Converts world coordinates to viewport/screen coordinates."""
-        # Same math as world_to_screen but accepts/returns floats
-        bounds = self.viewport.get_world_bounds(self.camera)
-        left, top = bounds.x1, bounds.y1
-        scale_x, scale_y = self.get_display_scale_factors()
+        """Converts world coordinates to viewport/screen coordinates (float).
+
+        Uses pre-computed scalars set by update_camera to avoid method dispatch
+        and cache-key construction on every call (~757K calls/session).
+        """
         return (
-            (world_x - left + self.viewport.offset_x) * scale_x,
-            (world_y - top + self.viewport.offset_y) * scale_y,
+            (world_x - self._wtsf_left + self._wtsf_ox) * self._wtsf_sx,
+            (world_y - self._wtsf_top + self._wtsf_oy) * self._wtsf_sy,
         )
 
     def screen_to_world(self, vp_x: float, vp_y: float) -> WorldTilePos:

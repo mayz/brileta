@@ -87,12 +87,15 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     controller.gw.player.y = 10
     view = WorldView(cast(Controller, controller), ScreenShake())
     view.set_bounds(0, 0, 10, 10)
+    # Set camera position before update_camera so pre-computed scalars are
+    # consistent.  follow_actor keeps the camera here since the player is
+    # already at the dead-zone center.
+    view.viewport_system.camera.set_position(10.0, 10.0)
     view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,
         controller.gw.game_map.height,
     )
-    view.viewport_system.camera.set_position(10.0, 10.0)
 
     actor = DummyActor(12, 10)
     controller.gw.add_actor(actor)
@@ -119,12 +122,12 @@ def test_highlight_actor_offscreen_is_ignored() -> None:
     controller.gw.player.y = 10
     view = WorldView(cast(Controller, controller), ScreenShake())
     view.set_bounds(0, 0, 10, 10)
+    view.viewport_system.camera.set_position(10.0, 10.0)
     view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,
         controller.gw.game_map.height,
     )
-    view.viewport_system.camera.set_position(10.0, 10.0)
 
     offscreen_actor = DummyActor(0, 0)
     controller.gw.add_actor(offscreen_actor)
