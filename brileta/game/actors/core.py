@@ -282,11 +282,7 @@ class Actor:
         self.y += dy
 
         if self.gw:
-            # Notify the spatial index of this actor's new position.
             self.gw.actor_spatial_index.update(self)
-
-        # Update any lights owned by this actor
-        if self.gw:
             self.gw.on_actor_moved(self)
 
         # Automatically create animation if controller available
@@ -307,8 +303,6 @@ class Actor:
         self.render_y = float(y)
         if self.gw:
             self.gw.actor_spatial_index.update(self)
-        # Update any lights owned by this actor
-        if self.gw:
             self.gw.on_actor_moved(self)
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:

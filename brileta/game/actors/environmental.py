@@ -73,8 +73,7 @@ class ContainedFire(Actor):
 
         # Add the fire effect
         self.fire_effect = FireEffect()
-        if self.visual_effects is not None:
-            self.visual_effects.add_continuous_effect(self.fire_effect)
+        visual_effects.add_continuous_effect(self.fire_effect)
 
         # Mark as having complex visuals so outline rendering uses full-tile outline
         self.has_complex_visuals = True
@@ -108,10 +107,6 @@ class ContainedFire(Actor):
             affected_coords=[(self.x, self.y)],
             source_description=self.name.lower(),
         )
-
-    def update_turn(self, controller: Controller) -> None:
-        """Update the fire each turn."""
-        super().update_turn(controller)
 
     @staticmethod
     def create_campfire(

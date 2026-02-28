@@ -26,7 +26,6 @@ from enum import Enum
 import numpy as np
 
 from brileta import colors
-from brileta.game.enums import CreatureSize
 from brileta.sprites.primitives import (
     CanvasStamper,
     clamp,
@@ -38,6 +37,8 @@ from brileta.sprites.primitives import (
 )
 from brileta.types import MapDecorationSeed, SpatialSeed, WorldTileCoord
 from brileta.util import rng as brileta_rng
+
+from .tree_sprites import sprite_visual_scale_for_shadow_height
 
 # ---------------------------------------------------------------------------
 # Boulder archetype enum
@@ -603,30 +604,6 @@ def boulder_sprite_seed(
         map_seed=map_seed,
         salt=_BOULDER_SPRITE_SEED_SALT,
     )
-
-
-def sprite_visual_scale_for_shadow_height(
-    sprite: np.ndarray,
-    shadow_height: int,
-) -> float:
-    """Return visual scale so sprite height roughly matches physical shadow height."""
-    if shadow_height <= 0:
-        return 0.0
-
-    alpha = sprite[:, :, 3]
-    occupied_rows = np.where(np.any(alpha > 0, axis=1))[0]
-    if occupied_rows.size == 0:
-        return 1.0
-
-    silhouette_height = int(occupied_rows[-1] - occupied_rows[0] + 1)
-    if silhouette_height <= 0:
-        return 1.0
-
-    sprite_height = int(sprite.shape[0])
-    medium_shadow_height = float(CreatureSize.MEDIUM.shadow_height)
-    target_height_tiles = float(shadow_height) / medium_shadow_height
-    scale = target_height_tiles * float(sprite_height) / float(silhouette_height)
-    return max(0.3, min(3.0, scale))
 
 
 def visual_scale_with_height_jitter(

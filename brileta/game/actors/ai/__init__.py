@@ -17,11 +17,11 @@ Package structure:
 
 # Re-export the public API that was previously available from
 # ``brileta.game.actors.ai`` when it was a single module.
+from .behaviors.flee import FleeCandidate
 from .component import (
     DISPOSITION_BANDS,
     HOSTILE_UPPER,
     AIComponent,
-    FleeCandidate,
     disposition_label,
     disposition_to_normalized,
     escalate_hostility,

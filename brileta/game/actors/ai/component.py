@@ -14,7 +14,6 @@ AIComponent:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
@@ -31,7 +30,7 @@ from brileta.types import DIRECTIONS, ActorId, Direction, WorldTilePos
 from brileta.util import rng
 
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
-from .behaviors.flee import FleeAction
+from .behaviors.flee import FleeAction, collect_flee_candidates
 from .behaviors.wander import WanderAction
 from .perception import PerceivedActor, PerceptionComponent
 from .utility import (
@@ -76,16 +75,6 @@ HOSTILE_UPPER = DISPOSITION_BANDS[0][0]
 
 # How far combat awareness extends after an NPC is attacked.
 _COMBAT_AWARENESS_RADIUS = 50
-
-
-@dataclass(slots=True)
-class FleeCandidate:
-    """One potential flee step scored for tactical desirability."""
-
-    direction: Direction
-    distance_after: float
-    hazard_score: int
-    step_cost: int
 
 
 def disposition_label(value: int) -> str:
@@ -764,11 +753,7 @@ class AIComponent:
         self, controller: Controller, actor: NPC, target: Character
     ) -> Direction | None:
         """Find the best adjacent tile that moves away from the target."""
-        candidates = self._collect_flee_candidates(
-            controller,
-            actor,
-            target,
-        )
+        candidates = collect_flee_candidates(controller, actor, target)
         if not candidates:
             return None
 
@@ -780,65 +765,3 @@ class AIComponent:
             )
         )
         return candidates[0].direction
-
-    def _collect_flee_candidates(
-        self,
-        controller: Controller,
-        actor: NPC,
-        target: Character,
-    ) -> list[FleeCandidate]:
-        """Enumerate passable adjacent tiles that don't move toward the threat.
-
-        Prefers tiles that increase distance. If none exist (e.g., against a
-        wall), includes lateral tiles (same distance) so the NPC can slide
-        along obstacles to find an opening.
-        """
-        from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
-        from brileta.util.pathfinding import probe_step
-
-        game_map = controller.gw.game_map
-        current_distance = ranges.calculate_distance(
-            actor.x, actor.y, target.x, target.y
-        )
-        increasing: list[FleeCandidate] = []
-        lateral: list[FleeCandidate] = []
-
-        for dx, dy in DIRECTIONS:
-            tx = actor.x + dx
-            ty = actor.y + dy
-            block_reason = probe_step(
-                game_map,
-                controller.gw,
-                tx,
-                ty,
-                exclude_actor=actor,
-                can_open_doors=actor.can_open_doors,
-            )
-            if block_reason is not None:
-                continue
-
-            distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
-            if distance_after < current_distance:
-                continue  # Moving toward threat is never acceptable.
-
-            tile_id = int(game_map.tiles[tx, ty])
-            hazard_cost = get_hazard_cost(tile_id)
-            actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
-            damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
-            if actor_at_tile and damage_per_turn > 0:
-                fire_cost = HAZARD_BASE_COST + damage_per_turn
-                hazard_cost = max(hazard_cost, fire_cost)
-
-            step_cost = 1 if (dx == 0 or dy == 0) else 2
-            candidate = FleeCandidate(
-                direction=(dx, dy),
-                distance_after=distance_after,
-                hazard_score=hazard_cost + step_cost,
-                step_cost=step_cost,
-            )
-            if distance_after > current_distance:
-                increasing.append(candidate)
-            else:
-                lateral.append(candidate)
-
-        return increasing or lateral

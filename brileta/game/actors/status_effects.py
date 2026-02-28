@@ -54,17 +54,14 @@ class StatusEffect(abc.ABC):
     prevents_action: bool = False
     display_color: colors.Color = field(default=colors.LIGHT_GREY)
 
-    @abc.abstractmethod
-    def apply_on_start(self, actor: Actor) -> None:
-        """Called when the effect is first applied."""
+    def apply_on_start(self, actor: Actor) -> None:  # noqa: B027
+        """Called when the effect is first applied. Override for setup logic."""
 
-    @abc.abstractmethod
-    def apply_turn_effect(self, actor: Actor) -> None:
-        """Called each turn while the effect is active."""
+    def apply_turn_effect(self, actor: Actor) -> None:  # noqa: B027
+        """Called each turn while the effect is active. Override for per-turn logic."""
 
-    @abc.abstractmethod
-    def remove_effect(self, actor: Actor) -> None:
-        """Called when the effect is removed or expires."""
+    def remove_effect(self, actor: Actor) -> None:  # noqa: B027
+        """Called when the effect is removed or expires. Override for cleanup logic."""
 
     def should_remove(self, actor: Actor) -> bool:
         """Return ``True`` if the effect should be removed this turn."""
@@ -95,15 +92,6 @@ class OffBalanceEffect(StatusEffect):
             display_color=colors.ORANGE,
         )
 
-    def apply_on_start(self, actor: Actor) -> None:
-        pass
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
-
-    def remove_effect(self, actor: Actor) -> None:
-        pass
-
     def apply_to_resolution(
         self, resolution_args: dict[str, bool | str]
     ) -> dict[str, bool | str]:
@@ -128,15 +116,6 @@ class FocusedEffect(StatusEffect):
             description="Advantage on next action",
             display_color=colors.LIGHT_GREEN,
         )
-
-    def apply_on_start(self, actor: Actor) -> None:
-        pass
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
-
-    def remove_effect(self, actor: Actor) -> None:
-        pass
 
     def apply_to_resolution(
         self, resolution_args: dict[str, bool | str]
@@ -166,20 +145,6 @@ class TrippedEffect(StatusEffect):
             display_color=colors.RED,
         )
 
-    def apply_on_start(self, actor: Actor) -> None:
-        pass
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
-
-    def remove_effect(self, actor: Actor) -> None:
-        pass
-
-    def apply_to_resolution(
-        self, resolution_args: dict[str, bool | str]
-    ) -> dict[str, bool | str]:
-        return resolution_args
-
 
 class StaggeredEffect(StatusEffect):
     """Forces the actor to skip their next action opportunity.
@@ -196,20 +161,6 @@ class StaggeredEffect(StatusEffect):
             prevents_action=True,
             display_color=colors.DEEP_ORANGE,
         )
-
-    def apply_on_start(self, actor: Actor) -> None:
-        pass
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
-
-    def remove_effect(self, actor: Actor) -> None:
-        pass
-
-    def apply_to_resolution(
-        self, resolution_args: dict[str, bool | str]
-    ) -> dict[str, bool | str]:
-        return resolution_args
 
 
 class StrengthBoostEffect(StatusEffect):
@@ -233,9 +184,6 @@ class StrengthBoostEffect(StatusEffect):
         stats = actor.stats
         if stats is not None:
             stats.strength += 2
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
 
     def remove_effect(self, actor: Actor) -> None:
         stats = actor.stats
@@ -265,15 +213,6 @@ class EncumberedEffect(StatusEffect):
             description="Reduced speed and agility disadvantage from excess weight",
             can_stack=False,
         )
-
-    def apply_on_start(self, actor: Actor) -> None:
-        pass
-
-    def apply_turn_effect(self, actor: Actor) -> None:
-        pass
-
-    def remove_effect(self, actor: Actor) -> None:
-        pass
 
     def apply_to_resolution(
         self, resolution_args: dict[str, bool | str]

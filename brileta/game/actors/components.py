@@ -340,7 +340,7 @@ class ContainerStorage(InventoryComponent):
 
     def has_items(self) -> bool:
         """Return True if there are stored items."""
-        return len(self._items) > 0
+        return not self.is_empty()
 
     def __iter__(self):
         """Allow iteration over items."""
@@ -450,18 +450,33 @@ class CharacterInventory(InventoryComponent):
         used_space = 0
         has_tiny = False
 
-        # Count all items (stored, equipped, outfit)
-        for item in self._iter_all_items():
-            slots = _ITEM_SIZE_SLOTS[item.size]
-            if slots == 0:  # TINY items share a single slot
+        # Count all items (stored, equipped, outfit) in a single pass
+        # over the three item sources, avoiding _iter_all_items() allocation.
+        for entity in self._stored_items:
+            if isinstance(entity, Condition):
+                used_space += 1
+            elif isinstance(entity, Item):
+                slots = _ITEM_SIZE_SLOTS[entity.size]
+                if slots == 0:
+                    has_tiny = True
+                else:
+                    used_space += slots
+
+        for eq in self.ready_slots:
+            if eq is not None:
+                slots = _ITEM_SIZE_SLOTS[eq.size]
+                if slots == 0:
+                    has_tiny = True
+                else:
+                    used_space += slots
+
+        if self._equipped_outfit is not None:
+            outfit_item = self._equipped_outfit[0]
+            slots = _ITEM_SIZE_SLOTS[outfit_item.size]
+            if slots == 0:
                 has_tiny = True
             else:
                 used_space += slots
-
-        # Conditions each take 1 slot
-        used_space += sum(
-            1 for entity in self._stored_items if isinstance(entity, Condition)
-        )
 
         if has_tiny:
             used_space += 1

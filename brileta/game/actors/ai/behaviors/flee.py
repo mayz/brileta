@@ -6,6 +6,7 @@ AIComponent creates a FleeGoal for persistent multi-turn fleeing.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from brileta.game.actors.ai.goals import Goal, GoalState
@@ -19,15 +20,86 @@ from brileta.game.actors.ai.utility import (
     is_threat_present,
     resolve_flee_from,
 )
-from brileta.types import DIRECTIONS, ActorId
+from brileta.types import DIRECTIONS, ActorId, Direction
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
     from brileta.game.actions.base import GameIntent
-    from brileta.game.actors.core import NPC
+    from brileta.game.actors.core import NPC, Actor
 
 # How far the NPC should be from the threat before considering itself safe.
 _FLEE_SAFE_DISTANCE = 50
+
+
+@dataclass(slots=True)
+class FleeCandidate:
+    """One potential flee step scored for tactical desirability."""
+
+    direction: Direction
+    distance_after: float
+    hazard_score: int
+    step_cost: int
+
+
+def collect_flee_candidates(
+    controller: Controller,
+    actor: NPC,
+    target: Actor,
+) -> list[FleeCandidate]:
+    """Enumerate passable adjacent tiles that don't move toward the threat.
+
+    Prefers tiles that increase distance. If none exist (e.g., against a
+    wall), includes lateral tiles (same distance) so the NPC can slide
+    along obstacles to find an opening.
+    """
+    from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+    from brileta.game import ranges
+    from brileta.util.pathfinding import probe_step
+
+    game_map = controller.gw.game_map
+    current_distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+    increasing: list[FleeCandidate] = []
+    lateral: list[FleeCandidate] = []
+
+    for dx, dy in DIRECTIONS:
+        tx = actor.x + dx
+        ty = actor.y + dy
+        block_reason = probe_step(
+            game_map,
+            controller.gw,
+            tx,
+            ty,
+            exclude_actor=actor,
+            can_open_doors=actor.can_open_doors,
+        )
+        if block_reason is not None:
+            continue
+
+        distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
+        if distance_after < current_distance:
+            continue  # Moving toward threat is never acceptable.
+
+        tile_id = int(game_map.tiles[tx, ty])
+        hazard_cost = get_hazard_cost(tile_id)
+        actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+        damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+        if actor_at_tile and damage_per_turn > 0:
+            fire_cost = HAZARD_BASE_COST + damage_per_turn
+            hazard_cost = max(hazard_cost, fire_cost)
+
+        step_cost = 1 if (dx == 0 or dy == 0) else 2
+        candidate = FleeCandidate(
+            direction=(dx, dy),
+            distance_after=distance_after,
+            hazard_score=hazard_cost + step_cost,
+            step_cost=step_cost,
+        )
+        if distance_after > current_distance:
+            increasing.append(candidate)
+        else:
+            lateral.append(candidate)
+
+    return increasing or lateral
 
 
 class FleeAction(UtilityAction):
@@ -200,70 +272,22 @@ class FleeGoal(Goal):
 
     def get_next_action(self, npc: NPC, controller: Controller) -> GameIntent | None:
         """Move away from the threat, picking the best escape direction."""
-        from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
-        from brileta.game import ranges
         from brileta.game.actions.movement import MoveIntent
-        from brileta.util.pathfinding import probe_step
 
         threat = controller.gw.get_actor_by_id(self.threat_actor_id)
         if threat is None:
             return None
 
-        # Stop any existing plan - we manage movement directly
+        # Stop any existing plan - we manage movement directly.
         controller.stop_plan(npc)
 
-        game_map = controller.gw.game_map
-        current_distance = ranges.calculate_distance(npc.x, npc.y, threat.x, threat.y)
-
-        # Evaluate all adjacent tiles. Prefer tiles that increase distance
-        # from the threat. If none exist (e.g., against a wall), accept
-        # lateral tiles (same distance) so the NPC can slide along obstacles
-        # to find an opening rather than giving up immediately.
-        increasing: list[tuple[int, int, int, float]] = []
-        lateral: list[tuple[int, int, int, float]] = []
-        for dx, dy in DIRECTIONS:
-            tx = npc.x + dx
-            ty = npc.y + dy
-            if (
-                probe_step(
-                    game_map,
-                    controller.gw,
-                    tx,
-                    ty,
-                    exclude_actor=npc,
-                    can_open_doors=npc.can_open_doors,
-                )
-                is not None
-            ):
-                continue
-
-            dist = ranges.calculate_distance(tx, ty, threat.x, threat.y)
-            if dist < current_distance:
-                continue  # Moving toward the threat is never acceptable.
-
-            tile_id = int(game_map.tiles[tx, ty])
-            hazard_cost = get_hazard_cost(tile_id)
-
-            actor_at = controller.gw.get_actor_at_location(tx, ty)
-            damage_per_turn = getattr(actor_at, "damage_per_turn", 0)
-            if actor_at and damage_per_turn > 0:
-                fire_cost = HAZARD_BASE_COST + damage_per_turn
-                hazard_cost = max(hazard_cost, fire_cost)
-
-            step_cost = 1 if (dx == 0 or dy == 0) else 2
-            entry = (dx, dy, dist, hazard_cost + step_cost)
-            if dist > current_distance:
-                increasing.append(entry)
-            else:
-                lateral.append(entry)
-
-        candidates = increasing or lateral
+        candidates = collect_flee_candidates(controller, npc, threat)
         if not candidates:
             # Truly cornered - no passable tile that doesn't move closer.
             self.state = GoalState.FAILED
             return None
 
-        # Sort: maximize distance, minimize hazard cost.
-        candidates.sort(key=lambda c: (-c[2], c[3]))
-        dx, dy, _, _ = candidates[0]
+        # Sort: maximize distance, minimize hazard cost + step cost.
+        candidates.sort(key=lambda c: (-c.distance_after, c.hazard_score, c.step_cost))
+        dx, dy = candidates[0].direction
         return MoveIntent(controller, npc, dx, dy)

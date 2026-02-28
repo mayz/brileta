@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
+from brileta.sprites.primitives import clamp
 from brileta.types import WorldTileCoord
 from brileta.util.rng import derive_spatial_seed
 
@@ -30,11 +31,6 @@ _CONIFER_INNER_COLOR: colors.Color = (18, 60, 18)
 _CANOPY_BRIGHTNESS_JITTER: int = 18
 
 
-def _clamp_channel(value: int) -> int:
-    """Clamp an RGB channel to 0-255."""
-    return max(0, min(255, value))
-
-
 def _jitter_brightness(
     base: colors.Color,
     brightness_jitter: int,
@@ -48,9 +44,9 @@ def _jitter_brightness(
     offset = int(jitter_hash % jitter_span) - brightness_jitter
     r, g, b = base
     return (
-        _clamp_channel(r + offset),
-        _clamp_channel(g + offset),
-        _clamp_channel(b + offset),
+        clamp(r + offset),
+        clamp(g + offset),
+        clamp(b + offset),
     )
 
 
