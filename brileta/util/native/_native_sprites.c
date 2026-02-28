@@ -34,69 +34,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------ */
-/* xoshiro128++ PRNG (same algorithm as _native_wfc.c)                 */
-/* ------------------------------------------------------------------ */
-
-typedef struct {
-    uint32_t s[4];
-} SpriteRng;
-
-static inline uint32_t sprite_rotl32(uint32_t x, int k) {
-    return (x << k) | (x >> (32 - k));
-}
-
-static uint64_t sprite_splitmix64_next(uint64_t *state) {
-    uint64_t z;
-
-    *state += 0x9E3779B97F4A7C15ULL;
-    z = *state;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
-}
-
-static void sprite_rng_init(SpriteRng *rng, uint64_t seed) {
-    uint64_t sm = seed;
-    uint64_t a = sprite_splitmix64_next(&sm);
-    uint64_t b = sprite_splitmix64_next(&sm);
-
-    rng->s[0] = (uint32_t)a;
-    rng->s[1] = (uint32_t)(a >> 32);
-    rng->s[2] = (uint32_t)b;
-    rng->s[3] = (uint32_t)(b >> 32);
-
-    /* xoshiro cannot run with an all-zero state. */
-    if ((rng->s[0] | rng->s[1] | rng->s[2] | rng->s[3]) == 0) {
-        rng->s[0] = 0x9E3779B9U;
-        rng->s[1] = 0x243F6A88U;
-        rng->s[2] = 0xB7E15162U;
-        rng->s[3] = 0x8AED2A6BU;
-    }
-}
-
-static inline uint32_t sprite_rng_next_u32(SpriteRng *rng) {
-    uint32_t result = sprite_rotl32(rng->s[0] + rng->s[3], 7) + rng->s[0];
-    uint32_t t = rng->s[1] << 9;
-
-    rng->s[2] ^= rng->s[0];
-    rng->s[3] ^= rng->s[1];
-    rng->s[1] ^= rng->s[2];
-    rng->s[0] ^= rng->s[3];
-
-    rng->s[2] ^= t;
-    rng->s[3] = sprite_rotl32(rng->s[3], 11);
-
-    return result;
-}
-
-/* Return a float in [0, 1). */
-static inline double sprite_rng_next_double(SpriteRng *rng) {
-    uint64_t hi = (uint64_t)(sprite_rng_next_u32(rng) >> 5);
-    uint64_t lo = (uint64_t)(sprite_rng_next_u32(rng) >> 6);
-    uint64_t mantissa = (hi << 26) | lo;
-    return (double)mantissa * (1.0 / 9007199254740992.0);
-}
+/* Shared xoshiro128++ PRNG. */
+#include "_native_rng.h"
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -547,15 +486,15 @@ trunk_done:
 /* ------------------------------------------------------------------ */
 
 /* Return a double uniformly in [lo, hi). */
-static inline double rng_uniform(SpriteRng *rng, double lo, double hi) {
-    return lo + sprite_rng_next_double(rng) * (hi - lo);
+static inline double rng_uniform(NativeRng *rng, double lo, double hi) {
+    return lo + native_rng_next_double(rng) * (hi - lo);
 }
 
 /* Return an int uniformly in [lo, hi) (exclusive end). */
-static inline int rng_int(SpriteRng *rng, int lo, int hi) {
+static inline int rng_int(NativeRng *rng, int lo, int hi) {
     if (hi <= lo)
         return lo;
-    return lo + (int)(sprite_rng_next_u32(rng) % (unsigned)(hi - lo));
+    return lo + (int)(native_rng_next_u32(rng) % (unsigned)(hi - lo));
 }
 
 /* ------------------------------------------------------------------ */
@@ -746,13 +685,11 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(PyObject *self, PyObject *arg
         Py_RETURN_NONE;
     }
 
-    int oom = 0;
-
     Py_BEGIN_ALLOW_THREADS
 
         /* Alpha profile parameters. */
         float hc = clampf((float)hardness, 0.0f, 1.0f);
-    float inner_fraction = 0.3f + (0.85f - 0.3f) * hc;
+    float inner_fraction = 0.3f + 0.55f * hc;
     float ef = (float)falloff + 2.5f * hc;
     float inner_r = (float)radius * inner_fraction;
     float outer_r = (float)radius * (1.0f - inner_fraction);
@@ -760,42 +697,23 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(PyObject *self, PyObject *arg
     float opacity = (float)a / 255.0f;
     float edge_limit = (float)radius + 0.5f;
 
-    /* Build source alpha and composite. */
-    int n_rows = y_max - y_min + 1;
-    int n_cols = x_max - x_min + 1;
-    float *src_a = (float *)malloc(sizeof(float) * n_rows * n_cols);
-    if (!src_a) {
-        oom = 1;
-        goto fuzzy_done;
-    }
-
+    /* Single-pass: compute alpha and composite directly (no accumulation
+     * needed for a single circle, unlike batch stamp). */
     for (int row = y_min; row <= y_max; row++) {
         for (int col = x_min; col <= x_max; col++) {
             float ddx = (float)col - (float)cx;
             float ddy = (float)row - (float)cy;
             float dist = sqrtf(ddx * ddx + ddy * ddy);
 
-            float alpha;
+            float sa;
             if (dist <= inner_r) {
-                alpha = 1.0f;
+                sa = opacity;
             } else if (dist > edge_limit) {
-                alpha = 0.0f;
+                continue;
             } else {
                 float fr = maxf((dist - inner_r) / safe_outer_r, 0.0f);
-                alpha = clampf(1.0f - powf(fr, ef), 0.0f, 1.0f);
+                sa = clampf(1.0f - powf(fr, ef), 0.0f, 1.0f) * opacity;
             }
-
-            int idx = (row - y_min) * n_cols + (col - x_min);
-            src_a[idx] = alpha * opacity;
-        }
-    }
-
-    /* Inline composite over (more efficient than calling c_composite_over
-     * because we already have the alpha buffer). */
-    for (int row = y_min; row <= y_max; row++) {
-        for (int col = x_min; col <= x_max; col++) {
-            int idx = (row - y_min) * n_cols + (col - x_min);
-            float sa = src_a[idx];
             if (sa <= 0.0f)
                 continue;
 
@@ -814,14 +732,9 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(PyObject *self, PyObject *arg
         }
     }
 
-    free(src_a);
-
-fuzzy_done:
     Py_END_ALLOW_THREADS
 
         PyBuffer_Release(&buf);
-    if (oom)
-        return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -919,28 +832,20 @@ PyObject *brileta_native_sprite_stamp_ellipse(PyObject *self, PyObject *args) {
 /* ------------------------------------------------------------------ */
 
 /*
- * Parse a list of (cx, cy, rx, ry) tuples.
+ * Parse a Python list of (cx, cy, rx, ry) tuples into an EllipseSpec array.
  * Returns 0 on success, -1 on error (exception set).
- * Caller must free *out on success.
+ * Caller must free *specs_out on success.
  */
-static int parse_ellipse_list(
-    PyObject *list, int *n_out, float **cx_out, float **cy_out, float **rx_out, float **ry_out) {
+static int parse_ellipse_specs(PyObject *list, int *n_out, EllipseSpec **specs_out) {
     Py_ssize_t n = PyList_Size(list);
     if (n <= 0) {
         *n_out = 0;
-        *cx_out = *cy_out = *rx_out = *ry_out = NULL;
+        *specs_out = NULL;
         return 0;
     }
 
-    float *cxs = (float *)malloc(sizeof(float) * n);
-    float *cys = (float *)malloc(sizeof(float) * n);
-    float *rxs = (float *)malloc(sizeof(float) * n);
-    float *rys = (float *)malloc(sizeof(float) * n);
-    if (!cxs || !cys || !rxs || !rys) {
-        free(cxs);
-        free(cys);
-        free(rxs);
-        free(rys);
+    EllipseSpec *specs = (EllipseSpec *)malloc(sizeof(EllipseSpec) * n);
+    if (!specs) {
         PyErr_NoMemory();
         return -1;
     }
@@ -950,26 +855,20 @@ static int parse_ellipse_list(
         PyObject *item = PyList_GET_ITEM(list, i);
         double ecx, ecy, erx, ery;
         if (!PyArg_ParseTuple(item, "dddd", &ecx, &ecy, &erx, &ery)) {
-            free(cxs);
-            free(cys);
-            free(rxs);
-            free(rys);
+            free(specs);
             return -1;
         }
         if (erx <= 0.0 || ery <= 0.0)
             continue;
-        cxs[count] = (float)ecx;
-        cys[count] = (float)ecy;
-        rxs[count] = (float)erx;
-        rys[count] = (float)ery;
+        specs[count].cx = (float)ecx;
+        specs[count].cy = (float)ecy;
+        specs[count].rx = (float)erx;
+        specs[count].ry = (float)ery;
         count++;
     }
 
     *n_out = count;
-    *cx_out = cxs;
-    *cy_out = cys;
-    *rx_out = rxs;
-    *ry_out = rys;
+    *specs_out = specs;
     return 0;
 }
 
@@ -991,8 +890,8 @@ PyObject *brileta_native_sprite_batch_stamp_ellipses(PyObject *self, PyObject *a
         return NULL;
 
     int n_ell;
-    float *cxs, *cys, *rxs, *rys;
-    if (parse_ellipse_list(ellipse_list, &n_ell, &cxs, &cys, &rxs, &rys) < 0)
+    EllipseSpec *specs;
+    if (parse_ellipse_specs(ellipse_list, &n_ell, &specs) < 0)
         return NULL;
 
     if (n_ell == 0)
@@ -1002,113 +901,16 @@ PyObject *brileta_native_sprite_batch_stamp_ellipses(PyObject *self, PyObject *a
     int h, w;
     uint8_t *data;
     if (get_canvas_buffer(canvas_obj, &buf, &h, &w, &data) < 0) {
-        free(cxs);
-        free(cys);
-        free(rxs);
-        free(rys);
+        free(specs);
         return NULL;
     }
 
-    /* All Python data extracted into C arrays. Release GIL for computation. */
-    int oom = 0;
-
-    Py_BEGIN_ALLOW_THREADS
-
-        /* Compute profile parameters (shared across all ellipses). */
-        float hc = clampf((float)hardness, 0.0f, 1.0f);
-    float inner_fraction = 0.3f + 0.55f * hc;
-    float ef = (float)falloff + 2.5f * hc;
-    float outer_fraction = maxf(1e-6f, 1.0f - inner_fraction);
-    float opacity = (float)a / 255.0f;
-
-    /* Compute union bounding box of all ellipses. */
-    int union_y_min = h, union_y_max = -1;
-    int union_x_min = w, union_x_max = -1;
-    for (int i = 0; i < n_ell; i++) {
-        int rx_ceil = (int)ceilf(rxs[i]) + 1;
-        int ry_ceil = (int)ceilf(rys[i]) + 1;
-        int ey_min = clampi((int)cys[i] - ry_ceil, 0, h - 1);
-        int ey_max = clampi((int)cys[i] + ry_ceil, 0, h - 1);
-        int ex_min = clampi((int)cxs[i] - rx_ceil, 0, w - 1);
-        int ex_max = clampi((int)cxs[i] + rx_ceil, 0, w - 1);
-        if (ey_min < union_y_min)
-            union_y_min = ey_min;
-        if (ey_max > union_y_max)
-            union_y_max = ey_max;
-        if (ex_min < union_x_min)
-            union_x_min = ex_min;
-        if (ex_max > union_x_max)
-            union_x_max = ex_max;
-    }
-    if (union_y_min > union_y_max || union_x_min > union_x_max) {
-        goto batch_ell_done;
-    }
-
-    {
-        int n_rows = union_y_max - union_y_min + 1;
-        int n_cols = union_x_max - union_x_min + 1;
-        size_t n_pixels = (size_t)n_rows * (size_t)n_cols;
-
-        /* Allocate `remaining` buffer: starts at 1.0 everywhere. */
-        float *remaining = (float *)malloc(sizeof(float) * n_pixels);
-        if (!remaining) {
-            oom = 1;
-            goto batch_ell_done;
-        }
-        for (size_t i = 0; i < n_pixels; i++)
-            remaining[i] = 1.0f;
-
-        /* Accumulate: remaining *= (1 - alpha_i * opacity) for each ellipse. */
-        for (int ei = 0; ei < n_ell; ei++) {
-            float ecx = cxs[ei], ecy = cys[ei];
-            float erx = rxs[ei], ery = rys[ei];
-            float max_r = maxf(erx, ery);
-            float edge_limit = 1.0f + 0.5f / max_r;
-
-            int rx_ceil = (int)ceilf(erx) + 1;
-            int ry_ceil = (int)ceilf(ery) + 1;
-            int ey_min = clampi((int)ecy - ry_ceil, 0, h - 1);
-            int ey_max = clampi((int)ecy + ry_ceil, 0, h - 1);
-            int ex_min = clampi((int)ecx - rx_ceil, 0, w - 1);
-            int ex_max = clampi((int)ecx + rx_ceil, 0, w - 1);
-
-            for (int row = ey_min; row <= ey_max; row++) {
-                for (int col = ex_min; col <= ex_max; col++) {
-                    float ddx = ((float)col - ecx) / erx;
-                    float ddy = ((float)row - ecy) / ery;
-                    float dist = sqrtf(ddx * ddx + ddy * ddy);
-
-                    float alpha =
-                        ellipse_alpha(dist, inner_fraction, outer_fraction, ef, edge_limit, 1.0f);
-                    if (alpha <= 0.0f)
-                        continue;
-
-                    int idx = (row - union_y_min) * n_cols + (col - union_x_min);
-                    remaining[idx] *= (1.0f - alpha * opacity);
-                }
-            }
-        }
-
-        /* Convert remaining to source alpha and composite. */
-        for (size_t i = 0; i < n_pixels; i++)
-            remaining[i] = 1.0f - remaining[i];
-
-        c_composite_over(
-            data, w, union_y_min, union_y_max, union_x_min, union_x_max, remaining, r, g, b);
-
-        free(remaining);
-    }
-
-batch_ell_done:
+    Py_BEGIN_ALLOW_THREADS batch_stamp_from_specs(
+        data, h, w, specs, n_ell, r, g, b, a, (float)falloff, (float)hardness);
     Py_END_ALLOW_THREADS
 
-        free(cxs);
-    free(cys);
-    free(rxs);
-    free(rys);
+        free(specs);
     PyBuffer_Release(&buf);
-    if (oom)
-        return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -1129,40 +931,52 @@ PyObject *brileta_native_sprite_batch_stamp_circles(PyObject *self, PyObject *ar
             args, "OOiiiidd", &canvas_obj, &circle_list, &r, &g, &b, &a, &falloff, &hardness))
         return NULL;
 
-    /* Convert circles to ellipses list. */
+    /* Parse circles directly into EllipseSpec array (rx = ry = radius). */
     Py_ssize_t n = PyList_Size(circle_list);
     if (n <= 0)
         Py_RETURN_NONE;
 
-    PyObject *ellipse_list = PyList_New(n);
-    if (!ellipse_list)
-        return NULL;
+    EllipseSpec *specs = (EllipseSpec *)malloc(sizeof(EllipseSpec) * n);
+    if (!specs)
+        return PyErr_NoMemory();
 
+    int count = 0;
     for (Py_ssize_t i = 0; i < n; i++) {
         PyObject *item = PyList_GET_ITEM(circle_list, i);
         double ccx, ccy, cr;
         if (!PyArg_ParseTuple(item, "ddd", &ccx, &ccy, &cr)) {
-            Py_DECREF(ellipse_list);
+            free(specs);
             return NULL;
         }
-        PyObject *ell = Py_BuildValue("(dddd)", ccx, ccy, cr, cr);
-        if (!ell) {
-            Py_DECREF(ellipse_list);
-            return NULL;
+        if (cr > 0.0) {
+            specs[count].cx = (float)ccx;
+            specs[count].cy = (float)ccy;
+            specs[count].rx = (float)cr;
+            specs[count].ry = (float)cr;
+            count++;
         }
-        PyList_SET_ITEM(ellipse_list, i, ell);
     }
 
-    /* Build new args tuple and delegate to batch_stamp_ellipses. */
-    PyObject *new_args =
-        Py_BuildValue("(OOiiiidd)", canvas_obj, ellipse_list, r, g, b, a, falloff, hardness);
-    Py_DECREF(ellipse_list);
-    if (!new_args)
-        return NULL;
+    if (count == 0) {
+        free(specs);
+        Py_RETURN_NONE;
+    }
 
-    PyObject *result = brileta_native_sprite_batch_stamp_ellipses(self, new_args);
-    Py_DECREF(new_args);
-    return result;
+    Py_buffer buf;
+    int h, w;
+    uint8_t *data;
+    if (get_canvas_buffer(canvas_obj, &buf, &h, &w, &data) < 0) {
+        free(specs);
+        return NULL;
+    }
+
+    Py_BEGIN_ALLOW_THREADS batch_stamp_from_specs(
+        data, h, w, specs, count, r, g, b, a, (float)falloff, (float)hardness);
+    Py_END_ALLOW_THREADS
+
+        free(specs);
+    PyBuffer_Release(&buf);
+    Py_RETURN_NONE;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1230,7 +1044,7 @@ append_ellipse_spec(EllipseSpec *specs, int *count, float cx, float cy, float rx
  * Returns the selected count. A retry cap prevents infinite loops
  * in the (statistically negligible) case of repeated collisions.
  */
-static int select_unique_indices(SpriteRng *rng, int n, int want, int out_idx[2]) {
+static int select_unique_indices(NativeRng *rng, int n, int want, int out_idx[2]) {
     if (n <= 0 || want <= 0)
         return 0;
     int target = want < n ? want : n;
@@ -1327,8 +1141,8 @@ PyObject *brileta_native_sprite_generate_deciduous_canopy(PyObject *self, PyObje
 
     Py_BEGIN_ALLOW_THREADS
 
-        SpriteRng rng;
-    sprite_rng_init(&rng, (uint64_t)seed);
+        NativeRng rng;
+    native_rng_init(&rng, (uint64_t)seed);
 
     const double kPi = 3.14159265358979323846;
 
@@ -1674,7 +1488,40 @@ PyObject *brileta_native_sprite_paste_sprite(PyObject *self, PyObject *args) {
 }
 
 /* ------------------------------------------------------------------ */
-/* darken_rim: edge-detection + darkening in one pass                    */
+/* Rim mask: identify opaque pixels bordering transparency              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Compute rim mask into caller-allocated buffer.
+ * rim must be pre-zeroed, sized h*w.
+ * Returns the number of rim pixels found.
+ */
+static int compute_rim_mask(const uint8_t *data, int h, int w, uint8_t *rim) {
+    int count = 0;
+    for (int row = 0; row < h; row++) {
+        for (int col = 0; col < w; col++) {
+            const uint8_t *px = PX(data, row, col, w);
+            if (px[3] <= 128)
+                continue;
+
+            /* Check cardinal neighbors for transparency. Canvas border
+             * counts as transparent (same as np.pad with constant_values=True). */
+            int has_transparent = (row == 0 || PX(data, row - 1, col, w)[3] == 0) ||
+                                  (row == h - 1 || PX(data, row + 1, col, w)[3] == 0) ||
+                                  (col == 0 || PX(data, row, col - 1, w)[3] == 0) ||
+                                  (col == w - 1 || PX(data, row, col + 1, w)[3] == 0);
+
+            if (has_transparent) {
+                rim[row * w + col] = 1;
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+/* ------------------------------------------------------------------ */
+/* darken_rim: darken 1px silhouette rim pixels                         */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -1712,26 +1559,13 @@ PyObject *brileta_native_sprite_darken_rim(PyObject *self, PyObject *args) {
         goto rim_done;
     }
 
-    /* Pass 1: identify rim pixels. */
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            uint8_t *px = PX(data, row, col, w);
-            if (px[3] <= 128)
-                continue; /* Not opaque enough. */
-
-            /* Check cardinal neighbors for transparency. Border counts
-             * as transparent (same as np.pad with constant_values=True). */
-            int has_transparent_neighbor = (row == 0 || PX(data, row - 1, col, w)[3] == 0) ||
-                                           (row == h - 1 || PX(data, row + 1, col, w)[3] == 0) ||
-                                           (col == 0 || PX(data, row, col - 1, w)[3] == 0) ||
-                                           (col == w - 1 || PX(data, row, col + 1, w)[3] == 0);
-
-            if (has_transparent_neighbor)
-                rim[row * w + col] = 1;
-        }
+    int rim_count = compute_rim_mask(data, h, w, rim);
+    if (rim_count == 0) {
+        free(rim);
+        goto rim_done;
     }
 
-    /* Pass 2: darken rim pixels. */
+    /* Darken rim pixels. */
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
             if (!rim[row * w + col])
@@ -1752,32 +1586,6 @@ rim_done:
     if (oom)
         return PyErr_NoMemory();
     Py_RETURN_NONE;
-}
-
-/* ------------------------------------------------------------------ */
-/* nibble_canopy: random edge erosion for tree canopy silhouettes        */
-/* ------------------------------------------------------------------ */
-
-/*
- * Helper: compute rim mask into caller-allocated buffer.
- * rim must be pre-zeroed, sized h*w.
- */
-static void compute_rim_mask(const uint8_t *data, int h, int w, uint8_t *rim) {
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            const uint8_t *px = PX(data, row, col, w);
-            if (px[3] <= 128)
-                continue;
-
-            int has_transparent = (row == 0 || PX(data, row - 1, col, w)[3] == 0) ||
-                                  (row == h - 1 || PX(data, row + 1, col, w)[3] == 0) ||
-                                  (col == 0 || PX(data, row, col - 1, w)[3] == 0) ||
-                                  (col == w - 1 || PX(data, row, col + 1, w)[3] == 0);
-
-            if (has_transparent)
-                rim[row * w + col] = 1;
-        }
-    }
 }
 
 /*
@@ -1820,10 +1628,14 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
         oom = 1;
         goto nibble_canopy_done;
     }
-    compute_rim_mask(data, h, w, rim);
+    if (compute_rim_mask(data, h, w, rim) == 0) {
+        free(rim);
+        goto nibble_canopy_done;
+    }
 
     /* Restrict to canopy region (elliptical envelope, same as Python). */
     float safe_radius = maxf((float)canopy_radius, 1e-6f);
+    int has_rim = 0;
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
             if (!rim[row * w + col])
@@ -1832,15 +1644,8 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
             float dy = ((float)row - (float)center_y) / (safe_radius * 0.9f);
             if (dx * dx + dy * dy > 1.6f)
                 rim[row * w + col] = 0;
-        }
-    }
-
-    /* Check if any rim pixels remain. */
-    int has_rim = 0;
-    for (size_t i = 0; i < n_pixels; i++) {
-        if (rim[i]) {
-            has_rim = 1;
-            break;
+            else
+                has_rim = 1;
         }
     }
     if (!has_rim) {
@@ -1849,8 +1654,8 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
     }
 
     {
-        SpriteRng rng;
-        sprite_rng_init(&rng, (uint64_t)seed);
+        NativeRng rng;
+        native_rng_init(&rng, (uint64_t)seed);
 
         float np = clampf((float)nibble_prob, 0.0f, 1.0f);
         float ip = clampf((float)interior_prob, 0.0f, 1.0f);
@@ -1861,7 +1666,7 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
             for (int col = 0; col < w; col++) {
                 if (!rim[row * w + col])
                     continue;
-                if (sprite_rng_next_double(&rng) < np) {
+                if (native_rng_next_double(&rng) < np) {
                     PX(data, row, col, w)[3] = 0;
                     rim[row * w + col] = 2; /* Mark as nibbled for interior pass. */
                     any_nibbled = 1;
@@ -1875,7 +1680,7 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
                 for (int col = 0; col < w; col++) {
                     if (rim[row * w + col] != 2)
                         continue;
-                    if (sprite_rng_next_double(&rng) >= ip)
+                    if (native_rng_next_double(&rng) >= ip)
                         continue;
 
                     /* Step toward center. */
@@ -1947,17 +1752,7 @@ PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args) {
         oom = 1;
         goto nibble_boulder_done;
     }
-    compute_rim_mask(data, h, w, rim);
-
-    /* Check if any rim pixels exist. */
-    int has_rim = 0;
-    for (size_t i = 0; i < n_pixels; i++) {
-        if (rim[i]) {
-            has_rim = 1;
-            break;
-        }
-    }
-    if (!has_rim) {
+    if (compute_rim_mask(data, h, w, rim) == 0) {
         free(rim);
         goto nibble_boulder_done;
     }
@@ -1988,8 +1783,8 @@ PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args) {
             }
         }
 
-        SpriteRng rng;
-        sprite_rng_init(&rng, (uint64_t)seed);
+        NativeRng rng;
+        native_rng_init(&rng, (uint64_t)seed);
 
         float np = clampf((float)nibble_prob, 0.0f, 1.0f);
 
@@ -1997,7 +1792,7 @@ PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args) {
             for (int col = 0; col < w; col++) {
                 if (!rim[row * w + col])
                     continue;
-                if (sprite_rng_next_double(&rng) < np) {
+                if (native_rng_next_double(&rng) < np) {
                     PX(data, row, col, w)[3] = 0;
                 }
             }

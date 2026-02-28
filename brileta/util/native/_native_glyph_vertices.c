@@ -79,8 +79,8 @@ static int encode_glyph_vertices(const GlyphCell *glyph_data, /* (w, h) C-contig
     /*
      * Iteration order: y-outer, x-inner.  This writes the vertex buffer
      * sequentially (it is shaped (h, w, 6) in Python) which is better for
-     * cache since each vertex is 112 bytes.  Glyph reads stride by h
-     * (glyph_data is (w, h) C-contiguous) but at 34 bytes per cell this
+     * cache since each vertex is 156 bytes.  Glyph reads stride by h
+     * (glyph_data is (w, h) C-contiguous) but at 51 bytes per cell this
      * is a much smaller working set.
      */
     for (int y = 0; y < h; y++) {
@@ -143,58 +143,53 @@ static int encode_glyph_vertices(const GlyphCell *glyph_data, /* (w, h) C-contig
             float s_noise = cell->split_noise;
             uint32_t s_npat = (uint32_t)cell->split_noise_pattern;
 
-            /* ── Write shared data to all 6 vertices ── */
-            for (int i = 0; i < 6; i++) {
-                v[i].fg_color[0] = fg_r;
-                v[i].fg_color[1] = fg_g;
-                v[i].fg_color[2] = fg_b;
-                v[i].fg_color[3] = fg_a;
-                v[i].bg_color[0] = bg_r;
-                v[i].bg_color[1] = bg_g;
-                v[i].bg_color[2] = bg_b;
-                v[i].bg_color[3] = bg_a;
-                v[i].noise_amplitude = noise_amp;
-                v[i].noise_pattern = noise_pat;
-                v[i].edge_neighbor_mask = edge_mask;
-                v[i].edge_blend = edge_bld;
-                memcpy(v[i].edge_neighbor_bg, nbg, sizeof(nbg));
-                v[i].split_y = s_y;
-                memcpy(v[i].split_bg_color, s_bg, sizeof(s_bg));
-                memcpy(v[i].split_fg_color, s_fg, sizeof(s_fg));
-                v[i].split_noise_amplitude = s_noise;
-                v[i].split_noise_pattern = s_npat;
-            }
-
-            /* ── Per-vertex position and UV (two triangles forming a quad) ── */
-
-            /* Vertex 0: bottom-left */
+            /* ── Build vertex 0 fully, then bulk-copy to 1-5 ── */
             v[0].position[0] = x1_px;
             v[0].position[1] = y1_px;
             v[0].uv[0] = u1;
             v[0].uv[1] = v1_uv;
+            v[0].fg_color[0] = fg_r;
+            v[0].fg_color[1] = fg_g;
+            v[0].fg_color[2] = fg_b;
+            v[0].fg_color[3] = fg_a;
+            v[0].bg_color[0] = bg_r;
+            v[0].bg_color[1] = bg_g;
+            v[0].bg_color[2] = bg_b;
+            v[0].bg_color[3] = bg_a;
+            v[0].noise_amplitude = noise_amp;
+            v[0].noise_pattern = noise_pat;
+            v[0].edge_neighbor_mask = edge_mask;
+            v[0].edge_blend = edge_bld;
+            memcpy(v[0].edge_neighbor_bg, nbg, sizeof(nbg));
+            v[0].split_y = s_y;
+            memcpy(v[0].split_bg_color, s_bg, sizeof(s_bg));
+            memcpy(v[0].split_fg_color, s_fg, sizeof(s_fg));
+            v[0].split_noise_amplitude = s_noise;
+            v[0].split_noise_pattern = s_npat;
+
+            /* Copy shared fields to vertices 1-5 (position/UV patched below). */
+            memcpy(&v[1], &v[0], sizeof(GlyphVertex));
+            memcpy(&v[2], &v[0], sizeof(GlyphVertex));
+            memcpy(&v[3], &v[0], sizeof(GlyphVertex));
+            memcpy(&v[4], &v[0], sizeof(GlyphVertex));
+            memcpy(&v[5], &v[0], sizeof(GlyphVertex));
+
+            /* ── Patch per-vertex position and UV (two triangles forming a quad) ── */
 
             /* Vertex 1: bottom-right */
             v[1].position[0] = x2_px;
-            v[1].position[1] = y1_px;
             v[1].uv[0] = u2;
-            v[1].uv[1] = v1_uv;
 
             /* Vertex 2: top-left */
-            v[2].position[0] = x1_px;
             v[2].position[1] = y2_px;
-            v[2].uv[0] = u1;
             v[2].uv[1] = v2_uv;
 
             /* Vertex 3: bottom-right (same as 1) */
             v[3].position[0] = x2_px;
-            v[3].position[1] = y1_px;
             v[3].uv[0] = u2;
-            v[3].uv[1] = v1_uv;
 
             /* Vertex 4: top-left (same as 2) */
-            v[4].position[0] = x1_px;
             v[4].position[1] = y2_px;
-            v[4].uv[0] = u1;
             v[4].uv[1] = v2_uv;
 
             /* Vertex 5: top-right */

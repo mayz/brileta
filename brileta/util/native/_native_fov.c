@@ -171,7 +171,7 @@ PyObject *brileta_native_fov(PyObject *self, PyObject *args) {
     }
 
     if (PyObject_GetBuffer(
-            visible_obj, &visible_buf, PyBUF_WRITABLE | PyBUF_STRIDES | PyBUF_FORMAT) < 0) {
+            visible_obj, &visible_buf, PyBUF_WRITABLE | PyBUF_C_CONTIGUOUS | PyBUF_FORMAT) < 0) {
         PyBuffer_Release(&transparent_buf);
         return NULL;
     }
@@ -206,17 +206,14 @@ PyObject *brileta_native_fov(PyObject *self, PyObject *args) {
     const unsigned char *transparent = (const unsigned char *)transparent_buf.buf;
     Py_ssize_t t_stride_x = transparent_buf.strides[0];
     Py_ssize_t t_stride_y = transparent_buf.strides[1];
-    Py_ssize_t v_stride_x = visible_buf.strides[0];
-    Py_ssize_t v_stride_y = visible_buf.strides[1];
+    /* visible is C_CONTIGUOUS: strides are [height, 1]. */
+    Py_ssize_t v_stride_x = (Py_ssize_t)height;
+    Py_ssize_t v_stride_y = 1;
 
     int fov_rc = 0;
     Py_BEGIN_ALLOW_THREADS
 
-        for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            *(unsigned char *)(visible + x * v_stride_x + y * v_stride_y) = 0;
-        }
-    }
+        memset(visible, 0, (size_t)width * (size_t)height);
 
     if (in_bounds(ox, oy, width, height)) {
         *(unsigned char *)(visible + ox * v_stride_x + oy * v_stride_y) = 1;

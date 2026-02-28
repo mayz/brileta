@@ -159,6 +159,7 @@ static int astar_search(
     int size = w * h;
     int start_idx = sx * h + sy;
     int goal_idx = gx * h + gy;
+    int rc = -1; /* default: OOM */
 
     *out_len = 0;
 
@@ -166,23 +167,25 @@ static int astar_search(
     if (cost[start_idx] == 0 || cost[goal_idx] == 0)
         return 0;
 
-    /* Allocate working arrays. */
-    double *g_score = (double *)malloc(sizeof(double) * size);
-    int *came_from = (int *)malloc(sizeof(int) * size);
-    char *closed = (char *)calloc(size, 1);
-    int *heap_pos = (int *)malloc(sizeof(int) * size);
-    int *goal_dx = (int *)malloc(sizeof(int) * w);
-    int *goal_dy = (int *)malloc(sizeof(int) * h);
+    /* All pointers NULL-initialized for single cleanup path. */
+    double *g_score = NULL;
+    int *came_from = NULL;
+    char *closed = NULL;
+    int *heap_pos = NULL;
+    int *goal_dx = NULL;
+    int *goal_dy = NULL;
+    MinHeap heap = {NULL, 0, 0};
 
-    if (!g_score || !came_from || !closed || !heap_pos || !goal_dx || !goal_dy) {
-        free(g_score);
-        free(came_from);
-        free(closed);
-        free(heap_pos);
-        free(goal_dx);
-        free(goal_dy);
-        return -1;
-    }
+    /* Allocate working arrays. */
+    g_score = (double *)malloc(sizeof(double) * size);
+    came_from = (int *)malloc(sizeof(int) * size);
+    closed = (char *)calloc(size, 1);
+    heap_pos = (int *)malloc(sizeof(int) * size);
+    goal_dx = (int *)malloc(sizeof(int) * w);
+    goal_dy = (int *)malloc(sizeof(int) * h);
+
+    if (!g_score || !came_from || !closed || !heap_pos || !goal_dx || !goal_dy)
+        goto cleanup;
 
     /* Initialize g_score to infinity. */
     for (int i = 0; i < size; i++)
@@ -204,30 +207,14 @@ static int astar_search(
         goal_dy[y] = dy < 0 ? -dy : dy;
     }
 
-    MinHeap heap;
     int initial_cap = size < 256 ? size : 256;
-    if (heap_init(&heap, initial_cap) < 0) {
-        free(g_score);
-        free(came_from);
-        free(closed);
-        free(heap_pos);
-        free(goal_dx);
-        free(goal_dy);
-        return -1;
-    }
+    if (heap_init(&heap, initial_cap) < 0)
+        goto cleanup;
     if (heap_push_or_decrease(&heap,
                               heap_pos,
                               HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[sx], goal_dy[sy]),
-                              start_idx) < 0) {
-        heap_free(&heap);
-        free(g_score);
-        free(came_from);
-        free(closed);
-        free(heap_pos);
-        free(goal_dx);
-        free(goal_dy);
-        return -1;
-    }
+                              start_idx) < 0)
+        goto cleanup;
 
     int found = 0;
 
@@ -266,16 +253,8 @@ static int astar_search(
                 came_from[ni] = ci;
                 double f =
                     tent_g + HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[nx], goal_dy[ny]);
-                if (heap_push_or_decrease(&heap, heap_pos, f, ni) < 0) {
-                    heap_free(&heap);
-                    free(g_score);
-                    free(came_from);
-                    free(closed);
-                    free(heap_pos);
-                    free(goal_dx);
-                    free(goal_dy);
-                    return -1;
-                }
+                if (heap_push_or_decrease(&heap, heap_pos, f, ni) < 0)
+                    goto cleanup;
             }
         }
     }
@@ -297,6 +276,9 @@ static int astar_search(
         *out_len = len;
     }
 
+    rc = 0; /* success */
+
+cleanup:
     heap_free(&heap);
     free(g_score);
     free(came_from);
@@ -304,7 +286,7 @@ static int astar_search(
     free(heap_pos);
     free(goal_dx);
     free(goal_dy);
-    return 0;
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */

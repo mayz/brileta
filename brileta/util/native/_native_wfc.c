@@ -48,88 +48,8 @@ static inline uint8_t popcount_u8(uint8_t mask) {
     return POPCOUNT_TABLE[mask];
 }
 
-/* ------------------------------------------------------------------ */
-/* xoshiro128++ PRNG with SplitMix64 seeding                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * WfcRng is the local RNG state used by the native solver.
- *
- * Why xoshiro128++:
- * - Fast enough for tight inner loops.
- * - Good statistical quality for game/procedural content.
- * - Small state footprint (4x32-bit).
- *
- * We seed xoshiro with SplitMix64 because:
- * - Python provides a single 64-bit seed.
- * - xoshiro needs multiple non-zero state words.
- * - SplitMix64 expands one seed into well-scrambled state values.
- */
-typedef struct {
-    uint32_t s[4];
-} WfcRng;
-
-static inline uint32_t rotl32(uint32_t x, int k) {
-    return (x << k) | (x >> (32 - k));
-}
-
-static uint64_t splitmix64_next(uint64_t *state) {
-    uint64_t z;
-
-    *state += 0x9E3779B97F4A7C15ULL;
-    z = *state;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
-}
-
-static void rng_init(WfcRng *rng, uint64_t seed) {
-    uint64_t sm = seed;
-    uint64_t a = splitmix64_next(&sm);
-    uint64_t b = splitmix64_next(&sm);
-
-    rng->s[0] = (uint32_t)a;
-    rng->s[1] = (uint32_t)(a >> 32);
-    rng->s[2] = (uint32_t)b;
-    rng->s[3] = (uint32_t)(b >> 32);
-
-    /* xoshiro cannot run with an all-zero state. */
-    if ((rng->s[0] | rng->s[1] | rng->s[2] | rng->s[3]) == 0) {
-        rng->s[0] = 0x9E3779B9U;
-        rng->s[1] = 0x243F6A88U;
-        rng->s[2] = 0xB7E15162U;
-        rng->s[3] = 0x8AED2A6BU;
-    }
-}
-
-static inline uint32_t rng_next_u32(WfcRng *rng) {
-    /* xoshiro128++ output scrambler. */
-    uint32_t result = rotl32(rng->s[0] + rng->s[3], 7) + rng->s[0];
-    uint32_t t = rng->s[1] << 9;
-
-    rng->s[2] ^= rng->s[0];
-    rng->s[3] ^= rng->s[1];
-    rng->s[1] ^= rng->s[2];
-    rng->s[0] ^= rng->s[3];
-
-    rng->s[2] ^= t;
-    rng->s[3] = rotl32(rng->s[3], 11);
-
-    return result;
-}
-
-static inline double rng_next_double(WfcRng *rng) {
-    /*
-     * Generate a float in [0, 1) from the upper 53 random bits.
-     * This mirrors common high-quality float conversion schemes and avoids
-     * leaning on lower bits, which are the weakest bits for xoshiro/xoroshiro
-     * family generators.
-     */
-    uint64_t hi = (uint64_t)(rng_next_u32(rng) >> 5);     /* 27 bits */
-    uint64_t lo = (uint64_t)(rng_next_u32(rng) >> 6);     /* 26 bits */
-    uint64_t mantissa = (hi << 26) | lo;                  /* 53 bits */
-    return (double)mantissa * (1.0 / 9007199254740992.0); /* 2^-53 */
-}
+/* Shared xoshiro128++ PRNG. */
+#include "_native_rng.h"
 
 /* ------------------------------------------------------------------ */
 /* Push-only min-heap with stale entry skipping                        */
@@ -304,7 +224,7 @@ typedef struct {
     const double *pattern_weights;
     uint8_t *wave;
 
-    WfcRng rng;
+    NativeRng rng;
     MinHeap heap;
     IntStack stack;
     uint8_t *in_stack;
@@ -323,32 +243,29 @@ static double calculate_entropy(WfcSolver *solver, int idx) {
     if (count <= 1)
         return 0.0;
 
+    /* Single pass: accumulate total weight and sum(w * log(w)) together.
+     * Entropy H = log(W) - sum(w_i * log(w_i)) / W. */
     double total_weight = 0.0;
+    double sum_w_log_w = 0.0;
     for (int bit = 0; bit < solver->num_patterns; bit++) {
         if (mask & (1U << bit)) {
-            total_weight += solver->pattern_weights[bit];
+            double weight = solver->pattern_weights[bit];
+            total_weight += weight;
+            if (weight > 0.0)
+                sum_w_log_w += weight * log(weight);
         }
     }
 
     if (total_weight == 0.0)
         return 0.0;
 
-    double entropy = 0.0;
-    for (int bit = 0; bit < solver->num_patterns; bit++) {
-        if (mask & (1U << bit)) {
-            double weight = solver->pattern_weights[bit];
-            if (weight > 0.0) {
-                double p = weight / total_weight;
-                entropy -= p * log(p);
-            }
-        }
-    }
+    double entropy = log(total_weight) - sum_w_log_w / total_weight;
 
     /*
      * Add tiny deterministic noise to break ties. This mirrors Python behavior
      * where equal-entropy cells are randomly ordered.
      */
-    entropy += rng_next_double(&solver->rng) * 0.001;
+    entropy += native_rng_next_double(&solver->rng) * 0.001;
     return entropy;
 }
 
@@ -435,13 +352,13 @@ static int weighted_choice(WfcSolver *solver, uint8_t mask) {
      * This mirrors Python's fallback behavior.
      */
     if (total == 0.0) {
-        int pick = (int)(rng_next_double(&solver->rng) * (double)count);
+        int pick = (int)(native_rng_next_double(&solver->rng) * (double)count);
         if (pick >= count)
             pick = count - 1;
         return bits[pick];
     }
 
-    double r = rng_next_double(&solver->rng) * total;
+    double r = native_rng_next_double(&solver->rng) * total;
     double cumulative = 0.0;
 
     for (int i = 0; i < count; i++) {
@@ -772,7 +689,7 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
     solver.stack = stack;
     solver.in_stack = in_stack;
     solver.heap_counter = 0;
-    rng_init(&solver.rng, (uint64_t)seed);
+    native_rng_init(&solver.rng, (uint64_t)seed);
 
     int rc;
     Py_BEGIN_ALLOW_THREADS rc = wfc_solve_inner(&solver);

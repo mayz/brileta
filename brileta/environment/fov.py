@@ -20,8 +20,9 @@ def compute_fov(
     radius: int,
 ) -> NDArray[np.bool_]:
     """Compute visible tiles from *origin* using native symmetric shadowcasting."""
-    # empty_like (not zeros_like) - the C extension zeroes the array itself.
-    visible = np.empty_like(transparent, dtype=np.bool_)
+    # empty (not zeros) - the C extension zeroes the array itself.
+    # Use explicit shape + order='C' to guarantee C-contiguous layout.
+    visible = np.empty(transparent.shape, dtype=np.bool_, order="C")
     ox, oy = origin
     _c_fov(transparent, visible, ox, oy, radius)
     return visible
