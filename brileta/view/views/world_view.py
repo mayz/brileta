@@ -1614,12 +1614,11 @@ class WorldView(View):
             # around to a side face.
             wall_and_edge = wall_mask & (is_west_edge | is_east_edge)
             if np.any(wall_and_edge):
-                bg_rgb[wall_and_edge] = np.clip(
+                darkened = np.clip(
                     bg_rgb[wall_and_edge].astype(np.int16) - 10, 0, 255
                 ).astype(np.uint8)
-                fg_rgb[wall_and_edge] = np.clip(
-                    fg_rgb[wall_and_edge].astype(np.int16) - 10, 0, 255
-                ).astype(np.uint8)
+                bg_rgb[wall_and_edge] = darkened
+                fg_rgb[wall_and_edge] = darkened
 
         # --- South split: primary=roof (above threshold), split=eave shadow ---
         # The wall portion right under the roof is the darkest part (eave

@@ -68,9 +68,6 @@ WALL_FACE_LIGHT: Color = (125, 108, 82)  # Sunlit timber/plaster
 # Eave shadow: darker band right under the roof overhang.
 WALL_EAVE_SHADOW_DARK: Color = (36, 30, 22)  # Deep shadow under eave
 WALL_EAVE_SHADOW_LIGHT: Color = (80, 68, 50)  # Lit eave shadow
-# Foundation: darker base at the bottom of the wall.
-WALL_FOUNDATION_DARK: Color = (32, 28, 22)  # Stone/timber base in shadow
-WALL_FOUNDATION_LIGHT: Color = (68, 58, 44)  # Lit stone/timber base
 
 # Actor colors
 # Player uses bright saturated gold to stand out against terrain
