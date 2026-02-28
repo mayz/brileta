@@ -1587,10 +1587,13 @@ class WorldView(View):
 
         # --- Wall face appearance ---
         # Wall tiles keep default tile_ids so lighting treats them as visible
-        # exterior surfaces, not opaque roof.
+        # exterior surfaces, not opaque roof.  Uses WALL_FACE colors instead
+        # of deriving from eave shadow so the wall reads as a lit surface
+        # with the eave shadow as a distinct dark band above.
         if np.any(wall_mask):
-            eave_bottom = np.clip(eave_bg.astype(np.float32) * 0.82, 0, 255).astype(
-                np.uint8
+            wall_face = np.asarray(
+                colors.WALL_FACE_LIGHT if is_light else colors.WALL_FACE_DARK,
+                dtype=np.uint8,
             )
 
             chars[wall_mask] = ord(" ")
@@ -1600,32 +1603,23 @@ class WorldView(View):
             wall_wy = world_y_grid[wall_mask]
             row_offset = (wall_wy - wall_y_start).astype(np.int16)
             wall_base = np.clip(
-                eave_bottom.astype(np.int16) - row_offset[:, np.newaxis] * 4,
+                wall_face.astype(np.int16) - row_offset[:, np.newaxis] * 6,
                 0,
                 255,
             ).astype(np.uint8)
             fg_rgb[wall_mask] = wall_base
             bg_rgb[wall_mask] = wall_base
 
-            # Edge darkening: west/east wall tiles are in shadow.
+            # Edge darkening: west/east wall tiles suggest the wall wrapping
+            # around to a side face.
             wall_and_edge = wall_mask & (is_west_edge | is_east_edge)
             if np.any(wall_and_edge):
                 bg_rgb[wall_and_edge] = np.clip(
-                    bg_rgb[wall_and_edge].astype(np.int16) - 8, 0, 255
+                    bg_rgb[wall_and_edge].astype(np.int16) - 10, 0, 255
                 ).astype(np.uint8)
                 fg_rgb[wall_and_edge] = np.clip(
-                    fg_rgb[wall_and_edge].astype(np.int16) - 8, 0, 255
+                    fg_rgb[wall_and_edge].astype(np.int16) - 10, 0, 255
                 ).astype(np.uint8)
-
-                # Bottom corner darkening: extra darken at wall base corners.
-                wall_bottom_corner = wall_and_edge & (world_y_grid == int(fp.y2) - 1)
-                if np.any(wall_bottom_corner):
-                    bg_rgb[wall_bottom_corner] = np.clip(
-                        bg_rgb[wall_bottom_corner].astype(np.int16) - 10, 0, 255
-                    ).astype(np.uint8)
-                    fg_rgb[wall_bottom_corner] = np.clip(
-                        fg_rgb[wall_bottom_corner].astype(np.int16) - 10, 0, 255
-                    ).astype(np.uint8)
 
         # --- South split: primary=roof (above threshold), split=eave shadow ---
         # The wall portion right under the roof is the darkest part (eave
