@@ -79,9 +79,9 @@ class PickupExecutor(ActionExecutor[PickupIntent]):
         Returns True if the item was successfully removed.
         """
         gw = intent.controller.gw
-        actors_here = [
-            a for a in gw.actors if a.x == intent.actor.x and a.y == intent.actor.y
-        ]
+        actors_here = gw.actor_spatial_index.get_at_point(
+            intent.actor.x, intent.actor.y
+        )
 
         for actor in actors_here:
             # Handle item piles (use ContainerStorage API)

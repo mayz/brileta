@@ -26,13 +26,47 @@ from brileta.game.actions.stunts import (
     TripIntent,
 )
 from brileta.game.actors.ai import escalate_hostility
+from brileta.game.actors.core import Character
 from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     StaggeredEffect,
     TrippedEffect,
 )
 from brileta.game.enums import ActionBlockReason, OutcomeTier
+from brileta.game.resolution.base import ResolutionResult
 from brileta.util.dice import roll_d
+
+
+def _validate_adjacency(
+    attacker: Character, defender: Character
+) -> tuple[int, int] | GameActionResult:
+    """Return (dx, dy) direction to defender, or a failed GameActionResult if not adjacent."""
+    dx = defender.x - attacker.x
+    dy = defender.y - attacker.y
+    if max(abs(dx), abs(dy)) != 1:
+        publish_event(MessageEvent(f"{defender.name} is not adjacent!", colors.RED))
+        return GameActionResult(
+            succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+        )
+    return dx, dy
+
+
+def _resolve_opposed_check(
+    intent: PushIntent | TripIntent | KickIntent | PunchIntent,
+    attacker_stat: str,
+    defender_stat: str,
+) -> ResolutionResult:
+    """Perform an opposed stat check and return the resolution result."""
+    attacker_score = getattr(intent.attacker.stats, attacker_stat)
+    defender_score = getattr(intent.defender.stats, defender_stat)
+    resolution_args = intent.attacker.modifiers.get_resolution_modifiers(attacker_stat)
+    resolver = intent.controller.create_resolver(
+        ability_score=attacker_score,
+        roll_to_exceed=defender_score + Combat.D20_DC_BASE,
+        has_advantage=resolution_args.get("has_advantage", False),
+        has_disadvantage=resolution_args.get("has_disadvantage", False),
+    )
+    return resolver.resolve(intent.attacker, intent.defender)
 
 
 class PushExecutor(ActionExecutor[PushIntent]):
@@ -54,43 +88,23 @@ class PushExecutor(ActionExecutor[PushIntent]):
         - Critical Failure (nat 1): Attacker gains TrippedEffect
         """
         # 1. Validate adjacency (Chebyshev distance must be 1, includes diagonals)
-        dx = intent.defender.x - intent.attacker.x
-        dy = intent.defender.y - intent.attacker.y
-        if max(abs(dx), abs(dy)) != 1:
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} is not adjacent!",
-                    colors.RED,
-                )
-            )
-            return GameActionResult(
-                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
-            )
+        adj = _validate_adjacency(intent.attacker, intent.defender)
+        if isinstance(adj, GameActionResult):
+            return adj
+        dx, dy = adj
 
         # 2. Perform opposed Strength check
-        attacker_strength = intent.attacker.stats.strength
-        defender_strength = intent.defender.stats.strength
-
-        # Get resolution modifiers from status effects (advantage/disadvantage)
-        resolution_args = intent.attacker.modifiers.get_resolution_modifiers("strength")
-
-        resolver = intent.controller.create_resolver(
-            ability_score=attacker_strength,
-            roll_to_exceed=defender_strength + Combat.D20_DC_BASE,
-            has_advantage=resolution_args.get("has_advantage", False),
-            has_disadvantage=resolution_args.get("has_disadvantage", False),
-        )
-        result = resolver.resolve(intent.attacker, intent.defender)
+        result = _resolve_opposed_check(intent, "strength", "strength")
 
         # 3. Handle outcome tiers
+        atk_name = intent.attacker.name
+        def_name = intent.defender.name
+        succeeded = True
+
         match result.outcome_tier:
             case OutcomeTier.CRITICAL_SUCCESS:
-                pushed = attempt_displacement(
-                    intent.controller, intent.defender, dx, dy
-                )
+                attempt_displacement(intent.controller, intent.defender, dx, dy)
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
-                atk_name = intent.attacker.name
-                def_name = intent.defender.name
                 publish_event(
                     FloatingTextEvent(
                         text="PUSHED",
@@ -100,15 +114,11 @@ class PushExecutor(ActionExecutor[PushIntent]):
                         world_y=intent.defender.y,
                     )
                 )
-                if pushed:
-                    msg = f"Critical! {atk_name} shoves {def_name} to the ground!"
-                else:
-                    # Couldn't push (edge of map), but still trip them
-                    msg = f"Critical! {atk_name} knocks {def_name} to the ground!"
-                publish_event(MessageEvent(msg, colors.YELLOW))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"Critical! {atk_name} shoves {def_name} to the ground!",
+                        colors.YELLOW,
+                    )
                 )
 
             case OutcomeTier.SUCCESS:
@@ -119,8 +129,6 @@ class PushExecutor(ActionExecutor[PushIntent]):
                 # their next action. This prevents them from immediately
                 # walking back to their original position.
                 intent.defender.status_effects.apply_status_effect(StaggeredEffect())
-                atk_name = intent.attacker.name
-                def_name = intent.defender.name
                 publish_event(
                     FloatingTextEvent(
                         text="PUSHED",
@@ -131,37 +139,33 @@ class PushExecutor(ActionExecutor[PushIntent]):
                     )
                 )
                 if pushed:
-                    msg = f"{atk_name} shoves {def_name} back!"
-                    publish_event(MessageEvent(msg, colors.WHITE))
+                    publish_event(
+                        MessageEvent(
+                            f"{atk_name} shoves {def_name} back!", colors.WHITE
+                        )
+                    )
                 else:
-                    msg = f"{atk_name} pushes {def_name} but they have nowhere to go!"
-                    publish_event(MessageEvent(msg, colors.LIGHT_GREY))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
-                )
+                    publish_event(
+                        MessageEvent(
+                            f"{atk_name} pushes {def_name} but they have nowhere to go!",
+                            colors.LIGHT_GREY,
+                        )
+                    )
 
             case OutcomeTier.PARTIAL_SUCCESS:
                 pushed = attempt_displacement(
                     intent.controller, intent.defender, dx, dy
                 )
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
-                atk_name = intent.attacker.name
-                def_name = intent.defender.name
                 if pushed:
                     msg = f"{atk_name} shoves {def_name} back but stumbles!"
                 else:
                     msg = f"{atk_name} pushes {def_name} but both end up off-balance!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
-                )
 
             case OutcomeTier.FAILURE:
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
-                atk_name = intent.attacker.name
-                def_name = intent.defender.name
                 publish_event(
                     FloatingTextEvent(
                         text="FAILED",
@@ -171,26 +175,27 @@ class PushExecutor(ActionExecutor[PushIntent]):
                         world_y=intent.attacker.y,
                     )
                 )
-                msg = f"{atk_name} fails to push {def_name} and stumbles off-balance!"
-                publish_event(MessageEvent(msg, colors.GREY))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"{atk_name} fails to push {def_name} and stumbles off-balance!",
+                        colors.GREY,
+                    )
                 )
 
             case OutcomeTier.CRITICAL_FAILURE:
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
-                atk_name = intent.attacker.name
-                def_name = intent.defender.name
-                msg = f"Critical miss! {atk_name} trips trying to push {def_name}!"
-                publish_event(MessageEvent(msg, colors.ORANGE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"Critical miss! {atk_name} trips trying to push {def_name}!",
+                        colors.ORANGE,
+                    )
                 )
 
-        # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
+        escalate_hostility(intent.attacker, intent.defender, intent.controller)
+        return GameActionResult(
+            succeeded=succeeded, duration_ms=Combat.STUNT_DURATION_MS
+        )
 
 
 class TripExecutor(ActionExecutor[TripIntent]):
@@ -212,37 +217,17 @@ class TripExecutor(ActionExecutor[TripIntent]):
         - Critical Failure (nat 1): Attacker gains TrippedEffect
         """
         # 1. Validate adjacency (Chebyshev distance must be 1, includes diagonals)
-        dx = intent.defender.x - intent.attacker.x
-        dy = intent.defender.y - intent.attacker.y
-        if max(abs(dx), abs(dy)) != 1:
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} is not adjacent!",
-                    colors.RED,
-                )
-            )
-            return GameActionResult(
-                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
-            )
+        adj = _validate_adjacency(intent.attacker, intent.defender)
+        if isinstance(adj, GameActionResult):
+            return adj
 
         # 2. Perform opposed Agility check
-        attacker_agility = intent.attacker.stats.agility
-        defender_agility = intent.defender.stats.agility
-
-        # Get resolution modifiers from status effects (advantage/disadvantage)
-        resolution_args = intent.attacker.modifiers.get_resolution_modifiers("agility")
-
-        resolver = intent.controller.create_resolver(
-            ability_score=attacker_agility,
-            roll_to_exceed=defender_agility + Combat.D20_DC_BASE,
-            has_advantage=resolution_args.get("has_advantage", False),
-            has_disadvantage=resolution_args.get("has_disadvantage", False),
-        )
-        result = resolver.resolve(intent.attacker, intent.defender)
+        result = _resolve_opposed_check(intent, "agility", "agility")
 
         # 3. Handle outcome tiers
         atk_name = intent.attacker.name
         def_name = intent.defender.name
+        succeeded = True
 
         match result.outcome_tier:
             case OutcomeTier.CRITICAL_SUCCESS:
@@ -259,14 +244,12 @@ class TripExecutor(ActionExecutor[TripIntent]):
                 )
                 impact_damage = roll_d(4)
                 intent.defender.take_damage(impact_damage, damage_type="impact")
-                msg = (
-                    f"Critical! {atk_name} sweeps {def_name}'s legs out! "
-                    f"{def_name} hits the ground hard for {impact_damage} damage!"
-                )
-                publish_event(MessageEvent(msg, colors.YELLOW))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"Critical! {atk_name} sweeps {def_name}'s legs out! "
+                        f"{def_name} hits the ground hard for {impact_damage} damage!",
+                        colors.YELLOW,
+                    )
                 )
 
             case OutcomeTier.SUCCESS:
@@ -280,11 +263,10 @@ class TripExecutor(ActionExecutor[TripIntent]):
                         world_y=intent.defender.y,
                     )
                 )
-                msg = f"{atk_name} trips {def_name}! They fall prone!"
-                publish_event(MessageEvent(msg, colors.WHITE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"{atk_name} trips {def_name}! They fall prone!", colors.WHITE
+                    )
                 )
 
             case OutcomeTier.PARTIAL_SUCCESS:
@@ -300,15 +282,16 @@ class TripExecutor(ActionExecutor[TripIntent]):
                         world_y=intent.defender.y,
                     )
                 )
-                msg = f"{atk_name} trips {def_name} but stumbles in the process!"
-                publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"{atk_name} trips {def_name} but stumbles in the process!",
+                        colors.LIGHT_BLUE,
+                    )
                 )
 
             case OutcomeTier.FAILURE:
                 # Trip attempt fails - attacker stumbles
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
                 publish_event(
                     FloatingTextEvent(
@@ -319,25 +302,28 @@ class TripExecutor(ActionExecutor[TripIntent]):
                         world_y=intent.attacker.y,
                     )
                 )
-                msg = f"{atk_name} fails to trip {def_name} and stumbles!"
-                publish_event(MessageEvent(msg, colors.GREY))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"{atk_name} fails to trip {def_name} and stumbles!",
+                        colors.GREY,
+                    )
                 )
 
             case OutcomeTier.CRITICAL_FAILURE:
                 # Attacker overextends and falls
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
-                msg = f"Critical miss! {atk_name} trips over their own feet!"
-                publish_event(MessageEvent(msg, colors.ORANGE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"Critical miss! {atk_name} trips over their own feet!",
+                        colors.ORANGE,
+                    )
                 )
 
-        # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
+        escalate_hostility(intent.attacker, intent.defender, intent.controller)
+        return GameActionResult(
+            succeeded=succeeded, duration_ms=Combat.STUNT_DURATION_MS
+        )
 
 
 class KickExecutor(ActionExecutor[KickIntent]):
@@ -359,46 +345,25 @@ class KickExecutor(ActionExecutor[KickIntent]):
         - Critical Failure: Attacker gains TrippedEffect
         """
         # 1. Validate adjacency (Chebyshev distance must be 1, includes diagonals)
-        dx = intent.defender.x - intent.attacker.x
-        dy = intent.defender.y - intent.attacker.y
-        if max(abs(dx), abs(dy)) != 1:
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} is not adjacent!",
-                    colors.RED,
-                )
-            )
-            return GameActionResult(
-                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
-            )
+        adj = _validate_adjacency(intent.attacker, intent.defender)
+        if isinstance(adj, GameActionResult):
+            return adj
+        dx, dy = adj
 
         # 2. Perform opposed Strength vs Agility check
-        attacker_strength = intent.attacker.stats.strength
-        defender_agility = intent.defender.stats.agility
-
-        # Get resolution modifiers from status effects (advantage/disadvantage)
-        resolution_args = intent.attacker.modifiers.get_resolution_modifiers("strength")
-
-        resolver = intent.controller.create_resolver(
-            ability_score=attacker_strength,
-            roll_to_exceed=defender_agility + Combat.D20_DC_BASE,
-            has_advantage=resolution_args.get("has_advantage", False),
-            has_disadvantage=resolution_args.get("has_disadvantage", False),
-        )
-        result = resolver.resolve(intent.attacker, intent.defender)
+        result = _resolve_opposed_check(intent, "strength", "agility")
 
         # 3. Handle outcome tiers
         atk_name = intent.attacker.name
         def_name = intent.defender.name
+        succeeded = True
 
         match result.outcome_tier:
             case OutcomeTier.CRITICAL_SUCCESS:
                 # Damage + push + trip
                 damage = roll_d(4)
                 intent.defender.take_damage(damage, damage_type="impact")
-                pushed = attempt_displacement(
-                    intent.controller, intent.defender, dx, dy
-                )
+                attempt_displacement(intent.controller, intent.defender, dx, dy)
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
                 publish_event(
                     FloatingTextEvent(
@@ -409,20 +374,12 @@ class KickExecutor(ActionExecutor[KickIntent]):
                         world_y=intent.defender.y,
                     )
                 )
-                if pushed:
-                    msg = (
+                publish_event(
+                    MessageEvent(
                         f"Critical! {atk_name} kicks {def_name} to the ground "
-                        f"for {damage} damage!"
+                        f"for {damage} damage!",
+                        colors.YELLOW,
                     )
-                else:
-                    msg = (
-                        f"Critical! {atk_name} kicks {def_name} down "
-                        f"for {damage} damage!"
-                    )
-                publish_event(MessageEvent(msg, colors.YELLOW))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
                 )
 
             case OutcomeTier.SUCCESS:
@@ -446,10 +403,6 @@ class KickExecutor(ActionExecutor[KickIntent]):
                 else:
                     msg = f"{atk_name} kicks {def_name} for {damage} damage!"
                 publish_event(MessageEvent(msg, colors.WHITE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
-                )
 
             case OutcomeTier.PARTIAL_SUCCESS:
                 # Damage + push, but attacker stumbles
@@ -479,13 +432,10 @@ class KickExecutor(ActionExecutor[KickIntent]):
                         f"but loses balance!"
                     )
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
-                )
 
             case OutcomeTier.FAILURE:
                 # Miss - attacker stumbles
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
                 publish_event(
                     FloatingTextEvent(
@@ -496,25 +446,28 @@ class KickExecutor(ActionExecutor[KickIntent]):
                         world_y=intent.attacker.y,
                     )
                 )
-                msg = f"{atk_name} misses the kick and stumbles off-balance!"
-                publish_event(MessageEvent(msg, colors.GREY))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"{atk_name} misses the kick and stumbles off-balance!",
+                        colors.GREY,
+                    )
                 )
 
             case OutcomeTier.CRITICAL_FAILURE:
                 # Attacker falls
+                succeeded = False
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
-                msg = f"Critical miss! {atk_name} slips and falls trying to kick!"
-                publish_event(MessageEvent(msg, colors.ORANGE))
-                escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(
-                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                publish_event(
+                    MessageEvent(
+                        f"Critical miss! {atk_name} slips and falls trying to kick!",
+                        colors.ORANGE,
+                    )
                 )
 
-        # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
+        escalate_hostility(intent.attacker, intent.defender, intent.controller)
+        return GameActionResult(
+            succeeded=succeeded, duration_ms=Combat.STUNT_DURATION_MS
+        )
 
 
 class HolsterWeaponExecutor(ActionExecutor[HolsterWeaponIntent]):
@@ -569,18 +522,9 @@ class PunchExecutor(ActionExecutor[PunchIntent]):
         def_name = intent.defender.name
 
         # 1. Validate adjacency (target may have moved since plan started)
-        dx = intent.defender.x - intent.attacker.x
-        dy = intent.defender.y - intent.attacker.y
-        if max(abs(dx), abs(dy)) != 1:
-            publish_event(
-                MessageEvent(
-                    f"{def_name} is not adjacent!",
-                    colors.RED,
-                )
-            )
-            return GameActionResult(
-                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
-            )
+        adj = _validate_adjacency(intent.attacker, intent.defender)
+        if isinstance(adj, GameActionResult):
+            return adj
 
         # 2. Get Fists weapon
         fists = FISTS_TYPE.create()
@@ -589,20 +533,7 @@ class PunchExecutor(ActionExecutor[PunchIntent]):
         attack = fists.melee_attack
         assert attack is not None
 
-        # Get attacker's strength for the attack
-        attacker_stat = intent.attacker.stats.strength
-        defender_defense = intent.defender.stats.agility
-
-        # Get resolution modifiers
-        resolution_args = intent.attacker.modifiers.get_resolution_modifiers("strength")
-
-        resolver = intent.controller.create_resolver(
-            ability_score=attacker_stat,
-            roll_to_exceed=defender_defense + Combat.D20_DC_BASE,
-            has_advantage=resolution_args.get("has_advantage", False),
-            has_disadvantage=resolution_args.get("has_disadvantage", False),
-        )
-        result = resolver.resolve(intent.attacker, intent.defender)
+        result = _resolve_opposed_check(intent, "strength", "agility")
 
         # 4. Handle outcome based on outcome tier
         # Hit: SUCCESS, CRITICAL_SUCCESS, PARTIAL_SUCCESS
@@ -635,23 +566,26 @@ class PunchExecutor(ActionExecutor[PunchIntent]):
                 msg = f"{atk_name} punches {def_name} for {damage} damage!"
                 publish_event(MessageEvent(msg, colors.WHITE))
 
-            escalate_hostility(intent.attacker, intent.defender, intent.controller)
-            return GameActionResult(
-                succeeded=True, duration_ms=Combat.PUNCH_DURATION_MS
+            succeeded = True
+        else:
+            # Miss
+            publish_event(
+                FloatingTextEvent(
+                    text="MISS",
+                    target_actor_id=intent.defender.actor_id,
+                    valence=FloatingTextValence.NEUTRAL,
+                    world_x=intent.defender.x,
+                    world_y=intent.defender.y,
+                )
             )
-
-        # Miss
-        publish_event(
-            FloatingTextEvent(
-                text="MISS",
-                target_actor_id=intent.defender.actor_id,
-                valence=FloatingTextValence.NEUTRAL,
-                world_x=intent.defender.x,
-                world_y=intent.defender.y,
+            publish_event(
+                MessageEvent(
+                    f"{atk_name} swings at {def_name} but misses!", colors.GREY
+                )
             )
-        )
-        msg = f"{atk_name} swings at {def_name} but misses!"
-        publish_event(MessageEvent(msg, colors.GREY))
+            succeeded = False
 
         escalate_hostility(intent.attacker, intent.defender, intent.controller)
-        return GameActionResult(succeeded=False, duration_ms=Combat.PUNCH_DURATION_MS)
+        return GameActionResult(
+            succeeded=succeeded, duration_ms=Combat.PUNCH_DURATION_MS
+        )

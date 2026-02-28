@@ -11,11 +11,6 @@ from brileta.game.actions.environment import (
     SearchContainerIntent,
     SearchContainerPlan,
 )
-from brileta.game.actions.recovery import (
-    ComfortableSleepIntent,
-    RestIntent,
-    SleepIntent,
-)
 from brileta.game.actors import Character
 from brileta.game.actors.container import Container
 from brileta.types import WorldTilePos
@@ -42,11 +37,9 @@ class EnvironmentActionDiscovery:
     def discover_environment_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        options: list[ActionOption] = []
-        options.extend(self._get_environment_options(controller, actor, context))
-        options.extend(self._get_movement_options(controller, actor, context))
-        options.extend(self._get_recovery_actions(controller, actor, context))
-        return options
+        # Recovery actions (Rest, Sleep, etc.) are discovered by
+        # ItemActionDiscovery to avoid duplicates.
+        return list(self._get_environment_options(controller, actor, context))
 
     def discover_environment_actions_for_tile(
         self,
@@ -349,98 +342,5 @@ class EnvironmentActionDiscovery:
                         execute=create_pathfind_to_tile(tile_x, tile_y),
                     )
                 )
-
-        # Add shoot-at-tile actions for non-walkable tiles
-        options.extend(
-            self._get_shoot_tile_actions(controller, actor, tile_x, tile_y, tile_id)
-        )
-
-        return options
-
-    def _get_shoot_tile_actions(
-        self,
-        controller: Controller,
-        actor: Character,
-        tile_x: int,
-        tile_y: int,
-        tile_id: int,
-    ) -> list[ActionOption]:
-        """Get shoot-at-tile actions for destructible environment tiles.
-
-        Currently returns an empty list since no environmental tiles in the game
-        are destructible. This method is kept as a stub for future implementation
-        of destructible terrain.
-        """
-        # No environmental tiles are currently destructible, so no shoot actions
-        # are offered. This stub remains for potential future implementation of
-        # destructible walls, doors, or other terrain.
-        return []
-
-    def _get_movement_options(
-        self, controller: Controller, actor: Character, context: ActionContext
-    ) -> list[ActionOption]:
-        # Placeholder for future movement-related actions
-        return []
-
-    def _get_recovery_actions(
-        self, controller: Controller, actor: Character, context: ActionContext
-    ) -> list[ActionOption]:
-        from brileta.game.actions.recovery import is_safe_location
-
-        options: list[ActionOption] = []
-        safe, _ = is_safe_location(actor)
-
-        # Check if outfit has recoverable AP damage
-        outfit_cap = actor.inventory.outfit_capability
-        outfit_needs_rest = (
-            outfit_cap is not None
-            and outfit_cap.damaged_since_rest
-            and not outfit_cap.is_broken
-            and outfit_cap.ap < outfit_cap.max_ap
-        )
-
-        if outfit_needs_rest and safe:
-            options.append(
-                ActionOption(
-                    id="rest",
-                    name="Rest",
-                    description="Recover AP",
-                    category=ActionCategory.ENVIRONMENT,
-                    action_class=RestIntent,
-                    requirements=[],
-                    static_params={},
-                )
-            )
-
-        needs_sleep = (
-            actor.health.hp < actor.health.max_hp
-            or actor.modifiers.get_exhaustion_count() > 0
-        )
-
-        if needs_sleep and safe:
-            options.append(
-                ActionOption(
-                    id="sleep",
-                    name="Sleep",
-                    description="Sleep to restore HP and ease exhaustion",
-                    category=ActionCategory.ENVIRONMENT,
-                    action_class=SleepIntent,
-                    requirements=[],
-                    static_params={},
-                )
-            )
-
-        if actor.modifiers.get_exhaustion_count() > 0 and safe:
-            options.append(
-                ActionOption(
-                    id="comfort_sleep",
-                    name="Comfortable Sleep",
-                    description="Remove all exhaustion and restore HP",
-                    category=ActionCategory.ENVIRONMENT,
-                    action_class=ComfortableSleepIntent,
-                    requirements=[],
-                    static_params={},
-                )
-            )
 
         return options

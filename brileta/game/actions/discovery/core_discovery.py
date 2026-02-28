@@ -71,34 +71,6 @@ class ActionDiscovery:
             all_actions = self._sort_by_relevance(all_actions, context)
         return all_actions
 
-    def get_all_available_actions(
-        self, controller: Controller, actor: Character
-    ) -> list[ActionOption]:
-        """Get all available actions without UI categorization or sorting."""
-        context = self.context_builder.build_context(controller, actor)
-        all_actions: list[ActionOption] = []
-        all_actions.extend(
-            self.combat_discovery.discover_combat_actions(controller, actor, context)
-        )
-        all_actions.extend(
-            self.combat_discovery.discover_stunt_actions(controller, actor, context)
-        )
-        all_actions.extend(
-            self.item_discovery.discover_item_actions(controller, actor, context)
-        )
-        all_actions.extend(
-            self.environment_discovery.discover_environment_actions(
-                controller, actor, context
-            )
-        )
-        return all_actions
-
-    def get_options_for_category(
-        self, controller: Controller, actor: Character, category: ActionCategory
-    ) -> list[ActionOption]:
-        all_options = self.get_available_options(controller, actor)
-        return [option for option in all_options if option.category == category]
-
     def get_options_for_target(
         self, controller: Controller, actor: Character, target: Character
     ) -> list[ActionOption]:
@@ -326,12 +298,6 @@ class ActionDiscovery:
     ) -> list[ActionOption]:
         """DEPRECATED wrapper for inventory options."""
         return self.item_discovery._get_inventory_options(controller, actor, context)
-
-    def _get_recovery_options(
-        self, controller: Controller, actor: Character, context: ActionContext
-    ) -> list[ActionOption]:
-        """DEPRECATED wrapper for recovery options."""
-        return self.item_discovery._get_recovery_options(controller, actor, context)
 
     def _get_environment_options(
         self, controller: Controller, actor: Character, context: ActionContext

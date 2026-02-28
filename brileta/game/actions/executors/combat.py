@@ -42,7 +42,7 @@ from brileta.game.resolution.base import ResolutionResult
 from brileta.game.resolution.outcomes import CombatOutcome
 from brileta.sound.materials import AudioMaterialResolver, get_impact_sound_id
 from brileta.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
-from brileta.types import DIRECTIONS, DeltaTime
+from brileta.types import DeltaTime
 from brileta.util import rng
 from brileta.view.presentation import PresentationEvent
 
@@ -466,25 +466,11 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
     def _adjacent_cover_bonus(self, intent: AttackIntent) -> int:
         """Return the highest cover bonus adjacent to the defender."""
         assert intent.defender is not None  # Tile shots handled separately
-        game_world = intent.controller.gw
-        game_map = intent.controller.gw.game_map
-        max_bonus = 0
-        x, y = intent.defender.x, intent.defender.y
+        from brileta.game.actions.discovery.action_context import ActionContextBuilder
 
-        # Cover checks are infrequent, so we prioritize memory usage over
-        # lookup speed by querying nearby tiles/actors directly rather than
-        # caching full cover maps.
-        for dx, dy in DIRECTIONS:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
-                tile_id = game_map.tiles[nx, ny]
-                tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
-                bonus = int(tile_data["cover_bonus"])
-                max_bonus = max(max_bonus, bonus)
-                for actor in game_world.actor_spatial_index.get_at_point(nx, ny):
-                    max_bonus = max(max_bonus, int(getattr(actor, "cover_bonus", 0)))
-
-        return max_bonus
+        return ActionContextBuilder().get_adjacent_cover_bonus(
+            intent.controller, intent.defender
+        )
 
     def _execute_attack_roll(
         self, intent: AttackIntent, attack: Attack, weapon: Item, range_modifiers: dict
@@ -814,7 +800,7 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
 
         # Include weapon name for non-unarmed attacks
         is_unarmed = weapon.melee_attack and WeaponProperty.UNARMED in (
-            weapon.melee_attack._spec.properties or set()
+            weapon.melee_attack.properties
         )
         weapon_part = "" if is_unarmed else f" with {weapon.name}"
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
 
 from .core_discovery import ActionCategory
 
 if TYPE_CHECKING:
-    from brileta.game.items.capabilities import MeleeAttack, RangedAttack
     from brileta.game.items.item_core import Item
 
 
@@ -39,12 +38,10 @@ class ActionFormatter:
         Thrown weapons use direct object phrasing: "Verb Weapon at Target"
         """
         if attack_mode == "melee" and weapon.melee_attack:
-            melee = cast("MeleeAttack", weapon.melee_attack)
-            verb = melee._spec.verb
+            verb = weapon.melee_attack.verb
             return f"{verb.title()} {target_name} with {weapon.name}"
         if attack_mode == "ranged" and weapon.ranged_attack:
-            ranged = cast("RangedAttack", weapon.ranged_attack)
-            verb = ranged._spec.verb
+            verb = weapon.ranged_attack.verb
             # Thrown weapons use different grammar: "Throw Knife at Target"
             if verb.lower() in ActionFormatter.THROWN_VERBS:
                 return f"{verb.title()} {weapon.name} at {target_name}"

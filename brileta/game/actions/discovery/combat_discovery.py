@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.game import ranges
@@ -16,7 +16,6 @@ from .types import ActionCategory, ActionOption, ActionRequirement
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
-    from brileta.game.items.capabilities import MeleeAttack, RangedAttack
     from brileta.game.items.item_core import Item
 
 
@@ -387,7 +386,7 @@ class CombatActionDiscovery:
                     controller, actor, target, "strength"
                 )
             if weapon.melee_attack:
-                verb = weapon.melee_attack._spec.verb.capitalize()
+                verb = weapon.melee_attack.verb.capitalize()
                 options.append(
                     ActionOption(
                         id=f"melee-{weapon.name}",
@@ -421,7 +420,7 @@ class CombatActionDiscovery:
                     )
 
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
-                verb = weapon.ranged_attack._spec.verb.capitalize()
+                verb = weapon.ranged_attack.verb.capitalize()
                 options.append(
                     ActionOption(
                         id=f"ranged-{weapon.name}",
@@ -479,8 +478,7 @@ class CombatActionDiscovery:
                     controller, actor, target, "strength"
                 )
 
-                melee = cast("MeleeAttack", weapon.melee_attack)
-                verb = melee._spec.verb
+                verb = weapon.melee_attack.verb
                 display_text = f"{verb.title()} {target.name} with {weapon.name}"
                 action_id = f"melee-{weapon.name}-{target.name}"
 
@@ -505,8 +503,6 @@ class CombatActionDiscovery:
                 range_cat = ranges.get_range_category(distance, weapon)
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
                 if range_mods is None:
-                    ranged_cap = cast("RangedAttack", weapon.ranged_attack)
-                    verb = ranged_cap._spec.verb
                     action_id = f"ranged-{weapon.name}-{target.name}"
                     out_of_range = (
                         self.formatter.get_attack_display_name(
@@ -539,8 +535,6 @@ class CombatActionDiscovery:
                     range_mods,
                 )
 
-                ranged_cap = cast("RangedAttack", weapon.ranged_attack)
-                verb = ranged_cap._spec.verb
                 display_name = self.formatter.get_attack_display_name(
                     weapon, "ranged", target.name
                 )

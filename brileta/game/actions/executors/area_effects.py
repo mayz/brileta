@@ -156,7 +156,7 @@ class WeaponAreaEffectExecutor(ActionExecutor[AreaEffectIntent]):
                 cos_angle = dot / distance
                 if cos_angle < cos_limit:
                     continue
-                if effect._spec.requires_line_of_sight and not ranges.has_line_of_sight(
+                if effect.requires_line_of_sight and not ranges.has_line_of_sight(
                     game_map,
                     intent.attacker.x,
                     intent.attacker.y,
@@ -181,24 +181,27 @@ class WeaponAreaEffectExecutor(ActionExecutor[AreaEffectIntent]):
         if TacticalProperty.RADIATION in effect.properties:
             damage_type = "radiation"
 
-        actors = intent.controller.gw.actors
-        for actor in actors:
-            if not isinstance(actor, Character) or not actor.health.is_alive():
-                continue
-            if (actor.x, actor.y) not in tiles:
-                continue
-            distance = tiles[(actor.x, actor.y)]
+        # Query spatial index per affected tile instead of scanning all actors.
+        spatial = intent.controller.gw.actor_spatial_index
+        seen: set[int] = set()  # actor_id dedup for overlapping tiles
+        for coord, distance in tiles.items():
             damage = base_damage
             if effect.damage_falloff:
                 falloff = max(0.0, 1.0 - (distance / max(1, effect.size)))
                 damage = round(base_damage * falloff)
             if damage == 0:
                 continue
-            if damage > 0:
-                actor.take_damage(damage, damage_type=damage_type)
-            else:
-                actor.heal(-damage)
-            hits.append((actor, damage))
+            for actor in spatial.get_at_point(*coord):
+                if not isinstance(actor, Character) or not actor.health.is_alive():
+                    continue
+                if actor.actor_id in seen:
+                    continue
+                seen.add(actor.actor_id)
+                if damage > 0:
+                    actor.take_damage(damage, damage_type=damage_type)
+                else:
+                    actor.heal(-damage)
+                hits.append((actor, damage))
         return hits
 
     def _consume_ammo(self, ranged_attack: RangedAttack) -> None:
