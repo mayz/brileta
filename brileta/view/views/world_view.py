@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 
@@ -69,6 +69,20 @@ _EDGE_BLEND_HARD_EDGE_NEIGHBOR_TILE_IDS: tuple[int, ...] = (
     int(tile_types.TileTypeID.WALL),
     *_ROOF_TILE_IDS,
 )
+
+
+def _adjust_color_brightness(
+    colors: np.ndarray, offset: int | np.ndarray
+) -> np.ndarray:
+    """Apply a signed brightness offset to uint8 RGB colors with clamping.
+
+    Widens to int16 internally to prevent uint8 wraparound, then clamps to
+    [0, 255].  Works with scalar offsets, per-channel arrays, or per-pixel
+    arrays that broadcast against the input shape.
+    """
+    return np.clip(colors.astype(np.int16) + offset, 0, 255).astype(np.uint8)
+
+
 _LIGHT_OVERLAY_MASK_HIDDEN = np.uint8(0)
 _LIGHT_OVERLAY_MASK_ROOF_OPAQUE = np.uint8(128)
 _LIGHT_OVERLAY_MASK_ROOF_SUNLIT = np.uint8(192)
@@ -116,6 +130,55 @@ class _RoofStamp:
     split_noise_pattern: np.ndarray  # (w, ext_h) uint8
 
 
+@dataclass(slots=True)
+class _LightBufferCache:
+    """Cached light-source glyph buffer tile data and visibility metadata.
+
+    Groups all per-viewport light overlay cache fields so they can be
+    invalidated atomically by replacing the entire object.
+    """
+
+    cache_key: tuple[object, ...] | None = None
+    # Pre-animation colors and index metadata for animated tiles.
+    anim_base_fg: np.ndarray | None = None
+    anim_base_bg: np.ndarray | None = None
+    anim_buf_indices: np.ndarray | None = None
+    anim_exp_x: np.ndarray | None = None
+    anim_exp_y: np.ndarray | None = None
+    # Buffer coordinates for all explored tiles and visible subset.
+    buf_x: np.ndarray | None = None
+    buf_y: np.ndarray | None = None
+    exp_x: np.ndarray | None = None
+    exp_y: np.ndarray | None = None
+    roof_covered_mask: np.ndarray | None = None
+    vis_buf_x: np.ndarray | None = None
+    vis_buf_y: np.ndarray | None = None
+    roof_opaque_buf_x: np.ndarray | None = None
+    roof_opaque_buf_y: np.ndarray | None = None
+    # Viewport-local explored snapshot for incremental invalidation.
+    exploration_revision: int = -1
+    explored_mask: np.ndarray | None = None
+
+
+def _shift_boundary_valid_mask(shape: tuple[int, int], dx: int, dy: int) -> np.ndarray:
+    """Build a boolean mask marking cells whose ``(dx, dy)`` neighbor is in bounds.
+
+    After ``np.roll(arr, shift=(-dx, -dy), axis=(0, 1))``, the rolled array
+    wraps around at the edges.  This mask is ``False`` for cells whose shifted
+    neighbor originated from the opposite edge (i.e. is not a true neighbor).
+    """
+    mask = np.ones(shape, dtype=np.bool_)
+    if dx < 0:
+        mask[:-dx, :] = False
+    elif dx > 0:
+        mask[-dx:, :] = False
+    if dy < 0:
+        mask[:, :-dy] = False
+    elif dy > 0:
+        mask[:, -dy:] = False
+    return mask
+
+
 def _compute_tile_edge_transition_metadata(
     tile_id_window: np.ndarray,
     edge_blend_window: np.ndarray,
@@ -140,15 +203,7 @@ def _compute_tile_edge_transition_metadata(
         shifted_drawn = np.roll(drawn_mask_window, shift=(-dx, -dy), axis=(0, 1))
         shifted_bg = np.roll(bg_rgb_window, shift=(-dx, -dy), axis=(0, 1))
 
-        valid_neighbor = np.ones(tile_id_window.shape, dtype=np.bool_)
-        if dx < 0:
-            valid_neighbor[:-dx, :] = False
-        elif dx > 0:
-            valid_neighbor[-dx:, :] = False
-        if dy < 0:
-            valid_neighbor[:, :-dy] = False
-        elif dy > 0:
-            valid_neighbor[:, -dy:] = False
+        valid_neighbor = _shift_boundary_valid_mask(tile_id_window.shape, dx, dy)
 
         # One-sided ownership prevents both tiles from cutting into each other.
         # The tile with the higher edge_blend value owns the boundary so organic
@@ -193,15 +248,7 @@ def _suppress_edge_blend_toward_hard_edges(
     for bit_index, (dx, dy) in enumerate(_EDGE_BLEND_CARDINAL_DIRECTIONS):
         shifted_hard_edges = np.roll(hard_edge_tiles, shift=(-dx, -dy), axis=(0, 1))
 
-        valid_neighbor = np.ones(tile_id_window.shape, dtype=np.bool_)
-        if dx < 0:
-            valid_neighbor[:-dx, :] = False
-        elif dx > 0:
-            valid_neighbor[-dx:, :] = False
-        if dy < 0:
-            valid_neighbor[:, :-dy] = False
-        elif dy > 0:
-            valid_neighbor[:, -dy:] = False
+        valid_neighbor = _shift_boundary_valid_mask(tile_id_window.shape, dx, dy)
 
         direction_bit = np.uint8(1 << bit_index)
         mask_points_to_hard_edge = (
@@ -227,9 +274,11 @@ def _override_edge_neighbor_bg_with_self_darken(
     if not np.any(self_darken_mask):
         return
 
-    own_bg_rgb = bg_rgb_window[self_darken_mask].astype(np.int16)
+    # Signed cast so negation produces a proper negative offset.
     darken_amount = edge_self_darken[self_darken_mask].astype(np.int16)[:, np.newaxis]
-    darkened_bg = np.clip(own_bg_rgb - darken_amount, 0, 255).astype(np.uint8)
+    darkened_bg = _adjust_color_brightness(
+        bg_rgb_window[self_darken_mask], -darken_amount
+    )
     # Write every cardinal slot so the shader always darkens toward self-color
     # for these materials, regardless of actual neighbor type.
     edge_neighbor_bg[self_darken_mask] = darkened_bg[:, np.newaxis, :]
@@ -268,28 +317,7 @@ class WorldView(View):
         # Light source buffer cache: skip full rebuild when viewport and exploration
         # haven't changed since the last frame.
         self._map_unlit_buffer_cache_key: tuple[object, ...] | None = None
-        self._light_buffer_cache_key: tuple[object, ...] | None = None
-        # Pre-animation colors and index metadata for animated tiles in the cached
-        # light-source buffer. This lets us re-apply animation without rebuilding.
-        self._light_buffer_anim_base_fg: np.ndarray | None = None
-        self._light_buffer_anim_base_bg: np.ndarray | None = None
-        self._light_buffer_anim_buf_indices: np.ndarray | None = None
-        self._light_buffer_anim_exp_x: np.ndarray | None = None
-        self._light_buffer_anim_exp_y: np.ndarray | None = None
-        # Cached buffer coordinates for all explored tiles and visible subset.
-        self._light_buffer_cached_buf_x: np.ndarray | None = None
-        self._light_buffer_cached_buf_y: np.ndarray | None = None
-        self._light_buffer_cached_exp_x: np.ndarray | None = None
-        self._light_buffer_cached_exp_y: np.ndarray | None = None
-        self._light_buffer_cached_roof_covered_mask: np.ndarray | None = None
-        self._light_buffer_cached_vis_buf_x: np.ndarray | None = None
-        self._light_buffer_cached_vis_buf_y: np.ndarray | None = None
-        self._light_buffer_cached_roof_opaque_buf_x: np.ndarray | None = None
-        self._light_buffer_cached_roof_opaque_buf_y: np.ndarray | None = None
-        # Track a viewport-local explored snapshot so global exploration changes
-        # only invalidate the expensive cache when this viewport actually changes.
-        self._light_buffer_cached_exploration_revision: int = -1
-        self._light_buffer_cached_explored_mask: np.ndarray | None = None
+        self._light_cache = _LightBufferCache()
         # Persistent visible mask buffer to avoid per-frame allocation.
         self._visible_mask_buffer: np.ndarray | None = None
         self._roof_state_cache_key: tuple[object, ...] | None = None
@@ -371,23 +399,7 @@ class WorldView(View):
         )
         # Force a full light-source rebuild after buffer resize.
         self._map_unlit_buffer_cache_key = None
-        self._light_buffer_cache_key = None
-        self._light_buffer_anim_base_fg = None
-        self._light_buffer_anim_base_bg = None
-        self._light_buffer_anim_buf_indices = None
-        self._light_buffer_anim_exp_x = None
-        self._light_buffer_anim_exp_y = None
-        self._light_buffer_cached_buf_x = None
-        self._light_buffer_cached_buf_y = None
-        self._light_buffer_cached_exp_x = None
-        self._light_buffer_cached_exp_y = None
-        self._light_buffer_cached_roof_covered_mask = None
-        self._light_buffer_cached_vis_buf_x = None
-        self._light_buffer_cached_vis_buf_y = None
-        self._light_buffer_cached_roof_opaque_buf_x = None
-        self._light_buffer_cached_roof_opaque_buf_y = None
-        self._light_buffer_cached_exploration_revision = -1
-        self._light_buffer_cached_explored_mask = None
+        self._light_cache = _LightBufferCache()
         self._visible_mask_buffer = None
         self._active_background_texture = None
         self._light_overlay_texture = None
@@ -444,7 +456,7 @@ class WorldView(View):
         self,
         actor: Actor,
         color: colors.Color,
-        effect: str = "solid",
+        effect: Literal["solid", "pulse"] = "solid",
         alpha: Opacity = Opacity(0.4),  # noqa: B008
     ) -> None:
         """Highlight an actor if it is visible."""
@@ -456,7 +468,7 @@ class WorldView(View):
         x: int,
         y: int,
         color: colors.Color,
-        effect: str = "solid",
+        effect: Literal["solid", "pulse"] = "solid",
         alpha: Opacity = Opacity(0.4),  # noqa: B008
     ) -> None:
         """Highlight a tile with an optional effect using world coordinates."""
@@ -1262,6 +1274,8 @@ class WorldView(View):
             getattr(game_map, "structural_revision", 0),
             len(buildings),
         )
+        # getattr is deliberate: some test doubles bypass __init__, so
+        # these attributes may not exist on partially-constructed instances.
         cached_roof_state_key = getattr(self, "_roof_state_cache_key", None)
         cached_roof_state_value = getattr(self, "_roof_state_cache_value", None)
         if cached_roof_state_key == cache_key and cached_roof_state_value is not None:
@@ -1508,9 +1522,7 @@ class WorldView(View):
                 self._building_roof_color_offset(building, decoration_seed),
                 dtype=np.int16,
             )
-            roof_bg = np.clip(
-                roof_bg.astype(np.int16) + roof_color_offset, 0, 255
-            ).astype(np.uint8)
+            roof_bg = _adjust_color_brightness(roof_bg, roof_color_offset)
 
             chars[all_roof] = roof_chars
             fg_rgb[all_roof] = roof_fg
@@ -1544,16 +1556,9 @@ class WorldView(View):
                 ),
             )
 
-            bg_rgb[all_roof] = np.clip(
-                bg_rgb[all_roof].astype(np.int16) + ridge_brightness[:, np.newaxis],
-                0,
-                255,
-            ).astype(np.uint8)
-            fg_rgb[all_roof] = np.clip(
-                fg_rgb[all_roof].astype(np.int16) + ridge_brightness[:, np.newaxis],
-                0,
-                255,
-            ).astype(np.uint8)
+            ridge_offset = ridge_brightness[:, np.newaxis]
+            bg_rgb[all_roof] = _adjust_color_brightness(bg_rgb[all_roof], ridge_offset)
+            fg_rgb[all_roof] = _adjust_color_brightness(fg_rgb[all_roof], ridge_offset)
 
         # --- Eave darkening on shifted roof perimeter ---
         # The visual roof spans from the first full roof row to the south
@@ -1570,24 +1575,22 @@ class WorldView(View):
             is_west_edge | is_east_edge | is_north_edge | is_south_edge
         )
         if np.any(perimeter_mask):
-            bg_rgb[perimeter_mask] = np.clip(
-                bg_rgb[perimeter_mask].astype(np.int16) - 6, 0, 255
-            ).astype(np.uint8)
+            bg_rgb[perimeter_mask] = _adjust_color_brightness(
+                bg_rgb[perimeter_mask], -6
+            )
 
         # Strong darkening on south edge where roof meets wall face.
         south_roof_edge = visual_roof & is_south_edge
         if np.any(south_roof_edge):
-            bg_rgb[south_roof_edge] = np.clip(
-                bg_rgb[south_roof_edge].astype(np.int16) - 10, 0, 255
-            ).astype(np.uint8)
+            bg_rgb[south_roof_edge] = _adjust_color_brightness(
+                bg_rgb[south_roof_edge], -10
+            )
 
         corner_mask = visual_roof & (
             (is_west_edge | is_east_edge) & (is_north_edge | is_south_edge)
         )
         if np.any(corner_mask):
-            bg_rgb[corner_mask] = np.clip(
-                bg_rgb[corner_mask].astype(np.int16) - 4, 0, 255
-            ).astype(np.uint8)
+            bg_rgb[corner_mask] = _adjust_color_brightness(bg_rgb[corner_mask], -4)
 
         # --- Eave shadow color (shared by wall face and south split) ---
         eave_bg = np.asarray(
@@ -1612,11 +1615,9 @@ class WorldView(View):
             # the receding wall face depth.
             wall_wy = world_y_grid[wall_mask]
             row_offset = (wall_wy - wall_y_start).astype(np.int16)
-            wall_base = np.clip(
-                wall_face.astype(np.int16) - row_offset[:, np.newaxis] * 6,
-                0,
-                255,
-            ).astype(np.uint8)
+            wall_base = _adjust_color_brightness(
+                wall_face, -(row_offset[:, np.newaxis] * 6)
+            )
             fg_rgb[wall_mask] = wall_base
             bg_rgb[wall_mask] = wall_base
 
@@ -1624,9 +1625,7 @@ class WorldView(View):
             # around to a side face.
             wall_and_edge = wall_mask & (is_west_edge | is_east_edge)
             if np.any(wall_and_edge):
-                darkened = np.clip(
-                    bg_rgb[wall_and_edge].astype(np.int16) - 10, 0, 255
-                ).astype(np.uint8)
+                darkened = _adjust_color_brightness(bg_rgb[wall_and_edge], -10)
                 bg_rgb[wall_and_edge] = darkened
                 fg_rgb[wall_and_edge] = darkened
 
@@ -2641,11 +2640,11 @@ class WorldView(View):
         Global exploration revision changes often, but the expensive rebuild is only
         needed when the explored state inside the current viewport changes.
         """
-        if cache_key != self._light_buffer_cache_key:
+        if cache_key != self._light_cache.cache_key:
             return False
-        if self._light_buffer_cached_exploration_revision == exploration_revision:
+        if self._light_cache.exploration_revision == exploration_revision:
             return True
-        cached_explored_mask = self._light_buffer_cached_explored_mask
+        cached_explored_mask = self._light_cache.explored_mask
         if cached_explored_mask is None:
             return False
         if cached_explored_mask.shape != explored_mask_slice.shape:
@@ -2654,7 +2653,7 @@ class WorldView(View):
             return False
 
         # Exploration changed elsewhere on the map, but not inside this viewport.
-        self._light_buffer_cached_exploration_revision = exploration_revision
+        self._light_cache.exploration_revision = exploration_revision
         return True
 
     def _populate_light_overlay_visible_mask_from_cache(
@@ -2668,43 +2667,43 @@ class WorldView(View):
         as the player moves. Recomputing only this mask avoids a full tile rebuild.
         """
         if (
-            self._light_buffer_cached_roof_opaque_buf_x is not None
-            and self._light_buffer_cached_roof_opaque_buf_y is not None
+            self._light_cache.roof_opaque_buf_x is not None
+            and self._light_cache.roof_opaque_buf_y is not None
         ):
             visible_mask_buffer[
-                self._light_buffer_cached_roof_opaque_buf_x,
-                self._light_buffer_cached_roof_opaque_buf_y,
+                self._light_cache.roof_opaque_buf_x,
+                self._light_cache.roof_opaque_buf_y,
             ] = _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
 
-        cached_buf_x = self._light_buffer_cached_buf_x
-        cached_buf_y = self._light_buffer_cached_buf_y
-        cached_exp_x = self._light_buffer_cached_exp_x
-        cached_exp_y = self._light_buffer_cached_exp_y
+        cached_buf_x = self._light_cache.buf_x
+        cached_buf_y = self._light_cache.buf_y
+        cached_exp_x = self._light_cache.exp_x
+        cached_exp_y = self._light_cache.exp_y
         if (
             cached_buf_x is None
             or cached_buf_y is None
             or cached_exp_x is None
             or cached_exp_y is None
         ):
-            self._light_buffer_cached_vis_buf_x = None
-            self._light_buffer_cached_vis_buf_y = None
+            self._light_cache.vis_buf_x = None
+            self._light_cache.vis_buf_y = None
             return
 
         visible_now = visible_mask_slice[cached_exp_x, cached_exp_y]
-        roof_covered_mask = self._light_buffer_cached_roof_covered_mask
+        roof_covered_mask = self._light_cache.roof_covered_mask
         if roof_covered_mask is not None:
             visible_now = visible_now & ~roof_covered_mask
 
         if not np.any(visible_now):
-            self._light_buffer_cached_vis_buf_x = None
-            self._light_buffer_cached_vis_buf_y = None
+            self._light_cache.vis_buf_x = None
+            self._light_cache.vis_buf_y = None
             return
 
         vis_buf_x = cached_buf_x[visible_now]
         vis_buf_y = cached_buf_y[visible_now]
         visible_mask_buffer[vis_buf_x, vis_buf_y] = _LIGHT_OVERLAY_MASK_VISIBLE
-        self._light_buffer_cached_vis_buf_x = vis_buf_x
-        self._light_buffer_cached_vis_buf_y = vis_buf_y
+        self._light_cache.vis_buf_x = vis_buf_x
+        self._light_cache.vis_buf_y = vis_buf_y
 
     @record_time_live_variable("time.render.light_overlay_ms")
     def _render_light_overlay_gpu_compose(
@@ -2816,13 +2815,13 @@ class WorldView(View):
                 visible_mask_slice,
             )
 
-            if self._light_buffer_anim_buf_indices is not None:
-                anim_base_fg = self._light_buffer_anim_base_fg
-                anim_base_bg = self._light_buffer_anim_base_bg
-                anim_exp_x = self._light_buffer_anim_exp_x
-                anim_exp_y = self._light_buffer_anim_exp_y
-                cached_buf_x = self._light_buffer_cached_buf_x
-                cached_buf_y = self._light_buffer_cached_buf_y
+            if self._light_cache.anim_buf_indices is not None:
+                anim_base_fg = self._light_cache.anim_base_fg
+                anim_base_bg = self._light_cache.anim_base_bg
+                anim_exp_x = self._light_cache.anim_exp_x
+                anim_exp_y = self._light_cache.anim_exp_y
+                cached_buf_x = self._light_cache.buf_x
+                cached_buf_y = self._light_cache.buf_y
                 assert anim_base_fg is not None
                 assert anim_base_bg is not None
                 assert anim_exp_x is not None
@@ -2842,8 +2841,8 @@ class WorldView(View):
                 )
 
                 alpha_channel = np.full((len(anim_fg_rgb), 1), 255, dtype=np.uint8)
-                anim_buf_x = cached_buf_x[self._light_buffer_anim_buf_indices]
-                anim_buf_y = cached_buf_y[self._light_buffer_anim_buf_indices]
+                anim_buf_x = cached_buf_x[self._light_cache.anim_buf_indices]
+                anim_buf_y = cached_buf_y[self._light_cache.anim_buf_indices]
                 light_source_buffer.data["fg"][anim_buf_x, anim_buf_y] = np.hstack(
                     (anim_fg_rgb, alpha_channel)
                 )
@@ -2852,22 +2851,10 @@ class WorldView(View):
                 )
         else:
             light_source_buffer.clear()
-            self._light_buffer_anim_base_fg = None
-            self._light_buffer_anim_base_bg = None
-            self._light_buffer_anim_buf_indices = None
-            self._light_buffer_anim_exp_x = None
-            self._light_buffer_anim_exp_y = None
-            self._light_buffer_cached_buf_x = None
-            self._light_buffer_cached_buf_y = None
-            self._light_buffer_cached_exp_x = None
-            self._light_buffer_cached_exp_y = None
-            self._light_buffer_cached_roof_covered_mask = None
-            self._light_buffer_cached_vis_buf_x = None
-            self._light_buffer_cached_vis_buf_y = None
-            self._light_buffer_cached_roof_opaque_buf_x = None
-            self._light_buffer_cached_roof_opaque_buf_y = None
-            self._light_buffer_cached_exploration_revision = exploration_revision
-            self._light_buffer_cached_explored_mask = explored_mask_slice.copy()
+            self._light_cache = _LightBufferCache(
+                exploration_revision=exploration_revision,
+                explored_mask=explored_mask_slice.copy(),
+            )
 
             if np.any(explored_mask_slice):
                 light_app_slice = gw.game_map.light_appearance_map[world_slice]
@@ -2943,15 +2930,15 @@ class WorldView(View):
                         animates_mask = animates_mask & ~roof_covered_mask
                     if np.any(animates_mask):
                         anim_indices = np.nonzero(animates_mask)[0]
-                        self._light_buffer_anim_base_fg = light_fg_rgb[
+                        self._light_cache.anim_base_fg = light_fg_rgb[
                             anim_indices
                         ].copy()
-                        self._light_buffer_anim_base_bg = light_bg_rgb[
+                        self._light_cache.anim_base_bg = light_bg_rgb[
                             anim_indices
                         ].copy()
-                        self._light_buffer_anim_buf_indices = anim_indices
-                        self._light_buffer_anim_exp_x = valid_exp_x[animates_mask]
-                        self._light_buffer_anim_exp_y = valid_exp_y[animates_mask]
+                        self._light_cache.anim_buf_indices = anim_indices
+                        self._light_cache.anim_exp_x = valid_exp_x[animates_mask]
+                        self._light_cache.anim_exp_y = valid_exp_y[animates_mask]
 
                     self._apply_tile_light_animations(
                         light_fg_rgb,
@@ -3012,29 +2999,29 @@ class WorldView(View):
                             lit_roof_result.split_noise_pattern
                         )
 
-                    self._light_buffer_cached_buf_x = final_buf_x
-                    self._light_buffer_cached_buf_y = final_buf_y
-                    self._light_buffer_cached_exp_x = valid_exp_x
-                    self._light_buffer_cached_exp_y = valid_exp_y
-                    self._light_buffer_cached_roof_covered_mask = roof_covered_mask
+                    self._light_cache.buf_x = final_buf_x
+                    self._light_cache.buf_y = final_buf_y
+                    self._light_cache.exp_x = valid_exp_x
+                    self._light_cache.exp_y = valid_exp_y
+                    self._light_cache.roof_covered_mask = roof_covered_mask
                     if np.any(roof_covered_mask):
                         roof_buf_x = final_buf_x[roof_covered_mask]
                         roof_buf_y = final_buf_y[roof_covered_mask]
                         visible_mask_buffer[roof_buf_x, roof_buf_y] = (
                             _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
                         )
-                        self._light_buffer_cached_roof_opaque_buf_x = roof_buf_x
-                        self._light_buffer_cached_roof_opaque_buf_y = roof_buf_y
+                        self._light_cache.roof_opaque_buf_x = roof_buf_x
+                        self._light_cache.roof_opaque_buf_y = roof_buf_y
                     if np.any(valid_visible):
                         vis_buf_x = final_buf_x[valid_visible]
                         vis_buf_y = final_buf_y[valid_visible]
                         visible_mask_buffer[vis_buf_x, vis_buf_y] = (
                             _LIGHT_OVERLAY_MASK_VISIBLE
                         )
-                        self._light_buffer_cached_vis_buf_x = vis_buf_x
-                        self._light_buffer_cached_vis_buf_y = vis_buf_y
+                        self._light_cache.vis_buf_x = vis_buf_x
+                        self._light_cache.vis_buf_y = vis_buf_y
 
-            self._light_buffer_cache_key = cache_key
+            self._light_cache.cache_key = cache_key
 
         with record_time_live_variable("time.render.light_texture_upload_ms"):
             light_source_texture = graphics.render_glyph_buffer_to_texture(
