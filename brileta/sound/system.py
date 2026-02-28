@@ -96,8 +96,11 @@ class SoundSystem:
 
         # Spatial query throttling: cache the nearby-actors result and only
         # re-query when the listener moves 1+ tiles or the tick counter expires.
+        # We also pre-filter to actors with sound emitters to avoid iterating
+        # all ~8,000 nearby actors every tick just to find the handful that
+        # actually emit sound.
         self._spatial_query_ticks_remaining: int = 0
-        self._cached_nearby_actors: list[Actor] = []
+        self._cached_emitter_actors: list[Actor] = []
         self._cached_listener_x: float = 0.0
         self._cached_listener_y: float = 0.0
 
@@ -204,30 +207,36 @@ class SoundSystem:
                 int(self.audio_listener_y),
                 radius=int(audio_cull_distance),
             )
-            self._cached_nearby_actors = nearby_actors
+            # Pre-filter to only actors that actually emit sound.
+            emitter_actors = [a for a in nearby_actors if a.sound_emitters]
+            self._cached_emitter_actors = emitter_actors
             self._cached_listener_x = self.audio_listener_x
             self._cached_listener_y = self.audio_listener_y
             self._spatial_query_ticks_remaining = _SPATIAL_QUERY_THROTTLE_TICKS
         else:
-            nearby_actors = self._cached_nearby_actors
+            emitter_actors = self._cached_emitter_actors
             self._spatial_query_ticks_remaining -= 1
 
-        # Collect active emitters from nearby actors only
-        # Also build a position lookup dict for volume updates later
+        # Collect active emitters from nearby sound-emitting actors only.
+        # Also build a position lookup dict for volume updates later.
+        cull_dist_sq = audio_cull_distance * audio_cull_distance
+        listener_x_f = self.audio_listener_x
+        listener_y_f = self.audio_listener_y
         active_emitters: list[tuple[SoundEmitter, WorldTileCoord, WorldTileCoord]] = []
         emitter_positions: dict[
             SoundEmitter, tuple[WorldTileCoord, WorldTileCoord]
         ] = {}
-        for actor in nearby_actors:
-            if hasattr(actor, "sound_emitters") and actor.sound_emitters:
-                # Additional distance check with actual Euclidean distance
-                dx = actor.x - self.audio_listener_x
-                dy = actor.y - self.audio_listener_y
-                if dx * dx + dy * dy <= audio_cull_distance * audio_cull_distance:
-                    for emitter in actor.sound_emitters:
-                        if emitter.active:
-                            active_emitters.append((emitter, actor.x, actor.y))
-                            emitter_positions[emitter] = (actor.x, actor.y)
+        for actor in emitter_actors:
+            # Distance check with actual Euclidean distance
+            ax = actor.x
+            ay = actor.y
+            dx = ax - listener_x_f
+            dy = ay - listener_y_f
+            if dx * dx + dy * dy <= cull_dist_sq:
+                for emitter in actor.sound_emitters:  # type: ignore[union-attr]
+                    if emitter.active:
+                        active_emitters.append((emitter, ax, ay))
+                        emitter_positions[emitter] = (ax, ay)
 
         if active_emitters and self.audio_backend:
             logger.debug(
@@ -718,7 +727,7 @@ class SoundSystem:
 
         # Clear spatial query cache so it re-queries on next update
         self._spatial_query_ticks_remaining = 0
-        self._cached_nearby_actors.clear()
+        self._cached_emitter_actors.clear()
         self._cached_listener_x = 0.0
         self._cached_listener_y = 0.0
 

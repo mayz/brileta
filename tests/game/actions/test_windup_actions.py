@@ -36,6 +36,7 @@ class DummyPlayer:
         )
         # Status effects mock - player is not prevented from acting by default
         self.status_effects = SimpleNamespace(is_action_prevented=lambda: False)
+        self.sound_emitters: list[object] | None = None
 
     def get_next_action(self, controller: Controller) -> None:
         return None

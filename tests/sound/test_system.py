@@ -356,15 +356,12 @@ class TestSoundSystemActorProcessing:
         assert self.system.current_time == 0.1
         assert len(self.system.playing_sounds) == 0
 
-    def test_update_with_actors_missing_sound_emitters_attribute(self) -> None:
-        """Test update with actors that don't have sound_emitters attribute."""
-        # Create actor without sound_emitters attribute
+    def test_update_with_actors_without_sound_emitters(self) -> None:
+        """Test update with actors that have sound_emitters=None (no emitters)."""
         actor = MagicMock()
         actor.x = 5
         actor.y = 5
-        # Explicitly remove the sound_emitters attribute
-        if hasattr(actor, "sound_emitters"):
-            delattr(actor, "sound_emitters")
+        actor.sound_emitters = None
 
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
