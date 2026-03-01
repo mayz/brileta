@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from brileta.game.action_plan import ActionPlan
     from brileta.game.actions.discovery import CombatIntentCache
     from brileta.game.items.item_core import Item
+    from brileta.view.render.effects.atmospheric import AtmosphericLayerSystem
 
 from . import colors, config
 from .environment.fov import compute_fov
@@ -56,11 +58,20 @@ from .util.message_log import MessageLog
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
-from .view.render.effects.rain import RainConfig
+from .view.render.effects.rain import RainConfig, compute_rain_density
 from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _RainBaseState:
+    """Snapshot of pre-rain lighting values for restoration."""
+
+    sun_intensity: float
+    sun_color: colors.Color
+    cloud_coverage: float
 
 
 # Controller-level metrics.
@@ -174,6 +185,9 @@ class Controller:
 
         # Track the current world seed for debugging/reproducibility
         self._current_seed: RandomSeed = None
+        self._rain_enabled: bool = False
+        self._rain_base_state: _RainBaseState | None = None
+        self._rain_last_spacing: tuple[float, float] | None = None
 
         # Create the initial game world (uses config.RANDOM_SEED)
         # This sets self.gw, lighting_system, player torch, and sun
@@ -227,8 +241,7 @@ class Controller:
             value_range=(0.0, 90.0),
         )
 
-        self._rain_enabled: bool = bool(config.RAIN_ENABLED)
-        self._get_rain_config().enabled = self._rain_enabled
+        self._set_rain_enabled(bool(config.RAIN_ENABLED))
         self._register_rain_live_variables()
 
         # ---- AI Debug Overlay ----
@@ -478,6 +491,10 @@ class Controller:
         wv = self.frame_manager.world_view
         wv.lighting_system = self.gw.lighting_system
         self._get_rain_config().enabled = self._rain_enabled
+        if self._rain_enabled:
+            # new_world() creates a fresh sun and atmospheric system; re-base
+            # rain response against the new defaults, not the previous world's.
+            self._update_rain_weather_response(force_rebase=True)
 
         # Clear world view caches
         wv.particle_system.clear()
@@ -523,16 +540,159 @@ class Controller:
             world_view.rain_config = rain_config
         return rain_config
 
+    def _get_atmospheric_system(self) -> AtmosphericLayerSystem | None:
+        """Return the active atmospheric layer system when available."""
+        world_view = getattr(self.frame_manager, "world_view", None)
+        if world_view is None:
+            return None
+        return getattr(world_view, "atmospheric_system", None)
+
+    def _capture_rain_base_state(
+        self,
+        sun: DirectionalLight | None,
+        atmospheric: AtmosphericLayerSystem | None,
+        *,
+        overwrite: bool = False,
+    ) -> None:
+        """Save pre-rain sun/cloud values used as the restoration baseline."""
+        if not overwrite and self._rain_base_state is not None:
+            return
+        if sun is None:
+            return
+        cloud_coverage = 0.0
+        if atmospheric is not None:
+            cloud_coverage = float(atmospheric.config.cloud_coverage)
+        self._rain_base_state = _RainBaseState(
+            sun_intensity=float(sun.intensity),
+            sun_color=sun.color,
+            cloud_coverage=cloud_coverage,
+        )
+
+    def _apply_rain_weather_response(
+        self,
+        density: float,
+        sun: DirectionalLight | None,
+        atmospheric: AtmosphericLayerSystem | None,
+    ) -> None:
+        """Apply rain-driven sun dimming/color shift and cloud overcast."""
+        base = self._rain_base_state
+        if base is None:
+            return
+        t = max(0.0, min(1.0, float(density)))
+        lighting_changed = False
+        if sun is not None:
+            dim_factor = colors.lerp(
+                float(config.RAIN_SUN_DIM_RANGE[0]),
+                float(config.RAIN_SUN_DIM_RANGE[1]),
+                t,
+            )
+            target_intensity = base.sun_intensity * dim_factor
+            if abs(float(sun.intensity) - target_intensity) > 1e-6:
+                sun.intensity = target_intensity
+                lighting_changed = True
+
+            blend = colors.lerp(
+                float(config.RAIN_SUN_COLOR_BLEND_RANGE[0]),
+                float(config.RAIN_SUN_COLOR_BLEND_RANGE[1]),
+                t,
+            )
+            target_color = colors.lerp_color(
+                base.sun_color,
+                config.RAIN_SUN_COOL_COLOR,
+                blend,
+            )
+            if sun.color != target_color:
+                sun.color = target_color
+                lighting_changed = True
+
+        if atmospheric is not None:
+            target_coverage = colors.lerp(
+                float(config.RAIN_CLOUD_COVERAGE_RANGE[0]),
+                float(config.RAIN_CLOUD_COVERAGE_RANGE[1]),
+                t,
+            )
+            if abs(atmospheric.config.cloud_coverage - target_coverage) > 1e-6:
+                atmospheric.set_cloud_coverage(target_coverage)
+
+        if lighting_changed and self.gw.lighting_system is not None:
+            self.gw.lighting_system.on_global_light_changed()
+
+    def _restore_rain_base_state(self) -> None:
+        """Restore pre-rain sun/cloud values and clear stored baseline."""
+        base = self._rain_base_state
+        if base is None:
+            return
+        lighting_changed = False
+        sun = self._get_sun()
+        if sun is not None:
+            if abs(float(sun.intensity) - base.sun_intensity) > 1e-6:
+                sun.intensity = base.sun_intensity
+                lighting_changed = True
+            if sun.color != base.sun_color:
+                sun.color = base.sun_color
+                lighting_changed = True
+
+        atmospheric = self._get_atmospheric_system()
+        if (
+            atmospheric is not None
+            and abs(atmospheric.config.cloud_coverage - base.cloud_coverage) > 1e-6
+        ):
+            atmospheric.set_cloud_coverage(base.cloud_coverage)
+
+        if lighting_changed and self.gw.lighting_system is not None:
+            self.gw.lighting_system.on_global_light_changed()
+
+        self._rain_base_state = None
+        self._rain_last_spacing = None
+
+    def _update_rain_weather_response(
+        self,
+        *,
+        force_rebase: bool = False,
+    ) -> None:
+        """Recompute rain-driven sun/cloud response from current density knobs."""
+        if not self._rain_enabled:
+            return
+
+        rain_config = self._get_rain_config()
+        if not rain_config.enabled:
+            return
+
+        # Short-circuit when spacing knobs haven't changed since last frame.
+        spacing_key = (rain_config.stream_spacing, rain_config.drop_spacing)
+        if not force_rebase and spacing_key == self._rain_last_spacing:
+            return
+        self._rain_last_spacing = spacing_key
+
+        sun = self._get_sun()
+        atmospheric = self._get_atmospheric_system()
+        self._capture_rain_base_state(sun, atmospheric, overwrite=force_rebase)
+        density = compute_rain_density(rain_config)
+        self._apply_rain_weather_response(density, sun, atmospheric)
+
     def _set_rain_enabled(self, enabled: bool) -> None:
-        """Toggle rain visuals without mutating global lighting."""
+        """Toggle rain visuals and synchronize weather-driven lighting."""
         rain_config = self._get_rain_config()
         rain_enabled = bool(enabled)
+        rain_config.enabled = rain_enabled
         if rain_enabled == self._rain_enabled:
-            rain_config.enabled = rain_enabled
             return
 
         self._rain_enabled = rain_enabled
-        rain_config.enabled = rain_enabled
+        self._rain_last_spacing = None
+        if rain_enabled:
+            sun = self._get_sun()
+            atmospheric = self._get_atmospheric_system()
+            self._capture_rain_base_state(sun, atmospheric, overwrite=True)
+            density = compute_rain_density(rain_config)
+            self._apply_rain_weather_response(density, sun, atmospheric)
+            self._rain_last_spacing = (
+                rain_config.stream_spacing,
+                rain_config.drop_spacing,
+            )
+            return
+
+        self._restore_rain_base_state()
 
     def _register_rain_live_variables(self) -> None:
         """Register live variables for rain rendering controls.
@@ -955,6 +1115,9 @@ class Controller:
         """Renders one visual frame with interpolation. Called by the App."""
         assert self.frame_manager is not None
         with record_time_live_variable("time.render.cpu_ms"):
+            # Rain spacing can change live via console variables; recompute
+            # sun/cloud response each frame from the current density knobs.
+            self._update_rain_weather_response()
             # Uses alpha to smoothly blend between prev_* and current
             self.frame_manager.render_frame(alpha)
 

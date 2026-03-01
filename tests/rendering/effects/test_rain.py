@@ -3,7 +3,11 @@ import struct
 import pytest
 
 from brileta import config
-from brileta.view.render.effects.rain import RainAnimationState, RainConfig
+from brileta.view.render.effects.rain import (
+    RainAnimationState,
+    RainConfig,
+    _gust_envelope,
+)
 from tests.helpers import dt
 
 
@@ -73,6 +77,7 @@ def test_rain_animation_gust_pushes_then_settles_toward_baseline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Disable micro variation to isolate gust behavior.
+    monkeypatch.setattr(config, "RAIN_WIND_GUSTS_ENABLED", True)
     monkeypatch.setattr(config, "RAIN_WIND_MICRO_MAX_ABS_RAD", 0.0)
     monkeypatch.setattr(config, "RAIN_WIND_GUST_INTERVAL_SEC_RANGE", (100.0, 100.0))
     monkeypatch.setattr(config, "RAIN_WIND_GUST_DURATION_SEC_RANGE", (1.0, 1.0))
@@ -108,6 +113,119 @@ def test_rain_animation_resets_to_baseline_when_disabled() -> None:
     state.update(dt(0.1), rain)
 
     assert state.render_angle == pytest.approx(-0.1)
+
+
+def test_gust_envelope_has_eased_endpoints() -> None:
+    """The gust envelope should start/end with near-zero slope."""
+    assert _gust_envelope(0.0) == pytest.approx(0.0)
+    assert _gust_envelope(1.0) == pytest.approx(0.0)
+    # Early progress rises gently from zero (not a hard linear ramp).
+    assert _gust_envelope(0.01) < 0.08
+    # Late progress settles gently back toward zero.
+    assert _gust_envelope(0.99) < 0.08
+
+
+def test_rain_animation_smooths_gust_offset_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Render gust offset should ease toward raw gust offset, not jump instantly."""
+    monkeypatch.setattr(config, "RAIN_WIND_GUSTS_ENABLED", True)
+    monkeypatch.setattr(config, "RAIN_WIND_MICRO_MAX_ABS_RAD", 0.0)
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_INTERVAL_SEC_RANGE", (100.0, 100.0))
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_DURATION_SEC_RANGE", (1.0, 1.0))
+    monkeypatch.setattr(config, "RAIN_WIND_ANGLE_RESPONSE_RATE", 100.0)
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_OFFSET_RESPONSE_RATE", 2.0)
+    monkeypatch.setattr(config, "RAIN_WIND_DRIZZLE_MAX_ABS_RAD", 0.3)
+    monkeypatch.setattr(config, "RAIN_WIND_DOWNPOUR_MAX_ABS_RAD", 0.3)
+
+    state = RainAnimationState(_wind_rng=_UpperBoundRNG())
+    rain = RainConfig(enabled=True, angle=0.0, stream_spacing=0.01, drop_spacing=0.1)
+
+    state.update(dt(0.0), rain)
+    state._gust_cooldown_s = 0.0
+    state.update(dt(0.1), rain)
+
+    progress = (
+        state._gust_elapsed_s / state._gust_duration_s
+        if state._gust_duration_s > 0.0
+        else 1.0
+    )
+    raw_offset = state._gust_sign * state._gust_amplitude_rad * _gust_envelope(progress)
+    assert abs(state._gust_render_offset) < abs(raw_offset)
+
+
+def test_sample_gust_sign_keeps_previous_direction_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_KEEP_DIRECTION_PROB", 1.0)
+    state = RainAnimationState(_wind_rng=_MidpointRNG())
+    state._gust_has_prev_sign = True
+    state._gust_prev_sign = -1.0
+
+    assert state._sample_gust_sign() == -1.0
+
+
+def test_sample_gust_sign_can_flip_previous_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_KEEP_DIRECTION_PROB", 0.0)
+    state = RainAnimationState(_wind_rng=_MidpointRNG())
+    state._gust_has_prev_sign = True
+    state._gust_prev_sign = -1.0
+
+    assert state._sample_gust_sign() == 1.0
+
+
+def test_rain_animation_has_no_gust_push_when_gusts_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, "RAIN_WIND_GUSTS_ENABLED", False)
+    monkeypatch.setattr(config, "RAIN_WIND_MICRO_MAX_ABS_RAD", 0.0)
+    monkeypatch.setattr(config, "RAIN_WIND_GUST_OFFSET_RESPONSE_RATE", 100.0)
+    monkeypatch.setattr(config, "RAIN_WIND_ANGLE_RESPONSE_RATE", 100.0)
+    monkeypatch.setattr(config, "RAIN_WIND_DRIZZLE_MAX_ABS_RAD", 0.3)
+    monkeypatch.setattr(config, "RAIN_WIND_DOWNPOUR_MAX_ABS_RAD", 0.3)
+
+    state = RainAnimationState(_wind_rng=_UpperBoundRNG())
+    rain = RainConfig(enabled=True, angle=0.0, stream_spacing=0.01, drop_spacing=0.1)
+
+    state.update(dt(0.0), rain)
+    state._gust_cooldown_s = 0.0
+    state.update(dt(0.5), rain)
+
+    assert state._gust_active is False
+    assert state._gust_render_offset == pytest.approx(0.0)
+    assert state.render_angle == pytest.approx(0.0)
+
+
+def test_rain_animation_micro_variation_reduces_with_density(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, "RAIN_WIND_GUSTS_ENABLED", False)
+    monkeypatch.setattr(config, "RAIN_WIND_MICRO_MAX_ABS_RAD", 0.08)
+    monkeypatch.setattr(config, "RAIN_WIND_MICRO_DENSITY_SCALE_RANGE", (1.0, 0.2))
+    monkeypatch.setattr(config, "RAIN_WIND_ANGLE_RESPONSE_RATE", 100.0)
+
+    drizzle_state = RainAnimationState(_wind_rng=_UpperBoundRNG())
+    downpour_state = RainAnimationState(_wind_rng=_UpperBoundRNG())
+
+    drizzle = RainConfig(
+        enabled=True,
+        angle=0.0,
+        stream_spacing=0.6,
+        drop_spacing=4.0,
+    )
+    downpour = RainConfig(
+        enabled=True,
+        angle=0.0,
+        stream_spacing=0.16,
+        drop_spacing=0.75,
+    )
+
+    drizzle_state.update(dt(0.1), drizzle)
+    downpour_state.update(dt(0.1), downpour)
+
+    assert abs(downpour_state.render_angle) < abs(drizzle_state.render_angle)
 
 
 def test_rain_uniform_packing_matches_shader_layout() -> None:

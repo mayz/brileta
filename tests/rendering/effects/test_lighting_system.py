@@ -527,35 +527,161 @@ def test_controller_set_sun_angle_elevation() -> None:
     mock_lighting.on_global_light_changed.assert_called_once()
 
 
-def test_controller_set_rain_enabled_does_not_modify_sun() -> None:
-    """Rain toggle should not change sun intensity or relight the scene."""
+def _make_rain_controller(
+    *,
+    stream_spacing: float | None = None,
+    drop_spacing: float | None = None,
+    sun_intensity: float = 1.0,
+    sun_color: tuple[int, int, int] = (255, 243, 204),
+    cloud_coverage: float = 0.5,
+) -> SimpleNamespace:
+    """Build a minimal Controller wired for rain weather response testing.
+
+    Returns a SimpleNamespace with: controller, gw, sun, rain_config, and
+    atmospheric_config.  Spacing defaults to the drizzle preset maximums.
+    """
     from brileta.controller import Controller
 
+    drizzle = config.RAIN_PRESETS["drizzle"]
+    if stream_spacing is None:
+        stream_spacing = max(drizzle.stream_spacing)
+    if drop_spacing is None:
+        drop_spacing = max(drizzle.drop_spacing)
+
     gw = GameWorld(30, 30)
-    sun = DirectionalLight.create_sun(intensity=1.0)
+    sun = DirectionalLight.create_sun(intensity=sun_intensity, color=sun_color)
     gw.add_light(sun)
     gw.lighting_system = Mock()
 
+    atmospheric_config = SimpleNamespace(cloud_coverage=cloud_coverage)
+
+    def set_cloud_coverage(cov: float) -> None:
+        atmospheric_config.cloud_coverage = max(0.0, min(1.0, float(cov)))
+
+    rain_config = SimpleNamespace(
+        enabled=False,
+        stream_spacing=stream_spacing,
+        drop_spacing=drop_spacing,
+    )
     controller = object.__new__(Controller)
     controller.gw = gw
     controller._rain_enabled = False
+    controller._rain_base_state = None
+    controller._rain_last_spacing = None
     controller.frame_manager = SimpleNamespace(
-        world_view=SimpleNamespace(rain_config=SimpleNamespace(enabled=False))
+        world_view=SimpleNamespace(
+            rain_config=rain_config,
+            atmospheric_system=SimpleNamespace(
+                config=atmospheric_config,
+                set_cloud_coverage=set_cloud_coverage,
+            ),
+        )
+    )
+    return SimpleNamespace(
+        controller=controller,
+        gw=gw,
+        sun=sun,
+        rain_config=rain_config,
+        atmospheric_config=atmospheric_config,
     )
 
-    Controller._set_rain_enabled(controller, True)
 
-    assert controller._rain_enabled is True
-    assert controller.frame_manager.world_view.rain_config.enabled is True
-    assert sun.intensity == 1.0
-    gw.lighting_system.on_global_light_changed.assert_not_called()
+def test_controller_set_rain_enabled_applies_and_restores_sun_and_cloud() -> None:
+    """Rain toggle should apply and later restore weather-driven lighting state."""
+    from brileta.controller import Controller
 
-    Controller._set_rain_enabled(controller, False)
+    base_color = (255, 243, 204)
+    f = _make_rain_controller(sun_color=base_color, cloud_coverage=0.55)
 
-    assert controller._rain_enabled is False
-    assert controller.frame_manager.world_view.rain_config.enabled is False
-    assert sun.intensity == 1.0
-    gw.lighting_system.on_global_light_changed.assert_not_called()
+    Controller._set_rain_enabled(f.controller, True)
+
+    assert f.controller._rain_enabled is True
+    assert f.rain_config.enabled is True
+    assert f.sun.intensity < 1.0
+    assert f.sun.color != base_color
+    assert f.atmospheric_config.cloud_coverage == config.RAIN_CLOUD_COVERAGE_RANGE[0]
+    f.gw.lighting_system.on_global_light_changed.assert_called_once()
+
+    Controller._set_rain_enabled(f.controller, False)
+
+    assert f.controller._rain_enabled is False
+    assert f.rain_config.enabled is False
+    assert f.sun.intensity == 1.0
+    assert f.sun.color == base_color
+    assert f.atmospheric_config.cloud_coverage == 0.55
+    assert f.controller._rain_base_state is None
+    assert f.gw.lighting_system.on_global_light_changed.call_count == 2
+
+
+def test_controller_rain_weather_response_updates_with_density_changes() -> None:
+    """Active rain should continuously recompute sun/cloud response from spacing."""
+    from brileta.controller import Controller
+
+    f = _make_rain_controller()
+
+    Controller._set_rain_enabled(f.controller, True)
+    drizzle_intensity = float(f.sun.intensity)
+    drizzle_cloud_coverage = float(f.atmospheric_config.cloud_coverage)
+    f.gw.lighting_system.on_global_light_changed.reset_mock()
+
+    f.rain_config.stream_spacing = min(config.RAIN_PRESETS["downpour"].stream_spacing)
+    f.rain_config.drop_spacing = min(config.RAIN_PRESETS["downpour"].drop_spacing)
+    Controller._update_rain_weather_response(f.controller)
+
+    assert f.sun.intensity < drizzle_intensity
+    assert f.atmospheric_config.cloud_coverage > drizzle_cloud_coverage
+    f.gw.lighting_system.on_global_light_changed.assert_called_once()
+
+
+def test_controller_rain_weather_response_rebases_for_new_world() -> None:
+    """When re-based, rain response should use the current world's sun and cloud baseline."""
+    from brileta.controller import Controller
+
+    downpour = config.RAIN_PRESETS["downpour"]
+    f = _make_rain_controller(
+        stream_spacing=min(downpour.stream_spacing),
+        drop_spacing=min(downpour.drop_spacing),
+    )
+
+    Controller._set_rain_enabled(f.controller, True)
+    assert f.controller._rain_base_state is not None
+    assert f.controller._rain_base_state.sun_intensity == 1.0
+
+    # Simulate new_world(): a fresh sun and atmospheric system with different
+    # baseline values than the previous world.
+    f.gw.remove_light(f.sun)
+    new_sun = DirectionalLight.create_sun(intensity=0.6, color=(240, 230, 210))
+    f.gw.add_light(new_sun)
+    f.atmospheric_config.cloud_coverage = 0.30
+    f.gw.lighting_system.on_global_light_changed.reset_mock()
+
+    Controller._update_rain_weather_response(f.controller, force_rebase=True)
+
+    assert f.controller._rain_base_state is not None
+    assert f.controller._rain_base_state.sun_intensity == 0.6
+    assert f.controller._rain_base_state.cloud_coverage == 0.30
+    assert new_sun.intensity < 0.6
+    f.gw.lighting_system.on_global_light_changed.assert_called_once()
+
+
+def test_controller_rain_weather_response_noop_when_density_unchanged() -> None:
+    """Repeated calls with the same spacing should not trigger relighting."""
+    from brileta.controller import Controller
+
+    regular = config.RAIN_PRESETS["regular"]
+    f = _make_rain_controller(
+        stream_spacing=max(regular.stream_spacing),
+        drop_spacing=max(regular.drop_spacing),
+    )
+
+    Controller._set_rain_enabled(f.controller, True)
+    f.gw.lighting_system.on_global_light_changed.reset_mock()
+
+    # Simulate several render frames without changing spacing.
+    for _ in range(3):
+        Controller._update_rain_weather_response(f.controller)
+
+    f.gw.lighting_system.on_global_light_changed.assert_not_called()
 
 
 def test_controller_set_rain_enabled_noop_when_state_unchanged() -> None:
@@ -568,6 +694,8 @@ def test_controller_set_rain_enabled_noop_when_state_unchanged() -> None:
     controller = object.__new__(Controller)
     controller.gw = gw
     controller._rain_enabled = False
+    controller._rain_base_state = None
+    controller._rain_last_spacing = None
     controller.frame_manager = SimpleNamespace(
         world_view=SimpleNamespace(rain_config=SimpleNamespace(enabled=True))
     )

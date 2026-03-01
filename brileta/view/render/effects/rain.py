@@ -31,14 +31,42 @@ def _normalized_spacing(value: float, lo: float, hi: float) -> float:
     return (hi - clamped) / (hi - lo)
 
 
+def compute_rain_density(rain_config: RainConfig) -> float:
+    """Estimate rain density from spacing controls using preset bounds.
+
+    Returns 0..1 where 0 = drizzle (sparse) and 1 = downpour (dense).
+    Uses drizzle/downpour preset bounds when available, falling back to
+    reasonable hardcoded defaults.
+    """
+    drizzle = config.RAIN_PRESETS.get("drizzle")
+    downpour = config.RAIN_PRESETS.get("downpour")
+    if drizzle is not None and downpour is not None:
+        stream_lo = min(downpour.stream_spacing)
+        stream_hi = max(drizzle.stream_spacing)
+        drop_lo = min(downpour.drop_spacing)
+        drop_hi = max(drizzle.drop_spacing)
+    else:
+        stream_lo, stream_hi = 0.01, 0.6
+        drop_lo, drop_hi = 0.1, 4.0
+
+    stream_density = _normalized_spacing(
+        rain_config.stream_spacing, lo=stream_lo, hi=stream_hi
+    )
+    drop_density = _normalized_spacing(rain_config.drop_spacing, lo=drop_lo, hi=drop_hi)
+    return 0.5 * (stream_density + drop_density)
+
+
 def _gust_envelope(progress: float) -> float:
-    """Asymmetric attack/decay envelope for gust events."""
+    """Asymmetric attack/decay envelope with eased endpoints."""
     p = max(0.0, min(1.0, progress))
     attack = 0.22
     if p <= attack:
-        return p / attack
+        t = p / max(1e-6, attack)
+        # smoothstep: zero slope at gust start avoids visible snapping.
+        return t * t * (3.0 - 2.0 * t)
     decay_t = (p - attack) / max(1e-6, 1.0 - attack)
-    return 1.0 - decay_t
+    # Mirrored smoothstep for a softer return-to-baseline phase.
+    return 1.0 - (decay_t * decay_t * (3.0 - 2.0 * decay_t))
 
 
 @dataclass
@@ -85,7 +113,10 @@ class RainAnimationState:
     _gust_duration_s: float = 0.0
     _gust_amplitude_rad: float = 0.0
     _gust_sign: float = 1.0
+    _gust_prev_sign: float = 1.0
+    _gust_has_prev_sign: bool = False
     _gust_cooldown_s: float = 0.0
+    _gust_render_offset: float = 0.0
     _wind_rng: _UniformRNG = field(
         default_factory=lambda: rng.get("effects.rain.wind"),
         repr=False,
@@ -101,19 +132,25 @@ class RainAnimationState:
         lo, hi = config.RAIN_WIND_GUST_DURATION_SEC_RANGE
         return float(self._wind_rng.uniform(float(lo), float(hi)))
 
+    def _sample_gust_sign(self) -> float:
+        """Sample gust direction with persistence to avoid rapid flip-flopping."""
+        keep_prob = max(0.0, min(1.0, float(config.RAIN_WIND_GUST_KEEP_DIRECTION_PROB)))
+        if self._gust_has_prev_sign:
+            keep_direction = float(self._wind_rng.uniform(0.0, 1.0)) < keep_prob
+            return self._gust_prev_sign if keep_direction else -self._gust_prev_sign
+        return -1.0 if float(self._wind_rng.uniform(0.0, 1.0)) < 0.5 else 1.0
+
+    def _clear_active_gust(self) -> None:
+        """Clear active gust event state while preserving persistence history."""
+        self._gust_active = False
+        self._gust_elapsed_s = 0.0
+        self._gust_duration_s = 0.0
+        self._gust_amplitude_rad = 0.0
+        self._gust_sign = 1.0
+
     def _density(self, rain_config: RainConfig) -> float:
         """Estimate rain density from spacing knobs."""
-        density_from_stream = _normalized_spacing(
-            rain_config.stream_spacing,
-            lo=0.01,
-            hi=0.6,
-        )
-        density_from_drop = _normalized_spacing(
-            rain_config.drop_spacing,
-            lo=0.1,
-            hi=4.0,
-        )
-        return 0.5 * (density_from_stream + density_from_drop)
+        return compute_rain_density(rain_config)
 
     def _reset_wind_state(self, baseline_angle: float) -> None:
         """Reset wind-driven state while preserving animation clock."""
@@ -124,7 +161,10 @@ class RainAnimationState:
         self._gust_duration_s = 0.0
         self._gust_amplitude_rad = 0.0
         self._gust_sign = 1.0
+        self._gust_prev_sign = 1.0
+        self._gust_has_prev_sign = False
         self._gust_cooldown_s = 0.0
+        self._gust_render_offset = 0.0
 
     def _ensure_initialized(self, baseline_angle: float) -> None:
         """Initialize oscillator/gust state on first enabled frame."""
@@ -171,7 +211,15 @@ class RainAnimationState:
 
         # Always-on subtle variation keeps rain alive between gust events.
         micro_cap = float(config.RAIN_WIND_MICRO_MAX_ABS_RAD)
-        micro_amp = min(angle_headroom * 0.4, micro_cap * (0.5 + 0.5 * density))
+        micro_scale_drizzle, micro_scale_downpour = (
+            config.RAIN_WIND_MICRO_DENSITY_SCALE_RANGE
+        )
+        micro_density_scale = (
+            float(micro_scale_drizzle)
+            + (float(micro_scale_downpour) - float(micro_scale_drizzle)) * density
+        )
+        micro_density_scale = max(0.0, micro_density_scale)
+        micro_amp = min(angle_headroom * 0.4, micro_cap * micro_density_scale)
         self._micro_phase_a += dt * self._micro_freq_a_hz * 2.0 * math.pi
         self._micro_phase_b += dt * self._micro_freq_b_hz * 2.0 * math.pi
         micro_offset = micro_amp * (
@@ -189,23 +237,28 @@ class RainAnimationState:
         )
         gust_max = min(gust_max, angle_headroom)
 
-        self._gust_cooldown_s -= dt
-        if (
-            (not self._gust_active)
-            and self._gust_cooldown_s <= 0.0
-            and gust_max > 0.001
-        ):
-            self._gust_active = True
-            self._gust_elapsed_s = 0.0
-            self._gust_duration_s = self._sample_gust_duration_s()
-            self._gust_amplitude_rad = float(
-                self._wind_rng.uniform(0.35 * gust_max, gust_max)
-            )
-            self._gust_sign = (
-                -1.0 if float(self._wind_rng.uniform(0.0, 1.0)) < 0.5 else 1.0
-            )
+        gusts_enabled = bool(config.RAIN_WIND_GUSTS_ENABLED)
+        if gusts_enabled:
+            self._gust_cooldown_s -= dt
+            if (
+                (not self._gust_active)
+                and self._gust_cooldown_s <= 0.0
+                and gust_max > 0.001
+            ):
+                self._gust_active = True
+                self._gust_elapsed_s = 0.0
+                self._gust_duration_s = self._sample_gust_duration_s()
+                self._gust_amplitude_rad = float(
+                    self._wind_rng.uniform(0.35 * gust_max, gust_max)
+                )
+                self._gust_sign = self._sample_gust_sign()
+                self._gust_prev_sign = self._gust_sign
+                self._gust_has_prev_sign = True
+        else:
+            self._clear_active_gust()
+            self._gust_cooldown_s = 0.0
 
-        gust_offset = 0.0
+        raw_gust_offset = 0.0
         if self._gust_active:
             self._gust_elapsed_s += dt
             progress = (
@@ -213,18 +266,28 @@ class RainAnimationState:
                 if self._gust_duration_s > 0.0
                 else 1.0
             )
-            gust_offset = (
+            raw_gust_offset = (
                 self._gust_sign * self._gust_amplitude_rad * _gust_envelope(progress)
             )
             if progress >= 1.0:
-                self._gust_active = False
-                self._gust_elapsed_s = 0.0
-                self._gust_duration_s = 0.0
-                self._gust_amplitude_rad = 0.0
-                self._gust_sign = 1.0
+                self._clear_active_gust()
                 self._gust_cooldown_s += self._sample_gust_interval_s()
 
-        target_angle = _clamp_angle(baseline_angle + micro_offset + gust_offset)
+        # Gust raw offset can still change sharply frame-to-frame due to
+        # randomized event timing/sign. Smooth it separately so transitions read
+        # as physical easing rather than abrupt direction snaps.
+        gust_response_rate = max(0.0, float(config.RAIN_WIND_GUST_OFFSET_RESPONSE_RATE))
+        if gust_response_rate <= 0.0:
+            self._gust_render_offset = raw_gust_offset
+        else:
+            gust_alpha = 1.0 - math.exp(-gust_response_rate * dt)
+            self._gust_render_offset += (
+                raw_gust_offset - self._gust_render_offset
+            ) * gust_alpha
+
+        target_angle = _clamp_angle(
+            baseline_angle + micro_offset + self._gust_render_offset
+        )
 
         # Smooth response avoids abrupt angle jumps while preserving gust shape.
         response_rate = max(0.0, float(config.RAIN_WIND_ANGLE_RESPONSE_RATE))

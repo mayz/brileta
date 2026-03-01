@@ -99,18 +99,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Stochastic overlay space in tile units.
-    // Keep motion gravity-driven (downward in +Y) so gusts change slant
-    // without making drops appear to freeze/rotate in place.
+    // Use a world-aligned spawn lattice so gust angle changes do not rotate
+    // the entire random field. Angle only steers streak orientation + advection.
     let world_pos = viewport_offset + (input.screen_uv * viewport_size);
     let slant_dir_raw = vec2<f32>(sin(angle), cos(angle));
     let slant_dir = normalize(select(vec2<f32>(0.0, 1.0), slant_dir_raw, length(slant_dir_raw) > 0.0001));
     let perp_dir = vec2<f32>(-slant_dir.y, slant_dir.x);
 
-    let lateral_axis = world_pos.x;
-    let vertical_axis = world_pos.y - (time * base_drop_speed);
-
-    let base_cell_x = i32(floor(lateral_axis / base_density_spacing));
-    let base_cell_y = i32(floor(vertical_axis / base_drop_spacing));
+    // World-space lattice for stable random seeds.
+    // Query cells in the "spawn space" (undo advection) so we inspect
+    // neighbors that can actually land near this pixel at current time.
+    let advection = slant_dir * (time * base_drop_speed);
+    let spawn_space_pos = world_pos - advection;
+    let base_cell_x = i32(floor(spawn_space_pos.x / base_density_spacing));
+    let base_cell_y = i32(floor(spawn_space_pos.y / base_drop_spacing));
 
     let line_width_px = mix(0.9, 1.6, intensity);
     var max_drop_alpha = 0.0;
@@ -133,9 +135,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             let lateral_jitter = (hash_to_unit(seed ^ 0x165667b1u) - 0.5) * base_density_spacing * 0.95;
             let along_jitter = (hash_to_unit(seed ^ 0xd3a2646cu) - 0.5) * base_drop_spacing * 0.95;
 
-            let center_x = (f32(cell_x) + 0.5) * base_density_spacing + lateral_jitter;
-            let center_y = (f32(cell_y) + 0.5) * base_drop_spacing + along_jitter + (time * base_drop_speed);
-            let center_pos = vec2<f32>(center_x, center_y);
+            let spawn_x = (f32(cell_x) + 0.5) * base_density_spacing + lateral_jitter;
+            let spawn_y = (f32(cell_y) + 0.5) * base_drop_spacing + along_jitter;
+            let center_pos = vec2<f32>(spawn_x, spawn_y) + advection;
             let delta_pos = world_pos - center_pos;
 
             let perp_delta = dot(delta_pos, perp_dir);

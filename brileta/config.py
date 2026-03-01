@@ -74,13 +74,22 @@ RAIN_INTENSITY: float = 0.4
 RAIN_ANGLE: float = 0.15
 # Rain tilt from vertical (radians). Keep below pi/2 so drops always fall down.
 RAIN_ANGLE_MAX_ABS_RAD: float = 0.7
-RAIN_WIND_DRIZZLE_MAX_ABS_RAD: float = 0.15
-RAIN_WIND_DOWNPOUR_MAX_ABS_RAD: float = 0.45
+RAIN_WIND_DRIZZLE_MAX_ABS_RAD: float = 0.10
+RAIN_WIND_DOWNPOUR_MAX_ABS_RAD: float = 0.30
 # Continuous micro-budging around baseline angle.
-RAIN_WIND_MICRO_MAX_ABS_RAD: float = 0.05
+RAIN_WIND_MICRO_MAX_ABS_RAD: float = 0.0
+# Scale applied to micro variation by rain density, as
+# (drizzle_scale, downpour_scale).
+RAIN_WIND_MICRO_DENSITY_SCALE_RANGE: tuple[float, float] = (1.0, 0.35)
 # Gust cadence and envelope timing.
-RAIN_WIND_GUST_INTERVAL_SEC_RANGE: tuple[float, float] = (6.0, 16.0)
-RAIN_WIND_GUST_DURATION_SEC_RANGE: tuple[float, float] = (1.2, 3.5)
+RAIN_WIND_GUSTS_ENABLED: bool = False
+RAIN_WIND_GUST_INTERVAL_SEC_RANGE: tuple[float, float] = (18.0, 45.0)
+RAIN_WIND_GUST_DURATION_SEC_RANGE: tuple[float, float] = (0.8, 2.2)
+# Probability a gust keeps the previous gust's direction.
+RAIN_WIND_GUST_KEEP_DIRECTION_PROB: float = 0.8
+# Additional smoothing for gust contribution to the render angle.
+# Lower values = softer/eased gust transitions, higher values = snappier.
+RAIN_WIND_GUST_OFFSET_RESPONSE_RATE: float = 3.5
 # How quickly render angle tracks the baseline+wind target.
 RAIN_WIND_ANGLE_RESPONSE_RATE: float = 6.0
 RAIN_DROP_LENGTH: float = 0.8
@@ -88,6 +97,15 @@ RAIN_DROP_SPEED: float = 25.0
 RAIN_DROP_SPACING: float = 1.35
 RAIN_STREAM_SPACING: float = 0.33
 RAIN_COLOR: tuple[int, int, int] = (180, 200, 220)
+# Rain-driven sunlight tuning:
+# - Dimming multiplies the base (pre-rain) sun intensity.
+# - Color blend lerps from base sun color toward a cooler overcast target.
+# - Cloud coverage controls atmospheric overcast response.
+# Ranges are (drizzle_value, downpour_value).
+RAIN_SUN_DIM_RANGE: tuple[float, float] = (0.85, 0.45)
+RAIN_SUN_COOL_COLOR: tuple[int, int, int] = (160, 175, 200)
+RAIN_SUN_COLOR_BLEND_RANGE: tuple[float, float] = (0.10, 0.35)
+RAIN_CLOUD_COVERAGE_RANGE: tuple[float, float] = (0.40, 0.95)
 # Rain-spacing presets (tile units). These are reference ranges used by the
 # dev-console ``rain <preset>`` command to pick randomized values.
 

@@ -101,14 +101,27 @@ class TestWGSLLightingShaders:
             "let world_pos = viewport_offset + (input.screen_uv * viewport_size);"
             in shader_source
         )
+        assert "let spawn_space_pos = world_pos - advection;" in shader_source
         assert (
-            "let vertical_axis = world_pos.y - (time * base_drop_speed);"
+            "let base_cell_x = i32(floor(spawn_space_pos.x / base_density_spacing));"
+            in shader_source
+        )
+        assert (
+            "let base_cell_y = i32(floor(spawn_space_pos.y / base_drop_spacing));"
             in shader_source
         )
         assert "let along_distance = dot(delta_pos, slant_dir);" in shader_source
         assert (
-            "let center_y = (f32(cell_y) + 0.5) * base_drop_spacing + along_jitter + (time * base_drop_speed);"
-            in shader_source
+            "let center_pos = vec2<f32>(spawn_x, spawn_y) + advection;" in shader_source
+        )
+        assert "let lateral_axis = dot(world_pos, perp_dir);" not in shader_source
+        assert (
+            "let along_axis = dot(world_pos, slant_dir) - (time * base_drop_speed);"
+            not in shader_source
+        )
+        assert (
+            "let center_pos = (perp_dir * center_lateral) + (slant_dir * center_along);"
+            not in shader_source
         )
         assert "(time * base_drop_speed * speed_jitter)" not in shader_source
         assert "if (occupancy > 0.09)" in shader_source
