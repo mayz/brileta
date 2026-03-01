@@ -26,7 +26,7 @@ from brileta.events import (
     publish_event,
 )
 from brileta.game import ranges
-from brileta.types import DIRECTIONS, ActorId, Direction, WorldTilePos
+from brileta.types import DIRECTIONS, ActorId, Direction, WorldTilePos, saturate
 from brileta.util import rng
 
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
@@ -551,7 +551,7 @@ class AIComponent:
             and distance < _COMBAT_AWARENESS_RADIUS
         ):
             proximity = 1.0 - (distance / _COMBAT_AWARENESS_RADIUS)
-            hostility = max(0.0, min(1.0, -effective_disposition / 50.0))
+            hostility = saturate(-effective_disposition / 50.0)
             threat_level = proximity * hostility
 
         return distance, threat_level, target_proximity, effective_disposition
@@ -562,11 +562,11 @@ class AIComponent:
             return 0.0
         # Proximity captures spatial risk (nearer is higher).
         proximity_signal = 1.0 - (distance / self.aggro_radius)
-        proximity_signal = max(0.0, min(1.0, proximity_signal))
+        proximity_signal = saturate(proximity_signal)
         # Intent captures relationship hostility: <= 0 disposition contributes
         # threat, while neutral/friendly dispositions contribute none.
         # Scale over [-50, 0] so unfriendly actors still react strongly.
-        hostility_signal = max(0.0, min(1.0, -disposition / 50.0))
+        hostility_signal = saturate(-disposition / 50.0)
         return proximity_signal * hostility_signal
 
     def _compute_incoming_threat(

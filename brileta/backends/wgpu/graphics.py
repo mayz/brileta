@@ -24,6 +24,7 @@ from brileta.types import (
     TileDimensions,
     ViewOffset,
     WorldTilePos,
+    saturate,
 )
 from brileta.util.coordinates import (
     Rect,
@@ -74,9 +75,9 @@ def _normalize_tile_bg(tile_bg: colors.Color | None) -> ColorRGBf:
     if tile_bg is None:
         return (0.0, 0.0, 0.0)
     return (
-        max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
-        max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
-        max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
+        saturate(float(tile_bg[0]) / 255.0),
+        saturate(float(tile_bg[1]) / 255.0),
+        saturate(float(tile_bg[2]) / 255.0),
     )
 
 
@@ -500,7 +501,7 @@ class WGPUGraphicsContext(GraphicsContext):
             world_pos=(float(world_pos[0]), float(world_pos[1]))
             if world_pos is not None
             else None,
-            actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
+            actor_light_scale=saturate(float(light_intensity[0])),
             actor_lighting_enabled=use_gpu_actor_lighting,
             tile_bg=normalized_tile_bg,
         )
@@ -560,7 +561,7 @@ class WGPUGraphicsContext(GraphicsContext):
         scaled_w = tile_w * scale_x
         scaled_h = tile_h * scale_y
         offset_x = (tile_w - scaled_w) / 2
-        anchor_y = max(0.0, min(1.0, float(ground_anchor_y)))
+        anchor_y = saturate(float(ground_anchor_y))
         offset_y = tile_h * anchor_y - scaled_h
 
         self.screen_renderer.add_quad(
@@ -573,7 +574,7 @@ class WGPUGraphicsContext(GraphicsContext):
             world_pos=(float(world_pos[0]), float(world_pos[1]))
             if world_pos is not None
             else None,
-            actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
+            actor_light_scale=saturate(float(light_intensity[0])),
             actor_lighting_enabled=use_gpu_actor_lighting,
             tile_bg=normalized_tile_bg,
             use_sprite_atlas=True,
@@ -960,13 +961,13 @@ class WGPUGraphicsContext(GraphicsContext):
         if ground_anchor_y is None:
             offset_y = (tile_h - scaled_h) / 2
         else:
-            anchor_y = max(0.0, min(1.0, float(ground_anchor_y)))
+            anchor_y = saturate(float(ground_anchor_y))
             offset_y = tile_h * anchor_y - scaled_h
 
         glyph_x = screen_x + offset_x
         glyph_y = screen_y + offset_y
 
-        base_color = (0.0, 0.0, 0.0, max(0.0, min(1.0, shadow_alpha)))
+        base_color = (0.0, 0.0, 0.0, saturate(shadow_alpha))
         tip_alpha = 0.0 if fade_tip else base_color[3]
         tip_color = (0.0, 0.0, 0.0, tip_alpha)
 
@@ -1081,7 +1082,7 @@ class WGPUGraphicsContext(GraphicsContext):
             color[0] / 255.0,
             color[1] / 255.0,
             color[2] / 255.0,
-            max(0.0, min(1.0, alpha)),
+            saturate(alpha),
         )
 
         uv_coords = self.uv_map[self._cp437_index_for_char(char)]

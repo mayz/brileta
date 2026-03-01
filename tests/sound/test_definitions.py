@@ -169,6 +169,20 @@ class TestBuiltInSoundDefinitions:
             assert layer.loop is False
             assert layer.interval is not None
 
+    def test_rain_ambient_definitions(self) -> None:
+        """Rain ambient layers should map to dedicated light/heavy loop assets."""
+        light = SOUND_DEFINITIONS["rain_light"]
+        heavy = SOUND_DEFINITIONS["rain_heavy"]
+
+        assert light.sound_id == "rain_light"
+        assert heavy.sound_id == "rain_heavy"
+        assert len(light.layers) == 1
+        assert len(heavy.layers) == 1
+        assert light.layers[0].file == "rain_light_loop.ogg"
+        assert heavy.layers[0].file == "rain_heavy_loop.ogg"
+        assert light.layers[0].loop is True
+        assert heavy.layers[0].loop is True
+
     def test_all_definitions_have_consistent_sound_ids(self) -> None:
         """Test that all definitions have sound_id matching their dictionary key."""
         for key, definition in SOUND_DEFINITIONS.items():
@@ -226,7 +240,15 @@ class TestBuiltInSoundDefinitions:
                     )
 
     @pytest.mark.parametrize(
-        "sound_id", ["fire_ambient", "waterfall_ambient", "engine_loop", "steam_hiss"]
+        "sound_id",
+        [
+            "fire_ambient",
+            "waterfall_ambient",
+            "rain_light",
+            "rain_heavy",
+            "engine_loop",
+            "steam_hiss",
+        ],
     )
     def test_individual_sound_definitions(self, sound_id: str) -> None:
         """Test each built-in sound definition individually."""

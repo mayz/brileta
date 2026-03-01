@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from brileta import colors, config, input_events
 from brileta.backends.pillow.canvas import PillowImageCanvas
-from brileta.types import PixelRect
+from brileta.types import PixelRect, saturate
 from brileta.util.live_vars import LiveVariable, live_variable_registry
 from brileta.util.misc import string_to_type
 from brileta.util.rng import get as get_rng
@@ -505,7 +505,7 @@ class DevConsoleOverlay(TextOverlay):
             value = lo
         else:
             normalized = (px_x - track_x) / track_w
-            normalized = max(0.0, min(1.0, normalized))
+            normalized = saturate(normalized)
             value = lo + normalized * (hi - lo)
 
         var.set_value(value)
@@ -657,7 +657,7 @@ class DevConsoleOverlay(TextOverlay):
             return
 
         ratio = (current_value - lo) / (hi - lo) if hi > lo else 0.0
-        ratio = max(0.0, min(1.0, ratio))
+        ratio = saturate(ratio)
 
         label = f"{var.name} = {self._format_live_value(var, raw_value)}"
         track_row_y = row_y + tile_h

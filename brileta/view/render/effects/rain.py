@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from brileta import colors, config
-from brileta.types import DeltaTime
+from brileta.types import DeltaTime, saturate
 from brileta.util import rng
 
 
@@ -78,7 +78,7 @@ def compute_rain_density(rain_config: RainConfig) -> float:
 
 def _gust_envelope(progress: float) -> float:
     """Asymmetric attack/decay envelope with eased endpoints."""
-    p = max(0.0, min(1.0, progress))
+    p = saturate(progress)
     attack = 0.22
     if p <= attack:
         t = p / max(1e-6, attack)
@@ -154,7 +154,7 @@ class RainAnimationState:
 
     def _sample_gust_sign(self) -> float:
         """Sample gust direction with persistence to avoid rapid flip-flopping."""
-        keep_prob = max(0.0, min(1.0, float(config.RAIN_WIND_GUST_KEEP_DIRECTION_PROB)))
+        keep_prob = saturate(float(config.RAIN_WIND_GUST_KEEP_DIRECTION_PROB))
         if self._gust_has_prev_sign:
             keep_direction = float(self._wind_rng.uniform(0.0, 1.0)) < keep_prob
             return self._gust_prev_sign if keep_direction else -self._gust_prev_sign

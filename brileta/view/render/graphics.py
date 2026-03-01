@@ -24,6 +24,7 @@ from brileta.types import (
     UVRect,
     ViewOffset,
     WorldTilePos,
+    saturate,
 )
 from brileta.util.coordinates import (
     CoordinateConverter,
@@ -159,7 +160,7 @@ class GraphicsContext:
             color[0] / 255.0,
             color[1] / 255.0,
             color[2] / 255.0,
-            max(0.0, min(1.0, alpha)),
+            saturate(alpha),
         )
 
     def render_glyph_buffer_to_texture(

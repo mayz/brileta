@@ -139,6 +139,12 @@ type SpatialSeed = int
 # Generic min/max float range (e.g., speed/lifetime jitter ranges)
 type FloatRange = tuple[float, float]
 
+
+def saturate(x: float) -> float:
+    """Clamp a float to the [0.0, 1.0] range."""
+    return max(0.0, min(1.0, x))
+
+
 # =============================================================================
 # BACKEND CONFIGURATION
 # =============================================================================

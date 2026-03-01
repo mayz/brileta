@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from brileta.environment.tile_types import TileTypeID
 from brileta.events import SoundEvent, subscribe_to_event
-from brileta.types import DeltaTime, FloatRange, WorldTileCoord
+from brileta.types import DeltaTime, FloatRange, SoundId, WorldTileCoord, saturate
 from brileta.util import rng
 from brileta.util.pathfinding import find_region_path
 from brileta.util.spatial import SpatialIndex
@@ -56,6 +56,19 @@ class PlayingSound:
     channel: AudioChannel | None = None  # Audio backend channel
     next_trigger_time: float = 0.0  # For interval-based sounds
     loaded_sound: LoadedSound | None = None  # Cached sound data
+
+
+@dataclass
+class AmbientLoop:
+    """Represents an actively managed non-positional ambient loop."""
+
+    sound_id: SoundId
+    sound_def: SoundDefinition
+    layer: SoundLayer
+    volume: float
+    loaded_sound: LoadedSound | None
+    channel: AudioChannel | None = None
+    missing_asset: bool = False
 
 
 class SoundSystem:
@@ -116,6 +129,9 @@ class SoundSystem:
         self._current_game_map: GameMap | None = None
         self._occlusion_cache: dict[tuple[int, int], float] = {}
         self._occlusion_cache_revision: int = -1
+        # Non-positional loops (rain, wind, etc.) mixed directly without
+        # distance attenuation or occlusion.
+        self._ambient_loops: dict[SoundId, AmbientLoop] = {}
 
         # Subscribe to sound events
         subscribe_to_event(SoundEvent, self.handle_sound_event)
@@ -672,6 +688,141 @@ class SoundSystem:
             logger.error(f"Failed to load sound {file_name}: {e}")
             return None
 
+    def _ambient_final_volume(self, loop: AmbientLoop) -> float:
+        """Calculate the effective volume for an ambient loop."""
+        return saturate(loop.volume * loop.sound_def.base_volume * loop.layer.volume)
+
+    def _start_ambient_loop(self, loop: AmbientLoop) -> None:
+        """Start (or restart) an ambient loop if the backend and asset are ready."""
+        if (
+            self.audio_backend is None
+            or loop.missing_asset
+            or loop.loaded_sound is None
+        ):
+            return
+
+        final_volume = self._ambient_final_volume(loop)
+        channel = self.audio_backend.play_sound(
+            loop.loaded_sound,
+            volume=final_volume,
+            loop=True,
+            priority=loop.sound_def.priority,
+        )
+        if channel is None:
+            logger.warning("No channels available for ambient loop: %s", loop.sound_id)
+            return
+        loop.channel = channel
+
+    def play_ambient_loop(self, sound_id: SoundId, volume: float = 1.0) -> None:
+        """Play (or update) a non-positional ambient loop.
+
+        Args:
+            sound_id: Sound definition ID to play as an ambient loop.
+            volume: Runtime volume scalar (0.0 to 1.0) before definition/layer gain.
+        """
+        existing = self._ambient_loops.get(sound_id)
+        if existing is not None:
+            self.set_ambient_loop_volume(sound_id, volume)
+            return
+
+        sound_def = get_sound_definition(sound_id)
+        if sound_def is None:
+            logger.warning("No sound definition for ambient loop: %s", sound_id)
+            return
+
+        loop_layer = next((layer for layer in sound_def.layers if layer.loop), None)
+        if loop_layer is None:
+            logger.warning("Ambient loop sound has no looping layer: %s", sound_id)
+            return
+
+        loaded_sound = self._load_sound(loop_layer.file)
+        ambient_loop = AmbientLoop(
+            sound_id=sound_id,
+            sound_def=sound_def,
+            layer=loop_layer,
+            volume=saturate(volume),
+            loaded_sound=loaded_sound,
+            missing_asset=loaded_sound is None,
+        )
+        self._ambient_loops[sound_id] = ambient_loop
+        if ambient_loop.missing_asset:
+            return
+
+        self._start_ambient_loop(ambient_loop)
+
+    def set_ambient_loop_volume(self, sound_id: SoundId, volume: float) -> None:
+        """Set runtime volume for an ambient loop.
+
+        If the loop exists but channel playback was interrupted (for example,
+        by voice stealing), this attempts to restart it.
+        """
+        ambient_loop = self._ambient_loops.get(sound_id)
+        if ambient_loop is None:
+            return
+
+        ambient_loop.volume = saturate(volume)
+        if ambient_loop.missing_asset:
+            return
+
+        channel = ambient_loop.channel
+        if channel is not None and channel.is_playing():
+            channel.set_volume(self._ambient_final_volume(ambient_loop))
+            return
+
+        self._start_ambient_loop(ambient_loop)
+
+    def stop_ambient_loop(
+        self,
+        sound_id: SoundId,
+        fade_out_seconds: float = 0.0,
+    ) -> None:
+        """Stop a non-positional ambient loop.
+
+        Args:
+            sound_id: Ambient loop sound ID.
+            fade_out_seconds: Optional fadeout duration before stopping.
+        """
+        ambient_loop = self._ambient_loops.pop(sound_id, None)
+        if ambient_loop is None:
+            return
+
+        if ambient_loop.channel is None:
+            return
+
+        if fade_out_seconds > 0.0:
+            fade_ms = max(0, round(fade_out_seconds * 1000.0))
+            ambient_loop.channel.fadeout(fade_ms)
+            return
+
+        ambient_loop.channel.stop()
+
+    def _stop_all_ambient_loops(
+        self,
+        fade_out_seconds: float = 0.0,
+        *,
+        clear: bool = True,
+    ) -> None:
+        """Stop all active ambient loops.
+
+        Args:
+            fade_out_seconds: Optional fade duration before stopping channels.
+            clear: Whether to remove loop definitions from tracking.
+        """
+        if clear:
+            for sound_id in list(self._ambient_loops.keys()):
+                self.stop_ambient_loop(sound_id, fade_out_seconds=fade_out_seconds)
+            return
+
+        for ambient_loop in self._ambient_loops.values():
+            if ambient_loop.channel is None:
+                continue
+            if fade_out_seconds > 0.0:
+                fade_ms = max(0, round(fade_out_seconds * 1000.0))
+                ambient_loop.channel.fadeout(fade_ms)
+            else:
+                ambient_loop.channel.stop()
+            ambient_loop.channel = None
+
     def set_audio_backend(self, backend: AudioBackend | None) -> None:
         """Set the audio backend for sound playback.
 
@@ -683,6 +834,7 @@ class SoundSystem:
             for playing in self.playing_sounds:
                 if playing.channel:
                     playing.channel.stop()
+        self._stop_all_ambient_loops(clear=False)
 
         # Clear playing instances from all emitters
         # This will be repopulated on next update
@@ -691,6 +843,13 @@ class SoundSystem:
 
         self.audio_backend = backend
         self.playing_sounds.clear()
+        # Keep ambient loop definitions so long-lived ambience (e.g. rain)
+        # can be resumed when a backend is attached or swapped.
+        for ambient_loop in self._ambient_loops.values():
+            ambient_loop.channel = None
+            if ambient_loop.missing_asset:
+                continue
+            self._start_ambient_loop(ambient_loop)
 
         logger.info(
             f"Audio backend set: {type(backend).__name__ if backend else 'None'}"
@@ -707,6 +866,7 @@ class SoundSystem:
         for playing in self.playing_sounds:
             if playing.channel:
                 playing.channel.stop()
+        self._stop_all_ambient_loops()
 
         # Clear playing instances from all emitters
         for playing in self.playing_sounds:
@@ -714,6 +874,7 @@ class SoundSystem:
 
         # Reset state
         self.playing_sounds.clear()
+        self._ambient_loops.clear()
         self._last_played_variant.clear()
         self._delayed_sounds.clear()
         self.current_time = 0.0

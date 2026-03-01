@@ -106,6 +106,24 @@ SOUND_DEFINITIONS = {
         priority=5,
         rolloff_factor=0.6,  # Even gentler falloff for water sounds
     ),
+    "rain_light": SoundDefinition(
+        sound_id="rain_light",
+        layers=[SoundLayer(file="rain_light_loop.ogg", volume=1.0, loop=True)],
+        base_volume=0.5,
+        falloff_start=1.0,
+        max_distance=2.0,
+        priority=5,
+        rolloff_factor=1.0,
+    ),
+    "rain_heavy": SoundDefinition(
+        sound_id="rain_heavy",
+        layers=[SoundLayer(file="rain_heavy_loop.ogg", volume=1.0, loop=True)],
+        base_volume=0.8,
+        falloff_start=1.0,
+        max_distance=2.0,
+        priority=5,
+        rolloff_factor=1.0,
+    ),
     "engine_loop": SoundDefinition(
         sound_id="engine_loop",
         layers=[SoundLayer(file="engine_idle_loop.ogg", volume=1.0, loop=True)],

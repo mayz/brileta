@@ -176,6 +176,114 @@ class TestSoundSystemInitialization:
         assert system.current_time == 0.0
 
 
+class TestSoundSystemAmbientLoops:
+    """Tests for non-positional ambient loop playback."""
+
+    def setup_method(self) -> None:
+        """Set up a sound system with mock backend."""
+        self.system = SoundSystem()
+        self.backend = MockAudioBackend()
+        self.backend.initialize()
+        self.system.set_audio_backend(self.backend)
+
+    def test_play_ambient_loop_starts_channel(self) -> None:
+        """Ambient loops should start a dedicated looping channel."""
+        self.system.play_ambient_loop("rain_light", volume=0.5)
+
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        assert ambient_loop.channel is not None
+        assert ambient_loop.channel.is_playing()
+        expected_volume = (
+            0.5 * ambient_loop.sound_def.base_volume * ambient_loop.layer.volume
+        )
+        assert isinstance(ambient_loop.channel, MockAudioChannel)
+        assert abs(ambient_loop.channel._volume - expected_volume) < 1e-10
+
+    def test_set_ambient_loop_volume_updates_existing_channel(self) -> None:
+        """Updating ambient volume should adjust the active channel gain."""
+        self.system.play_ambient_loop("rain_light", volume=0.25)
+        self.system.set_ambient_loop_volume("rain_light", 1.0)
+
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        assert ambient_loop.channel is not None
+        assert isinstance(ambient_loop.channel, MockAudioChannel)
+        expected_volume = (
+            1.0 * ambient_loop.sound_def.base_volume * ambient_loop.layer.volume
+        )
+        assert abs(ambient_loop.channel._volume - expected_volume) < 1e-10
+
+    def test_stop_ambient_loop_stops_channel_and_clears_state(self) -> None:
+        """Stopping ambient loops should stop playback and remove tracking."""
+        self.system.play_ambient_loop("rain_light", volume=0.6)
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        channel = ambient_loop.channel
+        assert channel is not None
+        assert channel.is_playing()
+
+        self.system.stop_ambient_loop("rain_light", fade_out_seconds=0.2)
+
+        assert "rain_light" not in self.system._ambient_loops
+        assert not channel.is_playing()
+
+    def test_stop_ambient_loop_without_fade_uses_immediate_stop(self) -> None:
+        """Default stop path should call channel.stop() and not fadeout()."""
+        self.system.play_ambient_loop("rain_light", volume=0.6)
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        channel = ambient_loop.channel
+        assert channel is not None
+        assert isinstance(channel, MockAudioChannel)
+        channel_stop = MagicMock(wraps=channel.stop)
+        channel_fadeout = MagicMock(wraps=channel.fadeout)
+        channel.stop = channel_stop
+        channel.fadeout = channel_fadeout
+
+        self.system.stop_ambient_loop("rain_light")
+
+        channel_stop.assert_called_once()
+        channel_fadeout.assert_not_called()
+        assert not channel.is_playing()
+
+    def test_play_ambient_loop_missing_asset_is_graceful(self) -> None:
+        """Missing ambient assets should not crash and should remain silent."""
+        self.system._load_sound = MagicMock(return_value=None)
+
+        self.system.play_ambient_loop("rain_light", volume=1.0)
+        self.system.set_ambient_loop_volume("rain_light", 0.8)
+
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        assert ambient_loop.missing_asset is True
+        assert ambient_loop.channel is None
+        assert self.backend.get_active_channel_count() == 0
+
+    def test_set_audio_backend_preserves_and_restarts_ambient_loops(self) -> None:
+        """Ambient loops should be reattached when the audio backend changes."""
+        self.system.play_ambient_loop("rain_light", volume=0.7)
+        assert "rain_light" in self.system._ambient_loops
+
+        new_backend = MockAudioBackend()
+        new_backend.initialize()
+        self.system.set_audio_backend(new_backend)
+
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        assert ambient_loop.channel is not None
+        assert ambient_loop.channel.is_playing()
+        assert new_backend.get_active_channel_count() > 0
+
+    def test_reset_stops_and_clears_ambient_loops(self) -> None:
+        """Reset should fully stop ambient playback and clear loop tracking."""
+        self.system.play_ambient_loop("rain_light", volume=0.7)
+        ambient_loop = self.system._ambient_loops["rain_light"]
+        channel = ambient_loop.channel
+        assert channel is not None
+        assert channel.is_playing()
+
+        self.system.reset()
+
+        assert self.system._ambient_loops == {}
+        assert not channel.is_playing()
+        assert self.backend.get_active_channel_count() == 0
+
+
 class TestSoundSystemVolumeCalculation:
     """Test SoundSystem volume calculation logic."""
 

@@ -20,7 +20,7 @@ from brileta.game.actors.ai.utility import (
     is_threat_present,
     resolve_flee_from,
 )
-from brileta.types import DIRECTIONS, ActorId, Direction
+from brileta.types import DIRECTIONS, ActorId, Direction, saturate
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -241,7 +241,7 @@ class FleeGoal(Goal):
         distance_needed = _FLEE_SAFE_DISTANCE - self._start_distance
         if distance_needed <= 0:
             return 1.0
-        return max(0.0, min(1.0, distance_gained / distance_needed))
+        return saturate(distance_gained / distance_needed)
 
     def get_base_score(self) -> float:
         return self._base_score

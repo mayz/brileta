@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from brileta.types import SoundId
+from brileta.types import SoundId, saturate
 
 if TYPE_CHECKING:
     from .system import PlayingSound
@@ -45,4 +45,4 @@ class SoundEmitter:
 
     def set_volume_multiplier(self, multiplier: float) -> None:
         """Adjust the volume multiplier for this emitter."""
-        self.volume_multiplier = max(0.0, min(1.0, multiplier))
+        self.volume_multiplier = saturate(multiplier)

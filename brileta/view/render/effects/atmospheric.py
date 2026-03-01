@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass, field
 
 from brileta import colors
-from brileta.types import DeltaTime, Heading
+from brileta.types import DeltaTime, Heading, saturate
 
 
 @dataclass
@@ -171,4 +171,4 @@ class AtmosphericLayerSystem:
 
     def set_cloud_coverage(self, coverage: float) -> None:
         """Update cloud coverage (0.0 = clear, 1.0 = overcast)."""
-        self.config.cloud_coverage = max(0.0, min(1.0, coverage))
+        self.config.cloud_coverage = saturate(coverage)

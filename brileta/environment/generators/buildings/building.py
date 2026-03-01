@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
-from brileta.types import FootprintOffset, WorldTilePos
+from brileta.types import FootprintOffset, WorldTilePos, saturate
 from brileta.util.coordinates import Rect
 
 # Perspective offset constants for pseudo-3D building rendering.
@@ -128,7 +128,7 @@ class Building:
 
     def __post_init__(self) -> None:
         """Pre-compute perspective values from floor_count."""
-        self.flat_section_ratio = max(0.0, min(1.0, float(self.flat_section_ratio)))
+        self.flat_section_ratio = saturate(float(self.flat_section_ratio))
 
         pno = min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
         self.perspective_north_offset = pno

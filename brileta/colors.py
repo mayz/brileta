@@ -1,3 +1,5 @@
+from brileta.types import saturate
+
 # Type alias for RGB colors
 Color = tuple[int, int, int]
 ColorRGBA = tuple[int, int, int, int]
@@ -101,12 +103,12 @@ DEBUG_COLORS: list[Color] = [
 
 def lerp(start: float, end: float, t: float) -> float:
     """Linearly interpolate between two scalar values (clamped to 0..1)."""
-    return start + (end - start) * max(0.0, min(1.0, t))
+    return start + (end - start) * saturate(t)
 
 
 def lerp_color(base: Color, target: Color, blend: float) -> Color:
     """Blend two RGB colors with clamped interpolation factor."""
-    t = max(0.0, min(1.0, float(blend)))
+    t = saturate(float(blend))
     return (
         round(base[0] + (target[0] - base[0]) * t),
         round(base[1] + (target[1] - base[1]) * t),

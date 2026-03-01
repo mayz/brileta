@@ -1,6 +1,6 @@
 import math
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 from brileta import config
 from brileta.environment.map import MapRegion
@@ -565,9 +565,11 @@ def _make_rain_controller(
     )
     controller = object.__new__(Controller)
     controller.gw = gw
+    controller.sound_system = Mock()
     controller._rain_enabled = False
     controller._rain_base_state = None
     controller._rain_last_spacing = None
+    controller._rain_last_ambient_mix_key = None
     controller.frame_manager = SimpleNamespace(
         world_view=SimpleNamespace(
             rain_config=rain_config,
@@ -583,6 +585,7 @@ def _make_rain_controller(
         sun=sun,
         rain_config=rain_config,
         atmospheric_config=atmospheric_config,
+        sound_system=controller.sound_system,
     )
 
 
@@ -704,6 +707,109 @@ def test_controller_set_rain_enabled_noop_when_state_unchanged() -> None:
 
     assert controller.frame_manager.world_view.rain_config.enabled is False
     gw.lighting_system.on_global_light_changed.assert_not_called()
+
+
+def test_controller_set_rain_enabled_starts_and_stops_rain_ambient_audio() -> None:
+    """Rain toggle should start ambience on enable and stop it on disable."""
+    from brileta.controller import (
+        _RAIN_HEAVY_AMBIENT_SOUND_ID,
+        _RAIN_LIGHT_AMBIENT_SOUND_ID,
+        Controller,
+    )
+
+    f = _make_rain_controller()
+    f.gw.game_map.get_region_at = Mock(
+        return_value=MapRegion.create_outdoor_region(map_region_id=1, sky_exposure=1.0)
+    )
+
+    Controller._set_rain_enabled(f.controller, True)
+
+    f.sound_system.play_ambient_loop.assert_any_call(
+        _RAIN_LIGHT_AMBIENT_SOUND_ID,
+        volume=ANY,
+    )
+
+    f.sound_system.reset_mock()
+    Controller._set_rain_enabled(f.controller, False)
+
+    f.sound_system.stop_ambient_loop.assert_any_call(
+        _RAIN_LIGHT_AMBIENT_SOUND_ID,
+        fade_out_seconds=0.4,
+    )
+    f.sound_system.stop_ambient_loop.assert_any_call(
+        _RAIN_HEAVY_AMBIENT_SOUND_ID,
+        fade_out_seconds=0.4,
+    )
+
+
+def test_controller_rain_ambient_audio_crossfades_density_and_exposure() -> None:
+    """Rain ambience should crossfade with density and attenuate indoors."""
+    from brileta.controller import (
+        _RAIN_HEAVY_AMBIENT_SOUND_ID,
+        _RAIN_LIGHT_AMBIENT_SOUND_ID,
+        Controller,
+    )
+
+    downpour = config.RAIN_PRESETS["downpour"]
+    f = _make_rain_controller(
+        stream_spacing=min(downpour.stream_spacing),
+        drop_spacing=min(downpour.drop_spacing),
+    )
+    f.controller._rain_enabled = True
+    f.rain_config.enabled = True
+    f.gw.game_map.get_region_at = Mock(
+        return_value=MapRegion.create_indoor_region(map_region_id=1, sky_exposure=0.0)
+    )
+
+    Controller._update_rain_ambient_audio(f.controller)
+
+    calls = {
+        call.args[0]: float(call.kwargs["volume"])
+        for call in f.sound_system.play_ambient_loop.call_args_list
+    }
+    assert abs(calls[_RAIN_LIGHT_AMBIENT_SOUND_ID] - 0.217) < 1e-6
+    assert abs(calls[_RAIN_HEAVY_AMBIENT_SOUND_ID] - 0.35) < 1e-6
+
+
+def test_controller_rain_ambient_audio_stops_heavy_layer_for_drizzle() -> None:
+    """At minimum density, only the light rain layer should remain active."""
+    from brileta.controller import _RAIN_HEAVY_AMBIENT_SOUND_ID, Controller
+
+    f = _make_rain_controller()
+    f.controller._rain_enabled = True
+    f.rain_config.enabled = True
+    f.gw.game_map.get_region_at = Mock(
+        return_value=MapRegion.create_outdoor_region(map_region_id=1, sky_exposure=1.0)
+    )
+
+    Controller._update_rain_ambient_audio(f.controller)
+
+    played_ids = [
+        call.args[0] for call in f.sound_system.play_ambient_loop.call_args_list
+    ]
+    assert _RAIN_HEAVY_AMBIENT_SOUND_ID not in played_ids
+    f.sound_system.stop_ambient_loop.assert_called_with(_RAIN_HEAVY_AMBIENT_SOUND_ID)
+
+
+def test_controller_rain_ambient_audio_noop_when_mix_inputs_unchanged() -> None:
+    """Ambient mix update should skip work when spacing and region are unchanged."""
+    from brileta.controller import Controller
+
+    f = _make_rain_controller()
+    f.controller._rain_enabled = True
+    f.rain_config.enabled = True
+    f.gw.game_map.get_region_at = Mock(
+        return_value=MapRegion.create_outdoor_region(map_region_id=1, sky_exposure=1.0)
+    )
+
+    Controller._update_rain_ambient_audio(f.controller)
+    f.sound_system.play_ambient_loop.reset_mock()
+    f.sound_system.stop_ambient_loop.reset_mock()
+
+    Controller._update_rain_ambient_audio(f.controller)
+
+    f.sound_system.play_ambient_loop.assert_not_called()
+    f.sound_system.stop_ambient_loop.assert_not_called()
 
 
 # Player Torch Auto-Toggle Tests

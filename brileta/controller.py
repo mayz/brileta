@@ -45,6 +45,8 @@ from .types import (
     InterpolationAlpha,
     MapDecorationSeed,
     RandomSeed,
+    SoundId,
+    saturate,
 )
 from .util import rng
 from .util.clock import Clock
@@ -63,6 +65,16 @@ from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
 
 logger = logging.getLogger(__name__)
+
+_RAIN_LIGHT_AMBIENT_SOUND_ID: SoundId = "rain_light"
+_RAIN_HEAVY_AMBIENT_SOUND_ID: SoundId = "rain_heavy"
+# Keep light rain texture present across the full density range; the heavy
+# layer fades in over it as density increases.
+_RAIN_LIGHT_LAYER_LEVEL = 0.62
+_RAIN_HEAVY_LAYER_MAX_LEVEL = 1.0
+# Indoors should be muffled but still audible.
+_RAIN_INDOOR_VOLUME_FLOOR = 0.35
+_RAIN_AMBIENT_DISABLE_FADE_SECONDS = 0.4
 
 
 @dataclass(slots=True)
@@ -188,6 +200,8 @@ class Controller:
         self._rain_enabled: bool = False
         self._rain_base_state: _RainBaseState | None = None
         self._rain_last_spacing: tuple[float, float] | None = None
+        # Ambient rain audio recomputes only when spacing or player region changes.
+        self._rain_last_ambient_mix_key: tuple[tuple[float, float], int] | None = None
 
         # Create the initial game world (uses config.RANDOM_SEED)
         # This sets self.gw, lighting_system, player torch, and sun
@@ -495,6 +509,8 @@ class Controller:
             # new_world() creates a fresh sun and atmospheric system; re-base
             # rain response against the new defaults, not the previous world's.
             self._update_rain_weather_response(force_rebase=True)
+            self._rain_last_ambient_mix_key = None
+            self._update_rain_ambient_audio()
 
         # Clear world view caches
         wv.particle_system.clear()
@@ -578,7 +594,7 @@ class Controller:
         base = self._rain_base_state
         if base is None:
             return
-        t = max(0.0, min(1.0, float(density)))
+        t = saturate(float(density))
         lighting_changed = False
         if sun is not None:
             dim_factor = colors.lerp(
@@ -670,6 +686,72 @@ class Controller:
         density = compute_rain_density(rain_config)
         self._apply_rain_weather_response(density, sun, atmospheric)
 
+    def _get_player_sky_exposure(self) -> float:
+        """Return sky exposure at the player's current location."""
+        player = getattr(self.gw, "player", None)
+        if player is None:
+            return 1.0
+        region = self.gw.game_map.get_region_at((player.x, player.y))
+        if region is None:
+            return 1.0
+        return saturate(float(region.sky_exposure))
+
+    def _stop_rain_ambient_audio(self) -> None:
+        """Fade out and stop rain ambient layers."""
+        self.sound_system.stop_ambient_loop(
+            _RAIN_LIGHT_AMBIENT_SOUND_ID,
+            fade_out_seconds=_RAIN_AMBIENT_DISABLE_FADE_SECONDS,
+        )
+        self.sound_system.stop_ambient_loop(
+            _RAIN_HEAVY_AMBIENT_SOUND_ID,
+            fade_out_seconds=_RAIN_AMBIENT_DISABLE_FADE_SECONDS,
+        )
+        self._rain_last_ambient_mix_key = None
+
+    def _get_player_region_id(self) -> int:
+        """Return region ID at the player's tile, or -1 when unavailable."""
+        player = getattr(self.gw, "player", None)
+        if player is None:
+            return -1
+
+        game_map = self.gw.game_map
+        if not (0 <= player.x < game_map.width and 0 <= player.y < game_map.height):
+            return -1
+        return int(game_map.tile_to_region_id[player.x, player.y])
+
+    def _update_rain_ambient_audio(self) -> None:
+        """Update rain ambient layer volumes from density and player exposure."""
+        rain_config = self._get_rain_config()
+        if not self._rain_enabled or not rain_config.enabled:
+            return
+
+        spacing_key = (rain_config.stream_spacing, rain_config.drop_spacing)
+        region_id = self._get_player_region_id()
+        mix_key = (spacing_key, region_id)
+        if mix_key == self._rain_last_ambient_mix_key:
+            return
+        self._rain_last_ambient_mix_key = mix_key
+
+        density = saturate(float(compute_rain_density(rain_config)))
+        sky_exposure = self._get_player_sky_exposure()
+        exposure_gain = colors.lerp(_RAIN_INDOOR_VOLUME_FLOOR, 1.0, sky_exposure)
+
+        # Drizzle = light only. Downpour = heavy dominates with light underneath.
+        light_layer_volume = _RAIN_LIGHT_LAYER_LEVEL * exposure_gain
+        heavy_layer_volume = _RAIN_HEAVY_LAYER_MAX_LEVEL * density * exposure_gain
+
+        self.sound_system.play_ambient_loop(
+            _RAIN_LIGHT_AMBIENT_SOUND_ID,
+            volume=light_layer_volume,
+        )
+        if heavy_layer_volume <= 0.001:
+            self.sound_system.stop_ambient_loop(_RAIN_HEAVY_AMBIENT_SOUND_ID)
+        else:
+            self.sound_system.play_ambient_loop(
+                _RAIN_HEAVY_AMBIENT_SOUND_ID,
+                volume=heavy_layer_volume,
+            )
+
     def _set_rain_enabled(self, enabled: bool) -> None:
         """Toggle rain visuals and synchronize weather-driven lighting."""
         rain_config = self._get_rain_config()
@@ -680,6 +762,7 @@ class Controller:
 
         self._rain_enabled = rain_enabled
         self._rain_last_spacing = None
+        self._rain_last_ambient_mix_key = None
         if rain_enabled:
             sun = self._get_sun()
             atmospheric = self._get_atmospheric_system()
@@ -690,8 +773,10 @@ class Controller:
                 rain_config.stream_spacing,
                 rain_config.drop_spacing,
             )
+            self._update_rain_ambient_audio()
             return
 
+        self._stop_rain_ambient_audio()
         self._restore_rain_base_state()
 
     def _register_rain_live_variables(self) -> None:
@@ -711,7 +796,7 @@ class Controller:
             "rain.intensity",
             getter=lambda: self._get_rain_config().intensity,
             setter=lambda v: setattr(
-                self._get_rain_config(), "intensity", max(0.0, min(1.0, float(v)))
+                self._get_rain_config(), "intensity", saturate(float(v))
             ),
             description="Rain alpha intensity (0-1).",
             display_decimals=2,
@@ -1102,6 +1187,7 @@ class Controller:
                     DeltaTime(self.fixed_timestep),
                     game_map=self.gw.game_map,
                 )
+            self._update_rain_ambient_audio()
 
             # Update presentation manager (dispatches staggered combat feedback)
             self.presentation_manager.update(self.fixed_timestep)

@@ -16,6 +16,7 @@ from brileta.types import (
     PixelCoord,
     ViewOffset,
     WorldTilePos,
+    saturate,
 )
 from brileta.util import rng
 from brileta.util.caching import ResourceCache
@@ -1051,7 +1052,7 @@ class WorldView(View):
                         # Keep a baseline shadow presence while still responding to
                         # coverage.
                         coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
-                        effective_strength *= max(0.0, min(1.0, coverage_scale))
+                        effective_strength *= saturate(coverage_scale)
 
                     # This queues atmospheric uniforms for the GPU atmospheric
                     # renderer; compositing happens in finalize_present() over the

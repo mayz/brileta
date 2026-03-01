@@ -21,6 +21,7 @@ import numpy as np
 
 from brileta.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from brileta.sound.loader import AudioLoader
+from brileta.types import saturate
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class MiniaudioChannel(AudioChannel):
             return
 
         with self._backend._lock:
-            self._base_volume = max(0.0, min(1.0, volume))
+            self._base_volume = saturate(volume)
 
     def is_playing(self) -> bool:
         """Check if this channel is currently playing audio."""
@@ -159,7 +160,7 @@ class MiniaudioChannel(AudioChannel):
         self._position = 0
         self._is_looping = loop
         self._current_priority = priority
-        self._base_volume = max(0.0, min(1.0, volume))
+        self._base_volume = saturate(volume)
         self._playing = self._base_volume > 0.0
 
     def _stop_locked(self) -> None:
@@ -301,7 +302,7 @@ class MiniaudioBackend(AudioBackend):
     def set_master_volume(self, volume: float) -> None:
         """Set the master volume for all audio."""
         with self._lock:
-            self._master_volume = max(0.0, min(1.0, volume))
+            self._master_volume = saturate(volume)
 
     def update(self) -> None:
         """Update the audio backend.

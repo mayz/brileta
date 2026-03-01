@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from brileta.types import TileDimensions, WorldTilePos
+from brileta.types import TileDimensions, WorldTilePos, saturate
 from brileta.util.coordinates import Rect
 from brileta.util.rng import RNG
 
@@ -163,7 +163,7 @@ class BuildingTemplate:
         flat_section_ratio = 0.0
         if roof_profile == "low_slope":
             min_ratio, max_ratio = self.low_slope_flat_section_range
-            min_ratio = max(0.0, min(1.0, float(min_ratio)))
+            min_ratio = saturate(float(min_ratio))
             max_ratio = max(min_ratio, min(1.0, float(max_ratio)))
             bucket_count = max(1, int(self.low_slope_flat_section_buckets))
             if rng is None or bucket_count == 1:
