@@ -1,4 +1,24 @@
-"""Rain effect configuration and animation state."""
+"""Rain effect configuration and animation state.
+
+Design note - snow as a future sibling effect:
+
+Snow shares most of rain's architecture. When implementing snow:
+
+- Generalize WGPURainRenderer (backends/wgpu/rain_renderer.py) to accept a
+  shader path instead of hardcoding rain.wgsl. One renderer class, two
+  instances with different shaders. The fullscreen quad setup, bind group
+  layout, pipeline creation, and render call are identical.
+- Extract the wind animation system (gust events, micro-wobble, angle
+  tracking) from RainAnimationState into a shared WindAnimation class that
+  both rain and snow compose.
+- Write a separate snow.wgsl shader - circular drifting flakes rather than
+  oriented line segments. Different enough to warrant its own shader.
+- Ground effect: an atmospheric layer with blend_mode="lighten" (inverse of
+  rain's "darken" layer in atmospheric.py). Same system, different config.
+- Ambient light shift: brighter and cooler (inverse of rain's dimming).
+  Same controller toggle pattern, different parameters.
+- Rain and snow should be mutually exclusive.
+"""
 
 from __future__ import annotations
 
