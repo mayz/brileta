@@ -80,12 +80,14 @@ class Building:
 
     Buildings provide semantic grouping of rooms and track shared properties
     like the building type and door positions. Each building has a footprint
-    (the outer bounds including walls) and a list of rooms inside.
+    (the primary body rectangle including walls), an optional wing rectangle,
+    and a list of rooms inside.
 
     Attributes:
         id: Unique identifier for this building.
         building_type: Semantic type (e.g., "house", "shop", "tavern").
-        footprint: The outer bounds of the building including walls.
+        footprint: Primary body bounds including walls.
+        wing: Optional secondary bounds for compound footprints.
         rooms: List of Room objects inside this building.
         door_positions: List of (x, y) positions where doors are placed.
         roof_style: Visual roof style used by render-time roof substitution
@@ -128,6 +130,8 @@ class Building:
     on roofs: stain patches, moss/lichen, thinning, rust. Higher values
     produce more patches, darker patches, wider coverage.
     """
+    wing: Rect | None = None
+    """Optional secondary footprint rectangle for compound L/T-shaped buildings."""
 
     # Cached perspective values - computed once in __post_init__ from
     # floor_count (which is immutable after building generation).
@@ -151,18 +155,79 @@ class Building:
         self.perspective_has_frac = frac > 0.001
 
     @property
+    def is_compound(self) -> bool:
+        """Return True when this building has a secondary wing rectangle."""
+        return self.wing is not None
+
+    @property
+    def occupied_rects(self) -> tuple[Rect, ...]:
+        """Get the rectangles whose union forms the building shape."""
+        if self.wing is None:
+            return (self.footprint,)
+        return (self.footprint, self.wing)
+
+    @property
+    def bounding_rect(self) -> Rect:
+        """Get the axis-aligned bounding rectangle of the full building."""
+        rects = self.occupied_rects
+        return Rect.from_bounds(
+            min(rect.x1 for rect in rects),
+            min(rect.y1 for rect in rects),
+            max(rect.x2 for rect in rects),
+            max(rect.y2 for rect in rects),
+        )
+
+    @property
+    def interior_rects(self) -> tuple[Rect, ...]:
+        """Get interior rectangles (each occupied section inset by one tile).
+
+        For compound buildings the wing's shared edge with the footprint is
+        NOT inset.  This keeps the walkable junction corridor inside the
+        wing's interior rect so every interior floor tile is covered by a
+        room region.  Rectangular buildings are simply inset by 1 on all
+        sides as before.
+        """
+        fp = self.footprint
+        fp_interior = Rect(fp.x1 + 1, fp.y1 + 1, fp.width - 2, fp.height - 2)
+
+        if self.wing is None:
+            return (fp_interior,)
+
+        wing = self.wing
+
+        # Default: inset every edge by 1.
+        w_x1 = wing.x1 + 1
+        w_y1 = wing.y1 + 1
+        w_x2 = wing.x2 - 1
+        w_y2 = wing.y2 - 1
+
+        # Detect which edge of the wing is attached to the footprint and
+        # skip the inset on that edge so the junction corridor is included.
+        if wing.y1 < fp.y1:
+            # Wing extends north - shared on wing's south edge.
+            w_y2 = wing.y2
+        elif wing.y2 > fp.y2:
+            # Wing extends south - shared on wing's north edge.
+            w_y1 = wing.y1
+        elif wing.x1 < fp.x1:
+            # Wing extends west - shared on wing's east edge.
+            w_x2 = wing.x2
+        elif wing.x2 > fp.x2:
+            # Wing extends east - shared on wing's west edge.
+            w_x1 = wing.x1
+
+        wing_interior = Rect.from_bounds(w_x1, w_y1, w_x2, w_y2)
+        return (fp_interior, wing_interior)
+
+    @property
     def interior_bounds(self) -> Rect:
         """Get the interior bounds (footprint minus walls).
 
         Returns:
             A Rect representing the walkable interior area.
         """
-        return Rect(
-            self.footprint.x1 + 1,
-            self.footprint.y1 + 1,
-            self.footprint.width - 2,
-            self.footprint.height - 2,
-        )
+        # Backward-compat accessor: the primary section's interior.
+        return self.interior_rects[0]
 
     @property
     def chimney_world_pos(self) -> WorldTilePos | None:
@@ -174,34 +239,40 @@ class Building:
 
     @property
     def ridge_axis(self) -> str:
-        """Ridge line axis derived from footprint dimensions.
+        """Ridge line axis derived from overall building bounds.
 
         The ridge runs along the longer axis of the building: horizontal for
         wide buildings, vertical for tall buildings. Square buildings use a
         position-based hash for visual variety across the map.
         """
-        if self.footprint.width > self.footprint.height:
+        bounds = self.bounding_rect
+        if bounds.width > bounds.height:
             return "horizontal"
-        if self.footprint.height > self.footprint.width:
+        if bounds.height > bounds.width:
             return "vertical"
         # Square: deterministic pick based on position for variety.
-        return (
-            "horizontal"
-            if (self.footprint.x1 + self.footprint.y1) % 2 == 0
-            else "vertical"
-        )
+        return "horizontal" if (bounds.x1 + bounds.y1) % 2 == 0 else "vertical"
+
+    def tile_set(self) -> set[WorldTilePos]:
+        """Get all world tiles occupied by the building's shape union."""
+        tiles: set[WorldTilePos] = set()
+        for rect in self.occupied_rects:
+            for x in range(rect.x1, rect.x2):
+                for y in range(rect.y1, rect.y2):
+                    tiles.add((x, y))
+        return tiles
 
     def contains_point(self, x: int, y: int) -> bool:
-        """Check if a point is inside this building's footprint.
+        """Check if a point is inside this building's occupied shape.
 
         Args:
             x: X coordinate to check.
             y: Y coordinate to check.
 
         Returns:
-            True if the point is within the building's footprint.
+            True if the point is within any occupied section.
         """
-        return (
-            self.footprint.x1 <= x < self.footprint.x2
-            and self.footprint.y1 <= y < self.footprint.y2
+        return any(
+            rect.x1 <= x < rect.x2 and rect.y1 <= y < rect.y2
+            for rect in self.occupied_rects
         )

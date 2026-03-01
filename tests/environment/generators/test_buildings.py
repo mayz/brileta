@@ -12,6 +12,7 @@ import random
 
 import numpy as np
 
+from brileta import config
 from brileta.environment.generators.buildings import Building, BuildingTemplate, Room
 from brileta.environment.generators.buildings.templates import (
     BLACKSMITH_TEMPLATE,
@@ -53,6 +54,20 @@ class TestBuildingRoomDataclasses:
         assert building.roof_profile == "gable"
         assert building.flat_section_ratio == 0.0
         assert building.floor_count == 1
+        assert building.wing is None
+
+    def test_rectangular_building_has_no_wing(self) -> None:
+        """Rectangular buildings expose a single occupied section."""
+        footprint = Rect(10, 20, 15, 12)
+        building = Building(id=1, building_type="house", footprint=footprint)
+
+        assert building.wing is None
+        assert building.bounding_rect.x1 == footprint.x1
+        assert building.bounding_rect.y1 == footprint.y1
+        assert building.bounding_rect.x2 == footprint.x2
+        assert building.bounding_rect.y2 == footprint.y2
+        assert building.occupied_rects == (footprint,)
+        assert building.is_compound is False
 
     def test_building_clamps_flat_section_ratio_to_valid_range(self) -> None:
         """flat_section_ratio is clamped into [0.0, 1.0] during post-init."""
@@ -117,6 +132,96 @@ class TestBuildingRoomDataclasses:
         assert not building.contains_point(10, 9)
         assert not building.contains_point(15, 10)
         assert not building.contains_point(10, 15)
+
+    def test_l_shape_building_properties(self) -> None:
+        """Compound buildings expose both occupied sections and a merged bounding box."""
+        primary = Rect(10, 10, 8, 8)
+        wing = Rect.from_bounds(10, 5, 14, 10)
+        building = Building(id=2, building_type="house", footprint=primary, wing=wing)
+
+        assert building.is_compound is True
+        assert building.occupied_rects == (primary, wing)
+        bounds = building.bounding_rect
+        assert (bounds.x1, bounds.y1, bounds.x2, bounds.y2) == (10, 5, 18, 18)
+
+    def test_l_shape_contains_point(self) -> None:
+        """contains_point should include both sections but not the empty bounding corner."""
+        primary = Rect(10, 10, 8, 8)
+        wing = Rect.from_bounds(10, 5, 14, 10)
+        building = Building(id=3, building_type="house", footprint=primary, wing=wing)
+
+        assert building.contains_point(16, 12)  # primary
+        assert building.contains_point(11, 7)  # wing
+        assert not building.contains_point(16, 7)  # in bounding box, outside union
+        assert not building.contains_point(30, 30)  # fully outside
+
+    def test_l_shape_interior_rects(self) -> None:
+        """Each occupied section should produce its own inset interior rect.
+
+        The wing's shared edge (south, in this configuration) is NOT inset
+        so the walkable junction corridor is included in the wing interior.
+        """
+        primary = Rect(10, 10, 8, 8)
+        wing = Rect.from_bounds(10, 5, 14, 10)
+        building = Building(id=4, building_type="house", footprint=primary, wing=wing)
+
+        interior_primary, interior_wing = building.interior_rects
+        assert (
+            interior_primary.x1,
+            interior_primary.y1,
+            interior_primary.width,
+            interior_primary.height,
+        ) == (
+            11,
+            11,
+            6,
+            6,
+        )
+        # Wing extends north of footprint: south edge (y2) is not inset,
+        # giving height 4 instead of 3.
+        assert (
+            interior_wing.x1,
+            interior_wing.y1,
+            interior_wing.width,
+            interior_wing.height,
+        ) == (
+            11,
+            6,
+            2,
+            4,
+        )
+        interior_bounds = building.interior_bounds
+        assert (
+            interior_bounds.x1,
+            interior_bounds.y1,
+            interior_bounds.width,
+            interior_bounds.height,
+        ) == (11, 11, 6, 6)
+
+    def test_l_shape_tile_set(self) -> None:
+        """tile_set should be exactly the union of all occupied section tiles."""
+        primary = Rect(10, 10, 8, 8)
+        wing = Rect.from_bounds(10, 5, 14, 10)
+        building = Building(id=5, building_type="house", footprint=primary, wing=wing)
+
+        expected = {
+            (x, y)
+            for x in range(primary.x1, primary.x2)
+            for y in range(primary.y1, primary.y2)
+        }
+        expected.update(
+            {(x, y) for x in range(wing.x1, wing.x2) for y in range(wing.y1, wing.y2)}
+        )
+        assert building.tile_set() == expected
+
+    def test_bounding_rect_equals_footprint_for_rectangular(self) -> None:
+        """Backward-compat: rectangular buildings report bounding_rect as footprint."""
+        footprint = Rect(3, 4, 9, 7)
+        building = Building(id=6, building_type="shop", footprint=footprint)
+        assert building.bounding_rect.x1 == footprint.x1
+        assert building.bounding_rect.y1 == footprint.y1
+        assert building.bounding_rect.x2 == footprint.x2
+        assert building.bounding_rect.y2 == footprint.y2
 
     def test_room_creation(self) -> None:
         """Room has region_id, room_type, bounds."""
@@ -415,6 +520,167 @@ class TestBuildingTemplate:
 
         assert template.door_count == 2
 
+    def test_template_wing_generation(self) -> None:
+        """Positive shape weights with 100% config chance always generate a wing."""
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            template = BuildingTemplate(
+                name="test_compound",
+                building_type="house",
+                min_width=18,
+                max_width=18,
+                min_height=14,
+                max_height=14,
+                l_shape_weight=1.0,
+            )
+            rng = random.Random(42)
+            building = template.create_building(
+                building_id=1, position=(10, 10), width=18, height=14, rng=rng
+            )
+
+            assert building.wing is not None
+            wing = building.wing
+            assert wing.width >= 5
+            assert wing.height >= 5
+
+            fp = building.footprint
+            overlaps_or_touches = not (
+                wing.x2 < fp.x1 or wing.x1 > fp.x2 or wing.y2 < fp.y1 or wing.y1 > fp.y2
+            )
+            extends_outward = (
+                wing.x1 < fp.x1 or wing.x2 > fp.x2 or wing.y1 < fp.y1 or wing.y2 > fp.y2
+            )
+            assert overlaps_or_touches
+            assert extends_outward
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
+    def test_template_no_wing_when_weights_zero(self) -> None:
+        """Both shape weights at 0.0 should never generate a wing."""
+        template = BuildingTemplate(
+            name="test_rect",
+            building_type="house",
+            min_width=18,
+            max_width=18,
+            min_height=14,
+            max_height=14,
+        )
+        for seed in range(20):
+            rng = random.Random(seed)
+            building = template.create_building(
+                building_id=seed, position=(0, 0), width=18, height=14, rng=rng
+            )
+            assert building.wing is None
+
+    def test_template_wing_varies_across_seeds(self) -> None:
+        """Different seeds should produce wings anchored to different corners."""
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            template = BuildingTemplate(
+                name="test_varied_wing",
+                building_type="house",
+                min_width=18,
+                max_width=18,
+                min_height=14,
+                max_height=14,
+                l_shape_weight=1.0,
+            )
+
+            corners: set[str] = set()
+            for seed in range(30):
+                rng = random.Random(seed)
+                building = template.create_building(
+                    building_id=seed, position=(20, 20), width=18, height=14, rng=rng
+                )
+                assert building.wing is not None
+                wing = building.wing
+                fp = building.footprint
+
+                if wing.y2 <= fp.y1 + 1 and wing.y1 < fp.y1:
+                    corners.add("nw" if wing.x1 == fp.x1 else "ne")
+                elif wing.y1 >= fp.y2 - 1 and wing.y2 > fp.y2:
+                    corners.add("sw" if wing.x1 == fp.x1 else "se")
+                elif wing.x2 <= fp.x1 + 1 and wing.x1 < fp.x1:
+                    corners.add("nw" if wing.y1 == fp.y1 else "sw")
+                elif wing.x1 >= fp.x2 - 1 and wing.x2 > fp.x2:
+                    corners.add("ne" if wing.y1 == fp.y1 else "se")
+
+            assert len(corners) > 1
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
+    def test_template_t_shape_generation(self) -> None:
+        """T-shape weight only should generate a centered side wing."""
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            template = BuildingTemplate(
+                name="test_t_shape",
+                building_type="house",
+                min_width=20,
+                max_width=20,
+                min_height=16,
+                max_height=16,
+                t_shape_weight=1.0,
+            )
+            rng = random.Random(7)
+            building = template.create_building(
+                building_id=1, position=(30, 30), width=20, height=16, rng=rng
+            )
+            assert building.wing is not None
+
+            fp = building.footprint
+            wing = building.wing
+            if (wing.y2 <= fp.y1 + 1 and wing.y1 < fp.y1) or (
+                wing.y1 >= fp.y2 - 1 and wing.y2 > fp.y2
+            ):
+                # North/south attachment: centered on X span.
+                left_margin = wing.x1 - fp.x1
+                right_margin = fp.x2 - wing.x2
+                assert left_margin > 0
+                assert right_margin > 0
+            elif (wing.x2 <= fp.x1 + 1 and wing.x1 < fp.x1) or (
+                wing.x1 >= fp.x2 - 1 and wing.x2 > fp.x2
+            ):
+                # West/east attachment: centered on Y span.
+                top_margin = wing.y1 - fp.y1
+                bottom_margin = fp.y2 - wing.y2
+                assert top_margin > 0
+                assert bottom_margin > 0
+            else:
+                raise AssertionError(
+                    f"Wing does not attach to the primary body: {wing}"
+                )
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
+    def test_compound_shape_chance_zero_suppresses_wings(self) -> None:
+        """Config chance at 0.0 should suppress all wings regardless of weights."""
+        template = BuildingTemplate(
+            name="test_suppressed",
+            building_type="house",
+            min_width=20,
+            max_width=20,
+            min_height=16,
+            max_height=16,
+            l_shape_weight=1.0,
+            t_shape_weight=1.0,
+        )
+
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 0.0
+            for seed in range(10):
+                rng = random.Random(seed)
+                building = template.create_building(
+                    building_id=seed, position=(0, 0), width=20, height=16, rng=rng
+                )
+                assert building.wing is None
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
 
 # =============================================================================
 # T2.3: Default Templates
@@ -450,6 +716,8 @@ class TestDefaultTemplates:
         assert template.max_height == 18
         assert template.room_count_min == 2
         assert template.room_count_max == 4
+        assert template.l_shape_weight == 0.7
+        assert template.t_shape_weight == 0.3
 
     def test_shop_template(self) -> None:
         """Shop has front, back, and storage rooms."""
@@ -484,6 +752,8 @@ class TestDefaultTemplates:
         assert template.room_count_max == 6
         assert "main_hall" in template.room_types
         assert template.roof_style == "shingle"
+        assert template.l_shape_weight == 0.7
+        assert template.t_shape_weight == 0.3
 
     def test_industrial_templates_use_tin_roofs(self) -> None:
         """Blacksmiths and warehouses use tin roofs with industrial profiles."""
@@ -491,6 +761,13 @@ class TestDefaultTemplates:
         assert WAREHOUSE_TEMPLATE.roof_style == "tin"
         assert BLACKSMITH_TEMPLATE.roof_profile_family == ("gable", "low_slope")
         assert WAREHOUSE_TEMPLATE.roof_profile_family == ("low_slope", "flat")
+        assert BLACKSMITH_TEMPLATE.l_shape_weight == 0.7
+        assert BLACKSMITH_TEMPLATE.t_shape_weight == 0.3
+
+    def test_inn_template_wing_probability(self) -> None:
+        """Inn should allow compound footprints."""
+        assert INN_TEMPLATE.l_shape_weight == 0.7
+        assert INN_TEMPLATE.t_shape_weight == 0.3
 
     def test_get_default_templates(self) -> None:
         """get_default_templates returns expected templates."""
@@ -511,6 +788,16 @@ class TestDefaultTemplates:
             "warehouse",
         }
         assert names == expected
+
+        # Only larger archetypes should generate wings by default.
+        l_weights = {t.name: t.l_shape_weight for t in templates}
+        t_weights = {t.name: t.t_shape_weight for t in templates}
+        for name in ("medium_house", "tavern", "inn", "blacksmith"):
+            assert l_weights[name] > 0, f"{name} should have positive L-shape weight"
+            assert t_weights[name] > 0, f"{name} should have positive T-shape weight"
+        for name in ("small_house", "shop"):
+            assert l_weights[name] == 0.0
+            assert t_weights[name] == 0.0
 
 
 # =============================================================================

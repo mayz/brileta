@@ -130,6 +130,68 @@ class GenerationContext:
         """
         self.regions[region.id] = region
 
+    # ------------------------------------------------------------------
+    # Tile-set helpers used by multiple generation layers
+    # ------------------------------------------------------------------
+
+    def collect_building_tiles(self) -> set[WorldTilePos]:
+        """Collect all tiles covered by building shapes."""
+        tiles: set[WorldTilePos] = set()
+        for building in self.buildings:
+            tiles.update(building.tile_set())
+        return tiles
+
+    def collect_street_tiles(self) -> set[WorldTilePos]:
+        """Collect all tiles covered by street rectangles."""
+        map_bounds = Rect(0, 0, self.width, self.height)
+        tiles: set[WorldTilePos] = set()
+        for street in self.street_data.streets:
+            clipped = street.clip(map_bounds)
+            if clipped is not None:
+                for x in range(clipped.x1, clipped.x2):
+                    for y in range(clipped.y1, clipped.y2):
+                        tiles.add((x, y))
+        return tiles
+
+    def expand_tiles(
+        self,
+        tiles: set[WorldTilePos],
+        radius: int,
+    ) -> set[WorldTilePos]:
+        """Expand a tile set outward by Chebyshev radius.
+
+        Creates a buffer zone around the input tiles. Used to build exclusion
+        zones around buildings and proximity zones around streets.
+
+        Args:
+            tiles: Source tile positions to expand from.
+            radius: Expansion distance in tiles (Chebyshev/chessboard metric).
+
+        Returns:
+            New set containing all tiles within radius of any source tile.
+        """
+        if radius <= 0 or not tiles:
+            return set(tiles)
+
+        # Use numpy for efficient expansion: stamp a boolean grid, dilate,
+        # read back.
+        grid = np.zeros((self.width, self.height), dtype=bool)
+        for x, y in tiles:
+            if 0 <= x < self.width and 0 <= y < self.height:
+                grid[x, y] = True
+
+        # Cumulative sum dilation: for each axis, smear True values outward
+        # by ``radius`` in both directions.  Equivalent to a box filter but
+        # avoids scipy/ndimage dependency.
+        padded = np.pad(grid.astype(np.int8), radius, mode="constant")
+        cs = np.cumsum(padded, axis=0)
+        dilated_x = cs[2 * radius :, :] - cs[: -2 * radius, :]
+        cs2 = np.cumsum(dilated_x, axis=1)
+        dilated = cs2[:, 2 * radius :] - cs2[:, : -2 * radius :]
+
+        expanded_coords = np.argwhere(dilated[: self.width, : self.height] > 0)
+        return {(int(x), int(y)) for x, y in expanded_coords}
+
     def to_generated_map_data(self) -> GeneratedMapData:
         """Convert this context to a GeneratedMapData for use with GameMap.
 

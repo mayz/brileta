@@ -21,8 +21,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import numpy as np
-
 from brileta import config
 from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
@@ -95,23 +93,21 @@ class TreePlacementLayer(GenerationLayer):
         )
 
         # Pre-compute tile sets for fast lookup during placement.
-        building_tiles = self._collect_building_tiles(ctx)
-        street_tiles = self._collect_street_tiles(ctx)
+        building_tiles = ctx.collect_building_tiles()
+        street_tiles = ctx.collect_street_tiles()
 
         # Building exclusion zone: tiles within min_distance of any building wall.
-        building_buffer = self._expand_tiles(
-            building_tiles, self.min_distance_from_buildings, ctx.width, ctx.height
+        building_buffer = ctx.expand_tiles(
+            building_tiles, self.min_distance_from_buildings
         )
 
         # Street proximity zone: tiles within street_buffer of any street.
         # Tiles inside this zone are "settlement"; tiles outside are "wild".
-        settlement_zone = self._expand_tiles(
-            street_tiles, self.street_buffer, ctx.width, ctx.height
-        )
+        settlement_zone = ctx.expand_tiles(street_tiles, self.street_buffer)
 
         # Tight building adjacency zone for settlement trees (1 tile from walls).
         # Settlement trees can be placed here but wild trees cannot.
-        building_adjacent = self._expand_tiles(building_tiles, 1, ctx.width, ctx.height)
+        building_adjacent = ctx.expand_tiles(building_tiles, 1)
 
         # Pass 1: Wild trees (dense, outside settlement zone)
         self._place_trees(
@@ -182,81 +178,3 @@ class TreePlacementLayer(GenerationLayer):
                 if _rng.random() < density * density_multiplier:
                     ctx.tree_positions.append(pos)
                     existing_positions.add(pos)
-
-    def _collect_building_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
-        """Collect all tiles occupied by building footprints.
-
-        Args:
-            ctx: The generation context with building data.
-
-        Returns:
-            Set of tile positions covered by buildings.
-        """
-        tiles: set[WorldTilePos] = set()
-        for building in ctx.buildings:
-            fp = building.footprint
-            for x in range(fp.x1, fp.x2):
-                for y in range(fp.y1, fp.y2):
-                    tiles.add((x, y))
-        return tiles
-
-    def _collect_street_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
-        """Collect all tiles occupied by streets.
-
-        Args:
-            ctx: The generation context with street data.
-
-        Returns:
-            Set of tile positions covered by streets.
-        """
-        tiles: set[WorldTilePos] = set()
-        for street in ctx.street_data.streets:
-            for x in range(max(0, street.x1), min(ctx.width, street.x2)):
-                for y in range(max(0, street.y1), min(ctx.height, street.y2)):
-                    tiles.add((x, y))
-        return tiles
-
-    @staticmethod
-    def _expand_tiles(
-        tiles: set[WorldTilePos],
-        radius: int,
-        map_width: int,
-        map_height: int,
-    ) -> set[WorldTilePos]:
-        """Expand a set of tiles outward by a radius (Chebyshev distance).
-
-        Creates a buffer zone around the input tiles. Used to build exclusion
-        zones around buildings and proximity zones around streets.
-
-        Args:
-            tiles: Source tile positions to expand from.
-            radius: Expansion distance in tiles (Chebyshev/chessboard metric).
-            map_width: Map width for bounds clamping.
-            map_height: Map height for bounds clamping.
-
-        Returns:
-            New set containing all tiles within radius of any source tile.
-        """
-        if radius <= 0 or not tiles:
-            return set(tiles)
-
-        # Use numpy for efficient expansion: stamp a boolean grid, dilate, read back.
-        grid = np.zeros((map_width, map_height), dtype=bool)
-        for x, y in tiles:
-            if 0 <= x < map_width and 0 <= y < map_height:
-                grid[x, y] = True
-
-        # Cumulative sum dilation: for each axis, smear True values outward
-        # by `radius` in both directions. This is equivalent to a box filter
-        # but avoids scipy/ndimage dependency.
-        padded = np.pad(grid.astype(np.int8), radius, mode="constant")
-        # Cumulative sum along x-axis
-        cs = np.cumsum(padded, axis=0)
-        dilated_x = cs[2 * radius :, :] - cs[: -2 * radius, :]
-        # Cumulative sum along y-axis
-        cs2 = np.cumsum(dilated_x, axis=1)
-        dilated = cs2[:, 2 * radius :] - cs2[:, : -2 * radius :]
-
-        # Read back expanded positions
-        expanded_coords = np.argwhere(dilated[:map_width, :map_height] > 0)
-        return {(int(x), int(y)) for x, y in expanded_coords}

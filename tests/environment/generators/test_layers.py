@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from brileta import config
+from brileta.environment.generators.buildings import Building
 from brileta.environment.generators.buildings.templates import (
     SMALL_HOUSE_TEMPLATE,
     BuildingTemplate,
@@ -29,6 +31,7 @@ from brileta.environment.generators.pipeline.layers import (
 )
 from brileta.environment.tile_types import TileTypeID
 from brileta.util import rng
+from brileta.util.coordinates import Rect
 
 # =============================================================================
 # T4.1: OpenFieldLayer
@@ -209,6 +212,240 @@ class TestBuildingPlacementLayer:
                 assert len(adjacent_regions) >= 1, (
                     f"Door at ({door_x},{door_y}) not adjacent to any region"
                 )
+
+    def test_l_shape_carving_produces_correct_walls_and_floors(self) -> None:
+        """Compound footprints should carve perimeter walls and interior floors.
+
+        The 8-neighbor rule ensures concave corner tiles become walls,
+        sealing the diagonal FOV gap at compound-shape joints.
+        """
+        ctx = GenerationContext.create_empty(width=40, height=40)
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+        layer = BuildingPlacementLayer(
+            templates=[SMALL_HOUSE_TEMPLATE], max_buildings=0
+        )
+
+        building = Building(
+            id=99,
+            building_type="test",
+            footprint=Rect(12, 12, 10, 8),
+            wing=Rect.from_bounds(8, 12, 12, 17),
+        )
+        layer._carve_building(ctx, building)
+
+        occupied = building.tile_set()
+        for x, y in occupied:
+            # Cardinal check.
+            is_interior = (
+                (x + 1, y) in occupied
+                and (x - 1, y) in occupied
+                and (x, y + 1) in occupied
+                and (x, y - 1) in occupied
+            )
+            # Diagonal check - concave corners become walls.
+            if is_interior and (
+                (x - 1, y - 1) not in occupied
+                or (x + 1, y - 1) not in occupied
+                or (x - 1, y + 1) not in occupied
+                or (x + 1, y + 1) not in occupied
+            ):
+                is_interior = False
+
+            expected = TileTypeID.FLOOR if is_interior else TileTypeID.WALL
+            assert ctx.tiles[x, y] == expected
+
+        # Tiles where the wing joins the primary body should remain floor.
+        assert ctx.tiles[12, 13] == TileTypeID.FLOOR
+        assert ctx.tiles[11, 13] == TileTypeID.FLOOR
+
+        # The concave corner tile at the L-joint should be a wall, sealing
+        # the diagonal gap that would otherwise let FOV leak outward.
+        assert ctx.tiles[12, 16] == TileTypeID.WALL
+
+    def test_t_shape_carving_seals_both_concave_corners(self) -> None:
+        """T-shapes have two concave corners that must both be walled.
+
+        Without the 8-neighbor rule the corner tiles pass the 4-cardinal
+        check but leave a diagonal gap on each side of the wing that lets
+        FOV leak outside the building.
+        """
+        ctx = GenerationContext.create_empty(width=50, height=50)
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+        layer = BuildingPlacementLayer(
+            templates=[SMALL_HOUSE_TEMPLATE], max_buildings=0
+        )
+
+        # South-facing T: footprint with a centered wing extending south.
+        # footprint x=[10,29], y=[10,24]  (y2=25)
+        # wing      x=[15,24], y=[24,34]  (overlap row y=24)
+        footprint = Rect(10, 10, 20, 15)
+        wing = Rect.from_bounds(15, 24, 25, 35)
+        building = Building(id=77, building_type="test", footprint=footprint, wing=wing)
+        layer._carve_building(ctx, building)
+
+        # Left concave corner: (15, 24) is floor with 4-neighbor rule,
+        # wall with 8-neighbor rule because (14, 25) is not in the shape.
+        assert ctx.tiles[15, 24] == TileTypeID.WALL
+
+        # Right concave corner: (24, 24) is the symmetric case.
+        assert ctx.tiles[24, 24] == TileTypeID.WALL
+
+        # The corridor between the main body and the wing is the tiles
+        # between the two walled corners - these must remain floor.
+        for x in range(16, 24):
+            assert ctx.tiles[x, 24] == TileTypeID.FLOOR, (
+                f"Junction corridor tile ({x}, 24) should be FLOOR"
+            )
+
+    def test_compound_building_gets_valid_door_on_correct_face(self) -> None:
+        """Compound buildings should get a door on the perimeter wall facing
+        the nearest street, just like rectangular buildings.
+        """
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            compound_template = BuildingTemplate(
+                name="compound_test",
+                building_type="house",
+                min_width=18,
+                max_width=18,
+                min_height=14,
+                max_height=14,
+                l_shape_weight=1.0,
+            )
+            placed = 0
+            for seed in range(30):
+                rng.reset(str(seed))
+                ctx = GenerationContext.create_empty(width=80, height=60)
+                ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+
+                street_layer = StreetNetworkLayer(style="single")
+                street_layer.apply(ctx)
+
+                layer = BuildingPlacementLayer(
+                    templates=[compound_template],
+                    max_buildings=1,
+                    building_density=1.0,
+                )
+                layer.apply(ctx)
+
+                for building in ctx.buildings:
+                    if not building.is_compound:
+                        continue
+                    placed += 1
+                    assert building.door_positions, (
+                        f"Seed {seed}: compound building {building.id} has no door"
+                    )
+                    for door_x, door_y in building.door_positions:
+                        assert ctx.tiles[door_x, door_y] == TileTypeID.DOOR_CLOSED
+                        # The door must sit on the perimeter (a wall tile
+                        # converted to door).
+                        assert building.contains_point(door_x, door_y)
+
+            assert placed > 0, "No compound buildings were placed across all seeds"
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
+    def test_compound_building_creates_rooms_per_section(self) -> None:
+        """Compound buildings should get one room per occupied section."""
+        ctx = GenerationContext.create_empty(width=50, height=50)
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+        layer = BuildingPlacementLayer(
+            templates=[SMALL_HOUSE_TEMPLATE], max_buildings=0
+        )
+
+        # Manually create an L-shaped building.
+        primary = Rect(10, 10, 10, 8)
+        wing = Rect.from_bounds(6, 10, 10, 16)
+        building = Building(id=99, building_type="test", footprint=primary, wing=wing)
+        layer._carve_building(ctx, building)
+
+        template = BuildingTemplate(
+            name="test",
+            building_type="test",
+            min_width=10,
+            max_width=10,
+            min_height=8,
+            max_height=8,
+            room_count_min=5,
+            room_count_max=5,
+        )
+        rooms = layer._create_rooms(ctx, building, template, room_count=5)
+        # Compound path gives exactly one room per section.
+        assert len(rooms) == 2
+        # Each room interior should fit inside the building.
+        for room in rooms:
+            assert room.bounds.width > 0
+            assert room.bounds.height > 0
+
+    def test_wing_discarded_when_out_of_map_bounds(self) -> None:
+        """Wings extending outside the map should be silently discarded."""
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            template = BuildingTemplate(
+                name="edge_test",
+                building_type="house",
+                min_width=18,
+                max_width=18,
+                min_height=14,
+                max_height=14,
+                l_shape_weight=1.0,
+            )
+            rng.reset("edge_test")
+            ctx = GenerationContext.create_empty(width=30, height=30)
+            ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+            layer = BuildingPlacementLayer(templates=[template], max_buildings=0)
+
+            # Place building right at the map edge so any wing extends outside.
+            building = layer._create_building(ctx, template, (0, 0), 18, 14)
+            # The wing should be discarded if it extends out of bounds.
+            if building.wing is not None:
+                assert building.wing.x1 >= 0
+                assert building.wing.y1 >= 0
+                assert building.wing.x2 <= ctx.width
+                assert building.wing.y2 <= ctx.height
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
+
+    def test_wing_discarded_when_crowding_neighbor(self) -> None:
+        """Wings that would crowd an existing building should be discarded."""
+        old_chance = config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE
+        try:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 1.0
+            template = BuildingTemplate(
+                name="crowd_test",
+                building_type="house",
+                min_width=10,
+                max_width=10,
+                min_height=8,
+                max_height=8,
+                l_shape_weight=1.0,
+            )
+            ctx = GenerationContext.create_empty(width=80, height=80)
+            ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+            layer = BuildingPlacementLayer(
+                templates=[template], max_buildings=0, min_spacing=3
+            )
+
+            # Place a neighbor building first.
+            neighbor = Building(
+                id=0, building_type="house", footprint=Rect(30, 30, 10, 8)
+            )
+            ctx.buildings.append(neighbor)
+
+            # Place the candidate right next to the neighbor (footprint clears
+            # min_spacing, but a wing toward the neighbor would violate it).
+            rng.reset("crowd_test")
+            building = layer._create_building(ctx, template, (30, 20), 10, 8)
+            # Either no wing, or the wing does not crowd the neighbor.
+            if building.wing is not None:
+                expanded = neighbor.bounding_rect.inflate(layer.min_spacing)
+                assert not building.wing.intersects(expanded), (
+                    f"Wing {building.wing} is too close to neighbor {neighbor.bounding_rect}"
+                )
+        finally:
+            config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = old_chance
 
     def test_creates_building_regions(self) -> None:
         """Each building has indoor region with sky_exposure=0."""
@@ -870,6 +1107,45 @@ class TestBuildingPlacementWithStreets:
             fp = building.footprint
             overlaps_zone = any(zone.intersects(fp) for zone in ctx.street_data.zones)
             assert overlaps_zone, f"Building {fp} not in any zone"
+
+    def test_zone_placed_buildings_respect_min_spacing(self) -> None:
+        """Buildings placed via zone/lot system maintain min_spacing clearance.
+
+        The BSP lot subdivision can produce adjacent lots whose per-lot margins
+        are smaller than min_spacing.  The placement path must enforce spacing
+        against already-placed buildings so they never abut or overlap.
+        """
+        for seed in ["space1", "space2", "space3", "space4", "space5"]:
+            rng.reset(seed)
+            ctx = GenerationContext.create_empty(width=120, height=100)
+            ctx.tiles[:, :] = TileTypeID.COBBLESTONE
+
+            street_layer = StreetNetworkLayer(style="cross")
+            street_layer.apply(ctx)
+
+            min_spacing = 3
+            building_layer = BuildingPlacementLayer(
+                templates=[SMALL_HOUSE_TEMPLATE],
+                max_buildings=8,
+                min_spacing=min_spacing,
+                building_density=1.0,
+            )
+            building_layer.apply(ctx)
+
+            buildings = ctx.buildings
+            for i, a in enumerate(buildings):
+                for b in buildings[i + 1 :]:
+                    ab = a.bounding_rect
+                    bb = b.bounding_rect
+                    # Compute axis-aligned gap between the two bounding rects.
+                    gap_x = max(0, max(ab.x1, bb.x1) - min(ab.x2, bb.x2))
+                    gap_y = max(0, max(ab.y1, bb.y1) - min(ab.y2, bb.y2))
+                    gap = max(gap_x, gap_y)
+                    assert gap >= min_spacing, (
+                        f"Seed '{seed}': buildings {a.id} and {b.id} are only "
+                        f"{gap} tiles apart (min_spacing={min_spacing}). "
+                        f"A={ab}, B={bb}"
+                    )
 
     def test_doors_face_streets(self) -> None:
         """Building doors should face the nearest street."""

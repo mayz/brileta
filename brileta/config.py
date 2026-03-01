@@ -253,6 +253,11 @@ SETTLEMENT_BUILDING_DENSITY = (
     0.85  # Probability of placing a building in each lot (0.0-1.0)
 )
 SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
+# Building shape controls.
+# Probability that an eligible building gets a compound (L or T) footprint.
+# When this fires, the template's l_shape_weight / t_shape_weight ratio decides
+# which variant is chosen.  Templates with both weights at 0 never get a wing.
+SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 0.55
 
 # Tree placement
 # Wild trees: forested borders around the settlement. Noise modulation creates

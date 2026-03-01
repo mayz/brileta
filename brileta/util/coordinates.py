@@ -56,6 +56,20 @@ class Rect:
             and self.y2 >= other.y1
         )
 
+    def clip(self, bounds: Rect) -> Rect | None:
+        """Return the intersection with *bounds*, or None if the result is empty."""
+        x1 = max(self.x1, bounds.x1)
+        y1 = max(self.y1, bounds.y1)
+        x2 = min(self.x2, bounds.x2)
+        y2 = min(self.y2, bounds.y2)
+        if x1 >= x2 or y1 >= y2:
+            return None
+        return Rect.from_bounds(x1, y1, x2, y2)
+
+    def inflate(self, n: int) -> Rect:
+        """Expand the rectangle by *n* tiles on each side."""
+        return Rect(self.x1 - n, self.y1 - n, self.width + 2 * n, self.height + 2 * n)
+
     def __repr__(self) -> str:
         return f"Rect(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2})"
 

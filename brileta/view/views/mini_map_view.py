@@ -89,6 +89,22 @@ class MiniMapView(TextView):
         self._feature_vis_rgb: np.ndarray = np.empty(0, dtype=np.uint8)
         self._feature_exp_rgb: np.ndarray = np.empty(0, dtype=np.uint8)
 
+    def reset_for_new_world(self) -> None:
+        """Invalidate all cached map state so the next draw rebuilds from scratch.
+
+        Called by the controller when a new world is generated.  The generation
+        pipeline modifies tiles directly via NumPy, so structural_revision may
+        not change between the old and new maps.  Forcing the revision counters
+        to -1 guarantees a full terrain rebuild on the next frame.
+        """
+        self._map_rgb_revision = -1
+        self._map_rgb_exploration_revision = -1
+        self._feature_layer_rev = -1
+        self._terrain_texture_cache.clear()
+        self._texture_cache.clear()
+        self._cached_terrain_texture = None
+        self._cached_texture = None
+
     @staticmethod
     def _dim_color(color: colors.Color, factor: float) -> colors.Color:
         """Return a dimmed RGB color."""

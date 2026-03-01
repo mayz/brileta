@@ -91,6 +91,30 @@ def test_cache_key_changes_on_structural_revision_change() -> None:
     assert key_before != key_after
 
 
+def test_reset_for_new_world_forces_full_rebuild() -> None:
+    """After reset_for_new_world, the terrain buffer rebuilds even if
+    structural_revision is the same as before (both maps at 0)."""
+    controller, _player, view = make_world()
+
+    # Simulate having already rendered - mark revisions as current.
+    view._map_rgb_revision = controller.gw.game_map.structural_revision
+    view._map_rgb_exploration_revision = controller.gw.game_map.exploration_revision
+    view._feature_layer_rev = controller.gw.game_map.structural_revision
+
+    # Swap in a "new" game map with the same structural_revision (0).
+    new_gw = DummyGameWorld(width=30, height=20)
+    assert new_gw.game_map.structural_revision == 0
+    controller.gw = new_gw
+
+    # Without reset, _ensure_map_rgb_current would see 0 == 0 and skip rebuild.
+    view.reset_for_new_world()
+
+    # After reset, revisions are -1 so the next ensure call forces a full rebuild.
+    assert view._map_rgb_revision == -1
+    assert view._map_rgb_exploration_revision == -1
+    assert view._feature_layer_rev == -1
+
+
 def test_explored_colors_are_strictly_dimmer_than_visible_colors() -> None:
     """Explored terrain colors should be a dimmed version of visible terrain."""
     _controller, _player, view = make_world()

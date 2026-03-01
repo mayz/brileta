@@ -520,6 +520,9 @@ class Controller:
         wv._active_background_texture = None
         wv._light_overlay_texture = None
 
+        # Reset minimap so it rebuilds from the new map data.
+        self.frame_manager.mini_map_view.reset_for_new_world()
+
         # Reset viewport to follow new player
         wv.viewport_system.camera.set_position(self.gw.player.x, self.gw.player.y)
 

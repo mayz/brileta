@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from brileta import config
 from brileta.types import TileDimensions, WorldTilePos, saturate
 from brileta.util.coordinates import Rect
 from brileta.util.rng import RNG
@@ -57,6 +58,11 @@ class BuildingTemplate:
         floor_count: Number of floors (future multi-story support).
         has_chimney: Whether buildings of this type get a chimney. The
             position is randomized within the interior at creation time.
+        l_shape_weight: Relative weight for L-shape when a compound shape is
+            chosen. Templates with both weights at 0 never get a wing.
+        t_shape_weight: Relative weight for T-shape when a compound shape is
+            chosen. Templates with both weights at 0 never get a wing.
+        wing_size_ratio: Min/max shared-wall fraction used for wing length.
         condition_range: (min, max) range for the building's weathering
             condition. Sampled uniformly per building during generation.
             0.0 = pristine, 1.0 = dilapidated.
@@ -80,6 +86,9 @@ class BuildingTemplate:
     low_slope_flat_section_buckets: int = 4
     floor_count: int = 1
     has_chimney: bool = False
+    l_shape_weight: float = 0.0
+    t_shape_weight: float = 0.0
+    wing_size_ratio: tuple[float, float] = (0.4, 0.6)
     condition_range: tuple[float, float] = (0.0, 0.5)
 
     def generate_size(self, rng: RNG) -> TileDimensions:
@@ -132,6 +141,7 @@ class BuildingTemplate:
         """
         x, y = position
         footprint = Rect(x, y, width, height)
+        wing = self._generate_wing_rect(footprint, rng)
 
         # Randomize chimney position within the interior, staying at least
         # 2 tiles from each edge (1 wall + 1 margin) so the chimney sits
@@ -191,6 +201,7 @@ class BuildingTemplate:
             id=building_id,
             building_type=self.building_type,
             footprint=footprint,
+            wing=wing,
             roof_style=self.roof_style,
             roof_profile=roof_profile,
             flat_section_ratio=flat_section_ratio,
@@ -199,6 +210,101 @@ class BuildingTemplate:
             chimney_projected_height=chimney_projected_height,
             chimney_shadow_height=chimney_shadow_height,
             condition=condition,
+        )
+
+    def _generate_wing_rect(self, footprint: Rect, rng: RNG | None) -> Rect | None:
+        """Optionally generate an L-shape or T-shape wing rectangle."""
+        if rng is None:
+            return None
+
+        lw = max(0.0, float(self.l_shape_weight))
+        tw = max(0.0, float(self.t_shape_weight))
+        total_weight = lw + tw
+        if total_weight <= 0.0:
+            return None
+
+        # Global compound-shape probability gate.
+        if rng.random() >= float(config.SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE):
+            return None
+
+        # Pick L vs T using the template's relative weights.
+        shape_kind = "l" if rng.random() < (lw / total_weight) else "t"
+
+        min_ratio, max_ratio = self.wing_size_ratio
+        min_ratio = saturate(float(min_ratio))
+        max_ratio = max(min_ratio, min(1.0, float(max_ratio)))
+
+        # Wings need full wall-interior-wall thickness (>=5) in both dimensions.
+        min_wing_dim = 5
+        if footprint.width < min_wing_dim or footprint.height < min_wing_dim:
+            return None
+
+        side = rng.choice(("north", "south", "west", "east"))
+        shared_dim = footprint.width if side in ("north", "south") else footprint.height
+        if shared_dim < min_wing_dim:
+            return None
+
+        shared_ratio = rng.uniform(min_ratio, max_ratio)
+        shared_len = max(min_wing_dim, round(shared_dim * shared_ratio))
+        shared_len = min(shared_len, shared_dim)
+        if shared_len < min_wing_dim:
+            return None
+
+        perpendicular_dim = (
+            footprint.height if side in ("north", "south") else footprint.width
+        )
+        wing_depth_ratio = rng.uniform(0.45, 0.65)
+        wing_depth = max(min_wing_dim, round(perpendicular_dim * wing_depth_ratio))
+        if wing_depth < min_wing_dim:
+            return None
+
+        # L-shapes attach at one end of the chosen side; T-shapes center.
+        if side in ("north", "south"):
+            if shape_kind == "t":
+                shared_start = footprint.x1 + (shared_dim - shared_len) // 2
+            else:
+                shared_start = (
+                    footprint.x1
+                    if rng.choice((True, False))
+                    else footprint.x2 - shared_len
+                )
+        else:
+            if shape_kind == "t":
+                shared_start = footprint.y1 + (shared_dim - shared_len) // 2
+            else:
+                shared_start = (
+                    footprint.y1
+                    if rng.choice((True, False))
+                    else footprint.y2 - shared_len
+                )
+
+        if side == "north":
+            return Rect.from_bounds(
+                shared_start,
+                footprint.y1 - wing_depth,
+                shared_start + shared_len,
+                footprint.y1 + 1,
+            )
+        if side == "south":
+            return Rect.from_bounds(
+                shared_start,
+                footprint.y2 - 1,
+                shared_start + shared_len,
+                footprint.y2 + wing_depth,
+            )
+        if side == "west":
+            return Rect.from_bounds(
+                footprint.x1 - wing_depth,
+                shared_start,
+                footprint.x1 + 1,
+                shared_start + shared_len,
+            )
+
+        return Rect.from_bounds(
+            footprint.x2 - 1,
+            shared_start,
+            footprint.x2 + wing_depth,
+            shared_start + shared_len,
         )
 
 
@@ -235,6 +341,8 @@ MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
     weight=2.0,  # Less common than small houses
     roof_style="thatch",
     has_chimney=True,
+    l_shape_weight=0.7,
+    t_shape_weight=0.3,
     condition_range=(0.0, 0.55),  # Some pristine, slightly better than small houses
 )
 
@@ -291,6 +399,8 @@ BLACKSMITH_TEMPLATE = BuildingTemplate(
     roof_style="tin",
     roof_profile_family=("gable", "low_slope"),
     has_chimney=True,
+    l_shape_weight=0.7,
+    t_shape_weight=0.3,
     condition_range=(0.05, 0.65),  # Industrial - heat and soot, some newer
 )
 
@@ -312,6 +422,8 @@ TAVERN_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,  # One tavern per settlement
     roof_style="shingle",
     has_chimney=True,
+    l_shape_weight=0.7,
+    t_shape_weight=0.3,
     condition_range=(0.0, 0.4),  # Well-maintained public building
 )
 
@@ -329,6 +441,8 @@ INN_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,  # One inn per settlement
     roof_style="shingle",
     has_chimney=True,
+    l_shape_weight=0.7,
+    t_shape_weight=0.3,
     condition_range=(0.0, 0.4),  # Well-maintained public building
 )
 

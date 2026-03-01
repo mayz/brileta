@@ -598,12 +598,23 @@ class WorldView(View):
         Used by multiple cache systems to detect when a building's visual
         representation should be considered changed.
         """
+        bounds = building.bounding_rect
+        wing_bounds: tuple[int, int, int, int] | None = None
+        if building.wing is not None:
+            wing_bounds = (
+                int(building.wing.x1),
+                int(building.wing.y1),
+                int(building.wing.x2),
+                int(building.wing.y2),
+            )
+
         return (
             int(building.id),
-            int(building.footprint.x1),
-            int(building.footprint.y1),
-            int(building.footprint.x2),
-            int(building.footprint.y2),
+            int(bounds.x1),
+            int(bounds.y1),
+            int(bounds.x2),
+            int(bounds.y2),
+            wing_bounds,
             str(building.roof_style),
             str(building.roof_profile),
             round(float(building.flat_section_ratio), 3),
@@ -1189,16 +1200,16 @@ class WorldView(View):
         for door_x, door_y in building.door_positions:
             entrance_clear_positions.add((door_x, door_y))
 
+            # Find outward direction by checking which cardinal neighbor is
+            # outside the building shape.  Uses rect containment (O(1) for
+            # 1-2 rects) instead of building a full tile set.
             outward_dx = 0
             outward_dy = 0
-            if door_x == building.footprint.x1:
-                outward_dx = -1
-            elif door_x == building.footprint.x2 - 1:
-                outward_dx = 1
-            elif door_y == building.footprint.y1:
-                outward_dy = -1
-            elif door_y == building.footprint.y2 - 1:
-                outward_dy = 1
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                if not building.contains_point(door_x + dx, door_y + dy):
+                    outward_dx = dx
+                    outward_dy = dy
+                    break
 
             if outward_dx != 0 or outward_dy != 0:
                 approach_x = door_x + outward_dx
@@ -1213,6 +1224,25 @@ class WorldView(View):
                     entrance_clear_positions.add((approach_x + 1, approach_y))
 
         return entrance_clear_positions
+
+    @staticmethod
+    def _is_under_visual_roof(building: Building, ax: int, ay: int) -> bool:
+        """Check if world position (ax, ay) falls under the building's visual roof.
+
+        Uses analytical per-rect bounds instead of materialising a tile set.
+        The visual roof for each occupied section spans from the shifted
+        overhang to the wall-face boundary.
+        """
+        N = building.perspective_ceil_offset
+        floor_offset = building.perspective_floor_offset
+        has_frac = building.perspective_has_frac
+        for rect in building.occupied_rects:
+            if rect.x1 <= ax < rect.x2:
+                roof_y1 = rect.y1 - N + (1 if has_frac else 0)
+                roof_y2 = rect.y2 - floor_offset
+                if roof_y1 <= ay < roof_y2:
+                    return True
+        return False
 
     def _build_atmospheric_roof_surface_mask(
         self,
@@ -1243,30 +1273,26 @@ class WorldView(View):
         roof_mask = np.zeros((viewport_w, viewport_h), dtype=bool)
 
         for building in roof_visible_buildings:
-            fp = building.footprint
-            # Visual roof bounds: the roof's north edge starts at the first
-            # full overhang row (no north split tile), and the south end
-            # recedes by floor_offset wall face rows.
             N = building.perspective_ceil_offset
             floor_offset = building.perspective_floor_offset
             has_frac = building.perspective_has_frac
 
-            # First full roof row north of footprint.
-            visual_y1 = fp.y1 - N + (1 if has_frac else 0)
-            visual_y2_excl = fp.y2 - floor_offset  # exclusive upper bound
+            # Set roof surface via per-rect numpy slices.  Each occupied rect
+            # contributes a shifted rectangular roof zone.
+            for rect in building.occupied_rects:
+                roof_y1 = rect.y1 - N + (1 if has_frac else 0)
+                roof_y2 = rect.y2 - floor_offset
+                cx1 = max(view_x, rect.x1)
+                cy1 = max(view_y, roof_y1)
+                cx2 = min(view_x2, rect.x2)
+                cy2 = min(view_y2, roof_y2)
+                if cx1 < cx2 and cy1 < cy2:
+                    roof_mask[
+                        cx1 - view_x : cx2 - view_x,
+                        cy1 - view_y : cy2 - view_y,
+                    ] = True
 
-            clip_x1 = max(view_x, fp.x1)
-            clip_y1 = max(view_y, visual_y1)
-            clip_x2 = min(view_x2, fp.x2)
-            clip_y2 = min(view_y2, visual_y2_excl)
-            if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
-                continue
-
-            roof_mask[
-                (clip_x1 - view_x) : (clip_x2 - view_x),
-                (clip_y1 - view_y) : (clip_y2 - view_y),
-            ] = True
-
+            # Clear entrance carve-outs (small set - a few tiles per door).
             entrance_clear_positions = self._get_roof_entrance_clear_positions(building)
             if entrance_clear_positions:
                 for clear_x, clear_y in entrance_clear_positions:
@@ -1306,19 +1332,18 @@ class WorldView(View):
         view_x2 = view_x + viewport_w
         view_y2 = view_y + viewport_h
 
-        footprint = player_building.footprint
-        clip_x1 = max(view_x, footprint.x1)
-        clip_y1 = max(view_y, footprint.y1)
-        clip_x2 = min(view_x2, footprint.x2)
-        clip_y2 = min(view_y2, footprint.y2)
-        if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
-            return None
-
         mask = np.zeros((viewport_w, viewport_h), dtype=np.bool_)
-        mask[
-            (clip_x1 - view_x) : (clip_x2 - view_x),
-            (clip_y1 - view_y) : (clip_y2 - view_y),
-        ] = True
+        has_any = False
+        for rect in player_building.occupied_rects:
+            cx1 = max(view_x, rect.x1)
+            cy1 = max(view_y, rect.y1)
+            cx2 = min(view_x2, rect.x2)
+            cy2 = min(view_y2, rect.y2)
+            if cx1 < cx2 and cy1 < cy2:
+                mask[cx1 - view_x : cx2 - view_x, cy1 - view_y : cy2 - view_y] = True
+                has_any = True
+        if not has_any:
+            return None
         return mask
 
     def _filter_roof_occluded_actors(
@@ -1347,6 +1372,12 @@ class WorldView(View):
         if not roof_visible_buildings:
             return actors, _empty
 
+        # Pre-compute entrance clear sets (small - a few tiles per door).
+        building_clear_tiles: dict[int, set[WorldTilePos]] = {
+            b.id: self._get_roof_entrance_clear_positions(b)
+            for b in roof_visible_buildings
+        }
+
         occluded_set: set[Actor] = set()
         for actor in actors:
             ax = actor.x
@@ -1359,27 +1390,15 @@ class WorldView(View):
                 continue
 
             for building in roof_visible_buildings:
-                # Occlude actors under the shifted visual roof bounds.
-                # The roof covers the footprint (minus the wall face strip at the
-                # south end) plus an overhang extending N tiles north.
-                fp = building.footprint
-                N = building.perspective_ceil_offset
-                floor_offset = building.perspective_floor_offset
-                has_frac = building.perspective_has_frac
-
-                # Visual roof X range is the footprint width.
-                if not (fp.x1 <= ax < fp.x2):
-                    continue
-
-                # Visual roof Y range: first full roof row to y2-1-floor_offset
-                # (where floor_offset full rows become wall face, and the south
-                # boundary row is partially roof). Wall face tiles are visible.
-                visual_roof_y_min = fp.y1 - N + (1 if has_frac else 0)
-                visual_roof_y_max = fp.y2 - 1 - floor_offset
-                if not (visual_roof_y_min <= ay <= visual_roof_y_max):
-                    continue
-
-                if (ax, ay) not in self._get_roof_entrance_clear_positions(building):
+                # Check containment first (cheapest - just 1-2 rect checks).
+                # Then verify the actor is under the visual roof (not in
+                # the wall-face zone).  Uses analytical per-rect bounds
+                # instead of materialising a tile set.
+                if (
+                    building.contains_point(ax, ay)
+                    and self._is_under_visual_roof(building, ax, ay)
+                    and (ax, ay) not in building_clear_tiles[building.id]
+                ):
                     occluded_set.add(actor)
                     break
 
@@ -1452,7 +1471,7 @@ class WorldView(View):
         # footprint, so buildings just south of the viewport may still be visible.
         viewport_buildings: list[Building] = []
         for building in buildings:
-            fp = building.footprint
+            fp = building.bounding_rect
             if (
                 fp.x1 <= view_right
                 and fp.x2 - 1 >= view_left
@@ -1471,7 +1490,7 @@ class WorldView(View):
         building: Building, decoration_seed: int
     ) -> tuple[int, int, int]:
         """Compute a subtle deterministic per-building roof RGB tint offset."""
-        footprint = building.footprint
+        footprint = building.bounding_rect
         h = (
             (int(building.id) * 0x9E3779B1)
             ^ (int(footprint.x1) * 0x85EBCA6B)
@@ -1506,7 +1525,7 @@ class WorldView(View):
         chimney - so the per-frame blit in _apply_roof_substitution is
         just an array copy.
         """
-        fp = building.footprint
+        fp = building.bounding_rect
         width = int(fp.width)
         height = int(fp.height)
         N = building.perspective_ceil_offset
@@ -1559,15 +1578,54 @@ class WorldView(View):
 
         # --- Zone boundaries in world coordinates ---
         split_y_value = (1.0 - frac) if has_frac else 0.0
-        if has_frac:
-            south_split_row = int(fp.y2) - 1 - floor_offset
-            roof_inside_end = south_split_row  # exclusive
-        else:
-            south_split_row = -1  # sentinel: no split
-            roof_inside_end = int(fp.y2) - N
-
+        south_split_row = int(fp.y2) - 1 - floor_offset if has_frac else -1
         roof_overhang_start = int(fp.y1) - N + (1 if has_frac else 0)
         wall_y_start = int(fp.y2) - floor_offset if floor_offset > 0 else int(fp.y2)
+
+        # Build occupancy mask on the bounding-rect grid (width x height)
+        # using per-rect numpy slices instead of a per-tile Python loop.
+        fp_x1 = int(fp.x1)
+        fp_y1 = int(fp.y1)
+        occ = np.zeros((width, height), dtype=np.bool_)
+        for rect in building.occupied_rects:
+            lx1 = max(0, rect.x1 - fp_x1)
+            ly1 = max(0, rect.y1 - fp_y1)
+            lx2 = min(width, rect.x2 - fp_x1)
+            ly2 = min(height, rect.y2 - fp_y1)
+            if lx1 < lx2 and ly1 < ly2:
+                occ[lx1:lx2, ly1:ly2] = True
+
+        # Neighbor masks on the footprint grid for edge detection.
+        has_north = np.zeros_like(occ)
+        has_north[:, 1:] = occ[:, :-1]
+        has_south = np.zeros_like(occ)
+        has_south[:, :-1] = occ[:, 1:]
+
+        # --- full_roof_base: occupied tiles shifted north by N ---
+        # Each footprint row fy maps to stamp row fy (the N-tile shift puts
+        # the roof at stamp_world_y_start + fy = fp.y1 + fy - N + N = fp.y1 + fy).
+        # With fractional perspective, suppress north-edge tiles (those whose
+        # north neighbor is outside the shape) to avoid a split seam.
+        eligible_roof = (occ & has_north) if has_frac else occ
+        full_roof_base = np.zeros((width, ext_h), dtype=np.bool_)
+        full_roof_base[:, :height] = eligible_roof
+
+        # --- split_base: south-edge tiles shifted by floor_offset ---
+        # Stamp row for split = fy + (ceil_offset - floor_offset) = fy + 1 (frac).
+        split_base = np.zeros((width, ext_h), dtype=np.bool_)
+        if has_frac:
+            south_edge = occ & ~has_south
+            split_base[:, 1 : height + 1] = south_edge
+
+        # --- wall_base: occupied tiles whose south neighbor at floor_offset is missing ---
+        # Stamp row for wall = fy + N (the tile's own world y in stamp coords).
+        wall_base = np.zeros((width, ext_h), dtype=np.bool_)
+        if floor_offset > 0:
+            has_south_at_offset = np.zeros_like(occ)
+            if floor_offset < height:
+                has_south_at_offset[:, : height - floor_offset] = occ[:, floor_offset:]
+            wall_eligible = occ & ~has_south_at_offset
+            wall_base[:, N : N + height] = wall_eligible
 
         # --- Entrance exclusion ---
         entrance_clear = np.zeros((width, ext_h), dtype=np.bool_)
@@ -1588,28 +1646,9 @@ class WorldView(View):
             if 0 <= lx < width and 0 <= ly < ext_h:
                 chimney_mask[lx, ly] = True
 
-        # --- Zone masks via world coordinate comparisons on the grid ---
-        in_roof_overhang = (world_y_grid >= roof_overhang_start) & (
-            world_y_grid < int(fp.y1)
-        )
-        in_roof_inside = (world_y_grid >= int(fp.y1)) & (world_y_grid < roof_inside_end)
-        full_roof = (
-            (in_roof_overhang | in_roof_inside) & ~entrance_clear & ~chimney_mask
-        )
-
-        south_split_mask = np.zeros((width, ext_h), dtype=np.bool_)
-        if has_frac:
-            south_split_mask = (
-                (world_y_grid == south_split_row) & ~entrance_clear & ~chimney_mask
-            )
-
-        wall_mask = np.zeros((width, ext_h), dtype=np.bool_)
-        if floor_offset > 0:
-            wall_mask = (
-                (world_y_grid >= wall_y_start)
-                & (world_y_grid < int(fp.y2))
-                & ~entrance_clear
-            )
+        full_roof = full_roof_base & ~entrance_clear & ~chimney_mask
+        south_split_mask = split_base & ~entrance_clear & ~chimney_mask
+        wall_mask = wall_base & ~entrance_clear
 
         draw_mask = full_roof | south_split_mask | wall_mask | chimney_mask
         if not np.any(draw_mask):
@@ -1751,15 +1790,21 @@ class WorldView(View):
         # The visual roof spans from the first full roof row to the south
         # split/wall boundary.
         visual_roof = full_roof | south_split_mask
+        visual_roof_for_edges = full_roof_base | split_base
         visual_roof_y_max = south_split_row if has_frac else int(fp.y2) - N - 1
         visual_roof_y_min = roof_overhang_start
 
-        is_west_edge = world_x_grid == fp.x1
-        is_east_edge = world_x_grid == fp.x2 - 1
-        is_north_edge = world_y_grid == visual_roof_y_min
-        is_south_edge = world_y_grid == visual_roof_y_max
-        perimeter_mask = visual_roof & (
-            is_west_edge | is_east_edge | is_north_edge | is_south_edge
+        west_neighbor = np.zeros_like(visual_roof_for_edges)
+        west_neighbor[1:, :] = visual_roof_for_edges[:-1, :]
+        east_neighbor = np.zeros_like(visual_roof_for_edges)
+        east_neighbor[:-1, :] = visual_roof_for_edges[1:, :]
+        north_neighbor = np.zeros_like(visual_roof_for_edges)
+        north_neighbor[:, 1:] = visual_roof_for_edges[:, :-1]
+        south_neighbor = np.zeros_like(visual_roof_for_edges)
+        south_neighbor[:, :-1] = visual_roof_for_edges[:, 1:]
+
+        perimeter_mask = visual_roof & ~(
+            west_neighbor & east_neighbor & north_neighbor & south_neighbor
         )
         if np.any(perimeter_mask):
             bg_rgb[perimeter_mask] = _adjust_color_brightness(
@@ -1767,15 +1812,19 @@ class WorldView(View):
             )
 
         # Strong darkening on south edge where roof meets wall face.
-        south_roof_edge = visual_roof & is_south_edge
+        south_roof_edge = visual_roof & ~south_neighbor
         if np.any(south_roof_edge):
             bg_rgb[south_roof_edge] = _adjust_color_brightness(
                 bg_rgb[south_roof_edge], -10
             )
 
-        corner_mask = visual_roof & (
-            (is_west_edge | is_east_edge) & (is_north_edge | is_south_edge)
+        neighbor_count = (
+            west_neighbor.astype(np.int8)
+            + east_neighbor.astype(np.int8)
+            + north_neighbor.astype(np.int8)
+            + south_neighbor.astype(np.int8)
         )
+        corner_mask = visual_roof & (neighbor_count <= 2)
         if np.any(corner_mask):
             bg_rgb[corner_mask] = _adjust_color_brightness(bg_rgb[corner_mask], -4)
 
@@ -1801,7 +1850,7 @@ class WorldView(View):
             # Per-row darkening: each successive row loses brightness to sell
             # the receding wall face depth.
             wall_wy = world_y_grid[wall_mask]
-            row_offset = (wall_wy - wall_y_start).astype(np.int16)
+            row_offset = np.maximum(0, wall_wy - wall_y_start).astype(np.int16)
             wall_base = _adjust_color_brightness(
                 wall_face, -(row_offset[:, np.newaxis] * 6)
             )
@@ -1810,7 +1859,11 @@ class WorldView(View):
 
             # Edge darkening: west/east wall tiles suggest the wall wrapping
             # around to a side face.
-            wall_and_edge = wall_mask & (is_west_edge | is_east_edge)
+            wall_west_neighbor = np.zeros_like(wall_mask)
+            wall_west_neighbor[1:, :] = wall_mask[:-1, :]
+            wall_east_neighbor = np.zeros_like(wall_mask)
+            wall_east_neighbor[:-1, :] = wall_mask[1:, :]
+            wall_and_edge = wall_mask & ~(wall_west_neighbor & wall_east_neighbor)
             if np.any(wall_and_edge):
                 darkened = _adjust_color_brightness(bg_rgb[wall_and_edge], -10)
                 bg_rgb[wall_and_edge] = darkened
@@ -2310,7 +2363,7 @@ class WorldView(View):
                 sun_direction_key=sun_direction_key,
             )
 
-            fp = building.footprint
+            fp = building.bounding_rect
             stamp_world_y_start = int(fp.y1) - stamp.north_overhang
 
             # --- Locate stamp cells in the render arrays ---

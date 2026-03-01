@@ -145,6 +145,14 @@ class BuildingPlacementLayer(GenerationLayer):
             x = lot.x1 + margin + _rng.randint(0, max(0, max_width - width))
             y = lot.y1 + margin + _rng.randint(0, max(0, max_height - height))
 
+            # Enforce min_spacing against already-placed buildings.  The BSP
+            # lot system keeps lots non-overlapping, but the per-lot margin is
+            # only 1 tile and wings can extend outside lots, so buildings in
+            # adjacent lots can end up closer than min_spacing.
+            candidate = Rect(x, y, width, height)
+            if self._too_close_to_existing(candidate, ctx.buildings):
+                continue
+
             # Create and place the building
             building = self._create_building(ctx, template, (x, y), width, height)
             placed_buildings.append(building)
@@ -326,6 +334,28 @@ class BuildingPlacementLayer(GenerationLayer):
             placed_buildings.append(building)
             ctx.buildings.append(building)
 
+    def _too_close_to_existing(
+        self,
+        candidate: Rect,
+        buildings: list[Building],
+    ) -> bool:
+        """Check if a candidate rect is too close to any existing building.
+
+        Uses min_spacing to expand each existing building's bounding rect and
+        tests for intersection with the candidate.
+
+        Args:
+            candidate: The proposed building footprint.
+            buildings: Already-placed buildings.
+
+        Returns:
+            True if the candidate violates the minimum spacing constraint.
+        """
+        for building in buildings:
+            if candidate.intersects(building.bounding_rect.inflate(self.min_spacing)):
+                return True
+        return False
+
     def _find_random_position(
         self,
         ctx: GenerationContext,
@@ -352,20 +382,7 @@ class BuildingPlacementLayer(GenerationLayer):
             y = _rng.randint(margin, ctx.height - height - margin)
 
             candidate = Rect(x, y, width, height)
-            valid = True
-
-            for building in placed_buildings:
-                expanded = Rect(
-                    building.footprint.x1 - self.min_spacing,
-                    building.footprint.y1 - self.min_spacing,
-                    building.footprint.width + 2 * self.min_spacing,
-                    building.footprint.height + 2 * self.min_spacing,
-                )
-                if candidate.intersects(expanded):
-                    valid = False
-                    break
-
-            if valid:
+            if not self._too_close_to_existing(candidate, placed_buildings):
                 return x, y
 
         return None
@@ -396,6 +413,24 @@ class BuildingPlacementLayer(GenerationLayer):
         building = template.create_building(
             building_id, position, width, height, rng=_rng
         )
+        # Wings that would extend outside the map are discarded so room bounds,
+        # NPC spawning, and region geometry stay valid.
+        if building.wing is not None and (
+            building.wing.x1 < 0
+            or building.wing.y1 < 0
+            or building.wing.x2 > ctx.width
+            or building.wing.y2 > ctx.height
+        ):
+            building.wing = None
+
+        # Wings that would overlap (or crowd) an existing building are
+        # discarded.  The footprint was already validated by the placement
+        # path, but the wing is generated after positioning and can extend
+        # into a neighbor's space.
+        if building.wing is not None and self._too_close_to_existing(
+            building.wing, ctx.buildings
+        ):
+            building.wing = None
 
         # Carve the building into the tile map
         self._carve_building(ctx, building)
@@ -403,8 +438,9 @@ class BuildingPlacementLayer(GenerationLayer):
         # Create rooms via subdivision
         # Scale room count based on actual interior area to avoid cramming too many
         # rooms into a small building
-        interior = building.interior_bounds
-        interior_area = interior.width * interior.height
+        interior_area = sum(
+            interior.width * interior.height for interior in building.interior_rects
+        )
         min_area_per_room = 25  # Each room needs at least ~5x5 of interior space
 
         template_room_count = template.generate_room_count(_rng)
@@ -426,34 +462,46 @@ class BuildingPlacementLayer(GenerationLayer):
     def _carve_building(self, ctx: GenerationContext, building: Building) -> None:
         """Carve walls and floor into the tile map.
 
+        A tile is interior (FLOOR) only when all 8 neighbors (cardinal +
+        diagonal) belong to the building's occupied shape union.  The
+        diagonal check seals concave corners on compound (L/T) footprints
+        that would otherwise let FOV leak through the joint.  For simple
+        rectangles every interior tile trivially passes the diagonal test,
+        so the behavior is unchanged.
+
         Args:
             ctx: The generation context.
             building: The building to carve.
         """
-        fp = building.footprint
+        occupied = building.tile_set()
+        if not occupied:
+            return
 
-        # Clamp footprint to map bounds for all slice operations.
-        x_lo = max(fp.x1, 0)
-        x_hi = min(fp.x2, ctx.width)
-        y_lo = max(fp.y1, 0)
-        y_hi = min(fp.y2, ctx.height)
+        for x, y in occupied:
+            if not (0 <= x < ctx.width and 0 <= y < ctx.height):
+                continue
 
-        # Draw walls around the perimeter (horizontal then vertical edges).
-        if 0 <= fp.y1 < ctx.height:
-            ctx.tiles[x_lo:x_hi, fp.y1] = TileTypeID.WALL
-        if 0 <= fp.y2 - 1 < ctx.height:
-            ctx.tiles[x_lo:x_hi, fp.y2 - 1] = TileTypeID.WALL
-        if 0 <= fp.x1 < ctx.width:
-            ctx.tiles[fp.x1, y_lo:y_hi] = TileTypeID.WALL
-        if 0 <= fp.x2 - 1 < ctx.width:
-            ctx.tiles[fp.x2 - 1, y_lo:y_hi] = TileTypeID.WALL
+            # Cardinal neighbors - quick reject.
+            is_interior = (
+                (x + 1, y) in occupied
+                and (x - 1, y) in occupied
+                and (x, y + 1) in occupied
+                and (x, y - 1) in occupied
+            )
 
-        # Fill interior with floor.
-        ix_lo = max(fp.x1 + 1, 0)
-        ix_hi = min(fp.x2 - 1, ctx.width)
-        iy_lo = max(fp.y1 + 1, 0)
-        iy_hi = min(fp.y2 - 1, ctx.height)
-        ctx.tiles[ix_lo:ix_hi, iy_lo:iy_hi] = TileTypeID.FLOOR
+            # Diagonal neighbors - seal concave corners on compound shapes.
+            # A tile whose cardinal neighbors are all occupied can still sit
+            # on a concave notch if a diagonal neighbor is outside the shape.
+            # Making it a wall prevents diagonal FOV leaks at L/T joints.
+            if is_interior and (
+                (x - 1, y - 1) not in occupied
+                or (x + 1, y - 1) not in occupied
+                or (x - 1, y + 1) not in occupied
+                or (x + 1, y + 1) not in occupied
+            ):
+                is_interior = False
+
+            ctx.tiles[x, y] = TileTypeID.FLOOR if is_interior else TileTypeID.WALL
 
     def _create_rooms(
         self,
@@ -477,13 +525,63 @@ class BuildingPlacementLayer(GenerationLayer):
         Returns:
             List of created Room objects.
         """
-        interior = building.interior_bounds
-
         # Minimum room size (interior, not including walls)
         min_room_size = 4
 
-        # Subdivide the interior into room bounds
-        room_bounds = self._subdivide_space(ctx, interior, room_count, min_room_size)
+        map_bounds = Rect(0, 0, ctx.width, ctx.height)
+        interiors = [
+            clipped
+            for interior in building.interior_rects
+            if (clipped := interior.clip(map_bounds)) is not None
+        ]
+        if not interiors:
+            return []
+
+        # Compound shapes are formed by explicit sections (primary body + wing).
+        # Subdividing each section aggressively can create full-width internal
+        # divider walls across narrow joints, which reads as a visual seam.
+        # Keep one room per section to preserve clean L/T connectivity.
+        if building.is_compound:
+            room_bounds = interiors
+        else:
+            # Rectangular buildings subdivide their single interior into
+            # multiple rooms.  The proportional allocation below generalises
+            # but for a single section it simply targets room_count rooms.
+            room_count = max(room_count, len(interiors))
+            section_areas = [rect.width * rect.height for rect in interiors]
+            total_area = sum(section_areas)
+
+            if total_area <= 0:
+                section_room_counts = [1 for _ in interiors]
+            else:
+                section_room_counts = [
+                    max(1, round(room_count * area / total_area))
+                    for area in section_areas
+                ]
+                allocated = sum(section_room_counts)
+                while allocated < room_count:
+                    idx = max(range(len(section_areas)), key=lambda i: section_areas[i])
+                    section_room_counts[idx] += 1
+                    allocated += 1
+                while allocated > room_count:
+                    reducible = [
+                        i for i, count in enumerate(section_room_counts) if count > 1
+                    ]
+                    if not reducible:
+                        break
+                    idx = max(reducible, key=lambda i: section_areas[i])
+                    section_room_counts[idx] -= 1
+                    allocated -= 1
+
+            room_bounds = []
+            for interior, section_room_count in zip(
+                interiors, section_room_counts, strict=False
+            ):
+                room_bounds.extend(
+                    self._subdivide_space(
+                        ctx, interior, section_room_count, min_room_size
+                    )
+                )
 
         # Create Room objects and carve internal walls
         rooms: list[Room] = []
@@ -745,7 +843,6 @@ class BuildingPlacementLayer(GenerationLayer):
         x: int,
         y: int,
         direction: str,
-        fp_inner_bound: int,
         min_depth: int = 2,
     ) -> bool:
         """Check if a door position has adequate entry depth.
@@ -760,7 +857,6 @@ class BuildingPlacementLayer(GenerationLayer):
             x: Door x position.
             y: Door y position.
             direction: Door direction ("N", "S", "E", "W").
-            fp_inner_bound: The interior bound in the entry direction (opposite wall).
             min_depth: Minimum walkable tiles required (default 2).
 
         Returns:
@@ -770,16 +866,11 @@ class BuildingPlacementLayer(GenerationLayer):
 
         # Map direction to (dx, dy) step into the building interior.
         dx, dy = _ENTRY_DELTAS[direction]
-        step = dx + dy  # +1 or -1 (exactly one of dx/dy is non-zero)
 
         for d in range(1, min_depth + 1):
             cx, cy = x + dx * d, y + dy * d
-            # The coordinate that changes is the one we compare to the bound.
-            check_coord = cx if dx != 0 else cy
-            if step > 0 and check_coord >= fp_inner_bound:
-                break  # Reached opposite wall, that's fine
-            if step < 0 and check_coord <= fp_inner_bound:
-                break
+            if not (0 <= cx < ctx.width and 0 <= cy < ctx.height):
+                return False
             if ctx.tiles[cx, cy] not in walkable:
                 return False
 
@@ -802,44 +893,39 @@ class BuildingPlacementLayer(GenerationLayer):
         Returns:
             (x, y) position of the door, or None if placement failed.
         """
-        fp = building.footprint
-
         # Determine which wall should have the door
         direction = self._find_nearest_street_direction(ctx, building)
 
-        # Collect door positions on the chosen wall, filtering out positions
-        # where the interior tile is blocked by an internal wall OR where
-        # there's insufficient entry depth (would create awkward vestibule).
-        candidates: list[WorldTilePos] = []
+        occupied = building.tile_set()
+        outward_steps: dict[str, tuple[int, int]] = {
+            "N": (0, -1),
+            "S": (0, 1),
+            "W": (-1, 0),
+            "E": (1, 0),
+        }
+        candidates_by_direction: dict[str, list[WorldTilePos]] = {
+            "N": [],
+            "S": [],
+            "W": [],
+            "E": [],
+        }
 
-        if direction == "N":
-            # North wall (y = fp.y1), interior is y+1, opposite wall is fp.y2 - 1
-            candidates = [
-                (x, fp.y1)
-                for x in range(fp.x1 + 1, fp.x2 - 1)
-                if self._has_entry_depth(ctx, x, fp.y1, "N", fp.y2 - 1)
-            ]
-        elif direction == "S":
-            # South wall (y = fp.y2 - 1), interior is y-1, opposite wall is fp.y1
-            candidates = [
-                (x, fp.y2 - 1)
-                for x in range(fp.x1 + 1, fp.x2 - 1)
-                if self._has_entry_depth(ctx, x, fp.y2 - 1, "S", fp.y1)
-            ]
-        elif direction == "W":
-            # West wall (x = fp.x1), interior is x+1, opposite wall is fp.x2 - 1
-            candidates = [
-                (fp.x1, y)
-                for y in range(fp.y1 + 1, fp.y2 - 1)
-                if self._has_entry_depth(ctx, fp.x1, y, "W", fp.x2 - 1)
-            ]
-        elif direction == "E":
-            # East wall (x = fp.x2 - 1), interior is x-1, opposite wall is fp.x1
-            candidates = [
-                (fp.x2 - 1, y)
-                for y in range(fp.y1 + 1, fp.y2 - 1)
-                if self._has_entry_depth(ctx, fp.x2 - 1, y, "E", fp.x1)
-            ]
+        # Collect all perimeter wall tiles and categorize them by outward-facing side.
+        for x, y in occupied:
+            if not (0 <= x < ctx.width and 0 <= y < ctx.height):
+                continue
+            if ctx.tiles[x, y] != TileTypeID.WALL:
+                continue
+
+            for dir_name, (dx, dy) in outward_steps.items():
+                if (x + dx, y + dy) not in occupied:
+                    candidates_by_direction[dir_name].append((x, y))
+
+        candidates = [
+            pos
+            for pos in candidates_by_direction[direction]
+            if self._has_entry_depth(ctx, pos[0], pos[1], direction)
+        ]
 
         if not candidates:
             return None
@@ -886,36 +972,35 @@ class BuildingPlacementLayer(GenerationLayer):
         if len(candidates) <= 1:
             return candidates
 
-        # Determine which coordinate varies (x for N/S walls, y for E/W walls)
-        is_horizontal = direction in ("N", "S")
-
-        # Sort by the varying coordinate
-        if is_horizontal:
-            sorted_candidates = sorted(candidates, key=lambda p: p[0])
-        else:
-            sorted_candidates = sorted(candidates, key=lambda p: p[1])
-
-        # Find contiguous segments (adjacent positions differ by 1)
         segments: list[list[WorldTilePos]] = []
-        current_segment: list[WorldTilePos] = [sorted_candidates[0]]
-
-        for i in range(1, len(sorted_candidates)):
-            prev = sorted_candidates[i - 1]
-            curr = sorted_candidates[i]
-
-            # Check if this position is adjacent to the previous
-            if is_horizontal:
-                is_adjacent = curr[0] == prev[0] + 1
-            else:
-                is_adjacent = curr[1] == prev[1] + 1
-
-            if is_adjacent:
-                current_segment.append(curr)
-            else:
+        if direction in ("N", "S"):
+            rows: dict[int, list[int]] = {}
+            for x, y in candidates:
+                rows.setdefault(y, []).append(x)
+            for y, xs in rows.items():
+                xs_sorted = sorted(xs)
+                current_segment = [(xs_sorted[0], y)]
+                for curr_x in xs_sorted[1:]:
+                    if curr_x == current_segment[-1][0] + 1:
+                        current_segment.append((curr_x, y))
+                    else:
+                        segments.append(current_segment)
+                        current_segment = [(curr_x, y)]
                 segments.append(current_segment)
-                current_segment = [curr]
-
-        segments.append(current_segment)
+        else:
+            cols: dict[int, list[int]] = {}
+            for x, y in candidates:
+                cols.setdefault(x, []).append(y)
+            for x, ys in cols.items():
+                ys_sorted = sorted(ys)
+                current_segment = [(x, ys_sorted[0])]
+                for curr_y in ys_sorted[1:]:
+                    if curr_y == current_segment[-1][1] + 1:
+                        current_segment.append((x, curr_y))
+                    else:
+                        segments.append(current_segment)
+                        current_segment = [(x, curr_y)]
+                segments.append(current_segment)
 
         # Return the largest segment
         largest = segments[0]
@@ -940,7 +1025,8 @@ class BuildingPlacementLayer(GenerationLayer):
         if not ctx.street_data.streets:
             return _rng.choice(["N", "S", "E", "W"])
 
-        bx, by = building.footprint.center()
+        bounds = building.bounding_rect
+        bx, by = bounds.center()
         min_dist = float("inf")
         best_direction = "S"
 
@@ -952,13 +1038,13 @@ class BuildingPlacementLayer(GenerationLayer):
                 # Horizontal street - check if building is above or below
                 if sy < by:
                     # Street is above building - door should face north
-                    dist = building.footprint.y1 - street.y2
+                    dist = bounds.y1 - street.y2
                     if dist >= 0 and dist < min_dist:
                         min_dist = dist
                         best_direction = "N"
                 else:
                     # Street is below building - door should face south
-                    dist = street.y1 - building.footprint.y2
+                    dist = street.y1 - bounds.y2
                     if dist >= 0 and dist < min_dist:
                         min_dist = dist
                         best_direction = "S"
@@ -966,13 +1052,13 @@ class BuildingPlacementLayer(GenerationLayer):
                 # Vertical street - check if building is left or right
                 if sx < bx:
                     # Street is to the left - door should face west
-                    dist = building.footprint.x1 - street.x2
+                    dist = bounds.x1 - street.x2
                     if dist >= 0 and dist < min_dist:
                         min_dist = dist
                         best_direction = "W"
                 else:
                     # Street is to the right - door should face east
-                    dist = street.x1 - building.footprint.x2
+                    dist = street.x1 - bounds.x2
                     if dist >= 0 and dist < min_dist:
                         min_dist = dist
                         best_direction = "E"

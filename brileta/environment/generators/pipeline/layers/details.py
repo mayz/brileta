@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import numpy as np
-
 from brileta import config
 from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
@@ -74,19 +72,17 @@ class DetailLayer(GenerationLayer):
             octaves=config.BOULDER_DENSITY_NOISE_OCTAVES,
         )
 
-        building_tiles = self._collect_building_tiles(ctx)
-        street_tiles = self._collect_street_tiles(ctx)
+        building_tiles = ctx.collect_building_tiles()
+        street_tiles = ctx.collect_street_tiles()
 
         # Keep boulders away from walls/doors so settlement flow and entries
         # remain clear.
-        building_buffer = self._expand_tiles(
-            building_tiles, self.min_distance_from_buildings, ctx.width, ctx.height
+        building_buffer = ctx.expand_tiles(
+            building_tiles, self.min_distance_from_buildings
         )
 
         # Tiles within this radius of streets are treated as "settlement".
-        settlement_zone = self._expand_tiles(
-            street_tiles, self.street_buffer, ctx.width, ctx.height
-        )
+        settlement_zone = ctx.expand_tiles(street_tiles, self.street_buffer)
 
         outdoor_tiles = {
             TileTypeID.COBBLESTONE,
@@ -172,50 +168,6 @@ class DetailLayer(GenerationLayer):
                 if _rng.random() < density * density_multiplier:
                     ctx.boulder_positions.append(pos)
                     reserved_positions.add(pos)
-
-    def _collect_building_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
-        """Collect all tiles covered by building footprints."""
-        tiles: set[WorldTilePos] = set()
-        for building in ctx.buildings:
-            fp = building.footprint
-            for x in range(fp.x1, fp.x2):
-                for y in range(fp.y1, fp.y2):
-                    tiles.add((x, y))
-        return tiles
-
-    def _collect_street_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
-        """Collect all tiles covered by street rectangles."""
-        tiles: set[WorldTilePos] = set()
-        for street in ctx.street_data.streets:
-            for x in range(max(0, street.x1), min(ctx.width, street.x2)):
-                for y in range(max(0, street.y1), min(ctx.height, street.y2)):
-                    tiles.add((x, y))
-        return tiles
-
-    @staticmethod
-    def _expand_tiles(
-        tiles: set[WorldTilePos],
-        radius: int,
-        map_width: int,
-        map_height: int,
-    ) -> set[WorldTilePos]:
-        """Expand a tile set outward by Chebyshev radius."""
-        if radius <= 0 or not tiles:
-            return set(tiles)
-
-        grid = np.zeros((map_width, map_height), dtype=bool)
-        for x, y in tiles:
-            if 0 <= x < map_width and 0 <= y < map_height:
-                grid[x, y] = True
-
-        padded = np.pad(grid.astype(np.int8), radius, mode="constant")
-        cs = np.cumsum(padded, axis=0)
-        dilated_x = cs[2 * radius :, :] - cs[: -2 * radius, :]
-        cs2 = np.cumsum(dilated_x, axis=1)
-        dilated = cs2[:, 2 * radius :] - cs2[:, : -2 * radius :]
-
-        expanded_coords = np.argwhere(dilated[:map_width, :map_height] > 0)
-        return {(int(x), int(y)) for x, y in expanded_coords}
 
     @staticmethod
     def _density_multiplier(noise_val: float) -> float:
