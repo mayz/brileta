@@ -561,6 +561,8 @@ class GraphicsContext(abc.ABC):
         turbulence_scale: float,
         blend_mode: str,
         pixel_bounds: PixelRect,
+        *,
+        affects_foreground: bool = True,
     ) -> None:
         """Queue or ignore atmospheric layer data.
 

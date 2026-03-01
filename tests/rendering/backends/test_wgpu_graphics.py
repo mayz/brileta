@@ -5,6 +5,7 @@ These tests attempt to use real WGPU resources when available (headless GPU),
 falling back to mocks only when GPU resources are unavailable.
 """
 
+import inspect
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -19,6 +20,7 @@ from brileta.util.glyph_buffer import GlyphBuffer
 try:
     import wgpu
 
+    from brileta.backends.wgpu.atmospheric_renderer import WGPUAtmosphericRenderer
     from brileta.backends.wgpu.graphics import (
         WGPUGraphicsContext,
         _infer_compose_tile_dimensions,
@@ -30,6 +32,7 @@ except ImportError:
     wgpu = None
     WGPUGraphicsContext = None
     _infer_compose_tile_dimensions = None
+    WGPUAtmosphericRenderer = None
 
 
 class MockCursorManager:
@@ -473,6 +476,115 @@ class TestWGPUGraphicsContext:
             assert self.graphics_ctx.finalize_present() is False
 
         log_exception.assert_called_once()
+
+    def test_finalize_present_renders_background_only_atmosphere_before_screen(self):
+        """Background-only atmospheric layers should render before screen content."""
+        self.graphics_ctx.screen_renderer = Mock()
+        self.graphics_ctx.background_renderer = Mock()
+        self.graphics_ctx.ui_renderer = Mock(vertex_count=0)
+        self.graphics_ctx.effect_renderer = Mock(vertex_count=0)
+        self.graphics_ctx.atmospheric_renderer = Mock()
+        self.graphics_ctx.wgpu_context = Mock()
+        self.graphics_ctx.letterbox_geometry = (0, 0, 800, 600)
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (800, 600)
+        self.graphics_ctx._last_window_size = (800, 600)
+        self.graphics_ctx._last_framebuffer_size = (800, 600)
+
+        surface_texture = Mock()
+        surface_texture.create_view.return_value = Mock()
+        self.graphics_ctx.wgpu_context.get_current_texture.return_value = (
+            surface_texture
+        )
+
+        encoder = Mock()
+        render_pass = Mock()
+        encoder.begin_render_pass.return_value = render_pass
+        encoder.finish.return_value = Mock()
+        resource_manager = Mock()
+        resource_manager.device = Mock()
+        resource_manager.device.create_command_encoder.return_value = encoder
+        resource_manager.queue = Mock()
+        self.graphics_ctx.resource_manager = resource_manager
+
+        # Queue one pre-screen and one post-screen atmospheric layer.
+        self.graphics_ctx.set_atmospheric_layer(
+            viewport_offset=(0, 0),
+            viewport_size=(10, 10),
+            map_size=(100, 100),
+            sky_exposure_threshold=0.85,
+            sky_exposure_texture=None,
+            explored_texture=None,
+            visible_texture=None,
+            roof_surface_mask_buffer=None,
+            noise_scale=0.1,
+            noise_threshold_low=0.2,
+            noise_threshold_high=0.8,
+            strength=0.2,
+            tint_color=(1, 2, 3),
+            drift_offset=(0.0, 0.0),
+            turbulence_offset=0.0,
+            turbulence_strength=0.0,
+            turbulence_scale=0.1,
+            blend_mode="darken",
+            pixel_bounds=(0, 0, 100, 100),
+            affects_foreground=False,
+        )
+        self.graphics_ctx.set_atmospheric_layer(
+            viewport_offset=(0, 0),
+            viewport_size=(10, 10),
+            map_size=(100, 100),
+            sky_exposure_threshold=0.85,
+            sky_exposure_texture=None,
+            explored_texture=None,
+            visible_texture=None,
+            roof_surface_mask_buffer=None,
+            noise_scale=0.1,
+            noise_threshold_low=0.2,
+            noise_threshold_high=0.8,
+            strength=0.2,
+            tint_color=(4, 5, 6),
+            drift_offset=(0.0, 0.0),
+            turbulence_offset=0.0,
+            turbulence_strength=0.0,
+            turbulence_scale=0.1,
+            blend_mode="darken",
+            pixel_bounds=(0, 0, 100, 100),
+            affects_foreground=True,
+        )
+
+        call_sequence: list[str] = []
+        assert WGPUAtmosphericRenderer is not None
+        render_param_names = [
+            name
+            for name in inspect.signature(WGPUAtmosphericRenderer.render).parameters
+            if name != "self"
+        ]
+
+        def record_atmospheric_call(*args, **kwargs):
+            # Bind arguments by parameter name to avoid brittle positional indices.
+            bound_args = dict(zip(render_param_names, args, strict=False))
+            bound_args.update(kwargs)
+            tint = bound_args["tint_color"]
+            call_sequence.append(f"atmo:{tint}")
+
+        self.graphics_ctx.background_renderer.render.side_effect = (
+            lambda *args, **kwargs: call_sequence.append("background")
+        )
+        self.graphics_ctx.screen_renderer.render_to_screen.side_effect = (
+            lambda *args, **kwargs: call_sequence.append("screen")
+        )
+        self.graphics_ctx.atmospheric_renderer.render.side_effect = (
+            record_atmospheric_call
+        )
+
+        assert self.graphics_ctx.finalize_present() is True
+        assert call_sequence == [
+            "background",
+            "atmo:(1, 2, 3)",
+            "screen",
+            "atmo:(4, 5, 6)",
+        ]
 
     def test_infer_compose_tile_dimensions(self):
         """Compose tile size should be inferred from texture/mask dimensions."""

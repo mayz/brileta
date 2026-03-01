@@ -1002,7 +1002,9 @@ class WorldView(View):
                     if callable(get_visible_texture):
                         visible_texture = get_visible_texture()
 
-                active_layers = self.atmospheric_system.get_active_layers()
+                active_layers = self.atmospheric_system.get_active_layers(
+                    is_raining=self.rain_config.enabled
+                )
                 # Render mist first, then shadows, to keep shadows readable on top.
                 active_layers.sort(
                     key=lambda layer_state: (
@@ -1050,6 +1052,7 @@ class WorldView(View):
                             round(px_right),
                             round(px_bottom),
                         ),
+                        affects_foreground=layer.affects_foreground,
                     )
 
         if self.rain_config.enabled:

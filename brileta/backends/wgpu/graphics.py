@@ -109,6 +109,7 @@ class AtmosphericLayerState:
     turbulence_scale: float
     blend_mode: str
     pixel_bounds: PixelRect
+    affects_foreground: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -1342,11 +1343,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                     render_pass, window_size, self.letterbox_geometry
                 )
 
-            # Then render screen content (actors, particles, tiles)
-            self.screen_renderer.render_to_screen(
-                render_pass, window_size, self.letterbox_geometry
-            )
-
             # Letterbox region used by atmospheric and rain overlays.
             letterbox = self.letterbox_geometry or (
                 0,
@@ -1355,33 +1351,34 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 int(window_size[1]),
             )
 
-            # Then render atmospheric layers (cloud shadows, ground mist)
+            # Partition atmospheric layers into ground-only (rendered before
+            # sprites) and foreground-affecting (rendered after sprites).
+            pre_fg: list[AtmosphericLayerState] = []
+            post_fg: list[AtmosphericLayerState] = []
             if self._atmospheric_layers and self.atmospheric_renderer is not None:
                 for layer in self._atmospheric_layers:
-                    self.atmospheric_renderer.render(
-                        render_pass,
-                        window_size,
-                        letterbox,
-                        layer.viewport_offset,
-                        layer.viewport_size,
-                        layer.map_size,
-                        layer.sky_exposure_threshold,
-                        layer.sky_exposure_texture,
-                        layer.explored_texture,
-                        layer.visible_texture,
-                        layer.roof_surface_mask_buffer,
-                        layer.noise_scale,
-                        layer.noise_threshold_low,
-                        layer.noise_threshold_high,
-                        layer.strength,
-                        layer.tint_color,
-                        layer.drift_offset,
-                        layer.turbulence_offset,
-                        layer.turbulence_strength,
-                        layer.turbulence_scale,
-                        layer.blend_mode,
-                        layer.pixel_bounds,
-                    )
+                    (post_fg if layer.affects_foreground else pre_fg).append(layer)
+
+            for layer in pre_fg:
+                self._render_queued_atmospheric_layer(
+                    render_pass=render_pass,
+                    window_size=window_size,
+                    letterbox=letterbox,
+                    layer=layer,
+                )
+
+            # Then render screen content (actors, particles, tiles)
+            self.screen_renderer.render_to_screen(
+                render_pass, window_size, self.letterbox_geometry
+            )
+
+            for layer in post_fg:
+                self._render_queued_atmospheric_layer(
+                    render_pass=render_pass,
+                    window_size=window_size,
+                    letterbox=letterbox,
+                    layer=layer,
+                )
 
             # Then render rain overlay on top of world/actors, under effects/UI.
             if self._rain_state is not None and self.rain_renderer is not None:
@@ -1437,6 +1434,42 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                     self._present_failure_streak,
                 )
             return False
+
+    def _render_queued_atmospheric_layer(
+        self,
+        *,
+        render_pass: wgpu.GPURenderPassEncoder,
+        window_size: tuple[PixelCoord, PixelCoord],
+        letterbox: PixelRect,
+        layer: AtmosphericLayerState,
+    ) -> None:
+        """Render one queued atmospheric layer through the atmospheric renderer."""
+        if self.atmospheric_renderer is None:
+            return
+        self.atmospheric_renderer.render(
+            render_pass,
+            window_size,
+            letterbox,
+            layer.viewport_offset,
+            layer.viewport_size,
+            layer.map_size,
+            layer.sky_exposure_threshold,
+            layer.sky_exposure_texture,
+            layer.explored_texture,
+            layer.visible_texture,
+            layer.roof_surface_mask_buffer,
+            layer.noise_scale,
+            layer.noise_threshold_low,
+            layer.noise_threshold_high,
+            layer.strength,
+            layer.tint_color,
+            layer.drift_offset,
+            layer.turbulence_offset,
+            layer.turbulence_strength,
+            layer.turbulence_scale,
+            layer.blend_mode,
+            layer.pixel_bounds,
+        )
 
     def add_tile_to_screen(
         self,
@@ -1865,6 +1898,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         turbulence_scale: float,
         blend_mode: str,
         pixel_bounds: PixelRect,
+        *,
+        affects_foreground: bool = True,
     ) -> None:
         """Store atmospheric layer data for rendering this frame."""
         self._atmospheric_layers.append(
@@ -1888,6 +1923,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 turbulence_scale=turbulence_scale,
                 blend_mode=blend_mode,
                 pixel_bounds=pixel_bounds,
+                affects_foreground=affects_foreground,
             )
         )
 

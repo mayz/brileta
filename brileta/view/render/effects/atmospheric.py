@@ -11,7 +11,7 @@ from brileta.types import DeltaTime, Heading
 
 @dataclass
 class AtmosphericLayerConfig:
-    """Configuration for a single atmospheric layer (cloud shadows or mist)."""
+    """Configuration for a single atmospheric layer."""
 
     name: str = "unnamed"
     enabled: bool = True
@@ -28,6 +28,10 @@ class AtmosphericLayerConfig:
     turbulence_strength: float = 0.0
     turbulence_scale: float = 0.15
     turbulence_speed: float = 0.03
+    # Whether this layer should also darken/lighten foreground sprites.
+    affects_foreground: bool = True
+    # Only render this layer while rain is currently active.
+    enable_when_raining: bool = False
     disable_when_overcast: bool = False
     sky_exposure_threshold: float = 0.8
 
@@ -41,7 +45,7 @@ class AtmosphericConfig:
 
     @classmethod
     def create_default(cls) -> AtmosphericConfig:
-        """Create config with standard cloud shadows + ground mist layers."""
+        """Create config with default atmospheric layers."""
         return cls(
             cloud_coverage=0.8,
             layers=[
@@ -74,6 +78,26 @@ class AtmosphericConfig:
                     turbulence_strength=0.7,
                     turbulence_scale=0.16,
                     turbulence_speed=0.03,
+                    disable_when_overcast=False,
+                    sky_exposure_threshold=0.85,
+                ),
+                AtmosphericLayerConfig(
+                    name="rain_ground_wet",
+                    enabled=True,
+                    blend_mode="darken",
+                    # Keep rain wetness subtle enough to preserve foliage readability.
+                    strength=0.08,
+                    tint_color=(122, 130, 142),
+                    noise_scale=0.02,
+                    noise_threshold_low=0.04,
+                    noise_threshold_high=0.96,
+                    drift_direction=(0.8, 0.3),
+                    drift_speed=0.01,
+                    turbulence_strength=0.2,
+                    turbulence_scale=0.09,
+                    turbulence_speed=0.012,
+                    affects_foreground=False,
+                    enable_when_raining=True,
                     disable_when_overcast=False,
                     sky_exposure_threshold=0.85,
                 ),
@@ -128,12 +152,16 @@ class AtmosphericLayerSystem:
 
     def get_active_layers(
         self,
+        *,
+        is_raining: bool = False,
     ) -> list[tuple[AtmosphericLayerConfig, LayerAnimationState]]:
         """Return list of (config, state) for layers that should render."""
         active_layers: list[tuple[AtmosphericLayerConfig, LayerAnimationState]] = []
 
         for layer in self.config.layers:
             if not layer.enabled:
+                continue
+            if layer.enable_when_raining and not is_raining:
                 continue
             if layer.disable_when_overcast and self.config.cloud_coverage >= 1.0:
                 continue

@@ -1342,6 +1342,7 @@ class TestAtmosphericViewportSizing:
             blend_mode="darken",
             strength=0.5,
             disable_when_overcast=False,
+            affects_foreground=False,
             sky_exposure_threshold=0.3,
             noise_scale=1.0,
             noise_threshold_low=0.2,
@@ -1441,6 +1442,10 @@ class TestAtmosphericViewportSizing:
         assert atmospheric_call is not None
         # Arg 1 is viewport_size (after viewport_offset).
         assert atmospheric_call.args[1] == (10, 6)
+        assert atmospheric_call.kwargs["affects_foreground"] is False
+        view.atmospheric_system.get_active_layers.assert_called_once_with(
+            is_raining=False
+        )
 
     def test_present_queues_zoom_compensated_rain_effect_when_enabled(self) -> None:
         view = object.__new__(WorldView)
@@ -1559,6 +1564,9 @@ class TestAtmosphericViewportSizing:
         assert rain_call.kwargs["drop_spacing"] == pytest.approx(2.8)
         assert rain_call.kwargs["stream_spacing"] == pytest.approx(0.5)
         assert rain_call.kwargs["rain_exclusion_mask_buffer"] is rain_exclusion_mask
+        view.atmospheric_system.get_active_layers.assert_called_once_with(
+            is_raining=True
+        )
 
     def test_build_rain_exclusion_mask_marks_player_building_footprint(self) -> None:
         view = object.__new__(WorldView)
