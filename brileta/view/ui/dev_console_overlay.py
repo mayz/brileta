@@ -11,6 +11,7 @@ from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.types import PixelRect
 from brileta.util.live_vars import LiveVariable, live_variable_registry
 from brileta.util.misc import string_to_type
+from brileta.util.rng import get as get_rng
 from brileta.view.render.canvas import Canvas
 from brileta.view.ui.overlays import TextOverlay
 
@@ -194,6 +195,16 @@ class DevConsoleOverlay(TextOverlay):
             "clear": ConsoleCommand(
                 help_entries=(("clear", "Clear console history."),),
                 execute=self._handle_clear_command,
+            ),
+            "rain": ConsoleCommand(
+                help_entries=(
+                    (
+                        "rain <preset>",
+                        "Apply rain preset: downpour | regular | drizzle.",
+                    ),
+                    ("rain off", "Disable rain quickly."),
+                ),
+                execute=self._handle_rain_command,
             ),
             "quit": ConsoleCommand(
                 help_entries=(("quit", "Quit the game."),),
@@ -1092,6 +1103,44 @@ class DevConsoleOverlay(TextOverlay):
         """Handle the ``clear`` command to wipe console history."""
         self.history.clear()
         self._scroll_offset = 0
+
+    def _handle_rain_command(self, parts: list[str]) -> None:
+        """Handle ``rain`` presets for one-shot weather tuning."""
+        if len(parts) < 2:
+            self.history.append("Usage: rain <downpour|regular|drizzle|off>")
+            return
+
+        mode = parts[1].lower()
+        if mode == "off":
+            self._set_variable("rain.enabled", "false")
+            self.history.append("Rain disabled.")
+            return
+
+        preset = config.RAIN_PRESETS.get(mode)
+        if preset is None:
+            self.history.append(f"Unknown rain preset '{parts[1]}'.")
+            self.history.append("Usage: rain <downpour|regular|drizzle|off>")
+            return
+
+        rain_rng = get_rng("console.rain_preset")
+        stream_spacing = rain_rng.uniform(*preset.stream_spacing)
+        drop_spacing = rain_rng.uniform(*preset.drop_spacing)
+        speed = rain_rng.uniform(*preset.speed)
+        intensity = rain_rng.uniform(*preset.intensity)
+        angle = rain_rng.uniform(*preset.angle)
+
+        self._set_variable("rain.enabled", "true")
+        self._set_variable("rain.stream_spacing", f"{stream_spacing:.4f}")
+        self._set_variable("rain.drop_spacing", f"{drop_spacing:.4f}")
+        self._set_variable("rain.speed", f"{speed:.4f}")
+        self._set_variable("rain.intensity", f"{intensity:.4f}")
+        self._set_variable("rain.angle", f"{angle:.4f}")
+        self.history.append(
+            "Applied rain preset "
+            f"'{mode}': stream_spacing={stream_spacing:.3f}, "
+            f"drop_spacing={drop_spacing:.3f}, speed={speed:.2f}, "
+            f"intensity={intensity:.2f}, angle={angle:.3f}"
+        )
 
     # ------------------------------------------------------------------
     # Natural syntax fallback

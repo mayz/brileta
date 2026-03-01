@@ -1335,6 +1335,8 @@ class TestAtmosphericViewportSizing:
         view._gpu_actor_lightmap_viewport_origin = None
         view._game_time = 0.0
         view.camera_frac_offset = (0.0, 0.0)
+        view.rain_config = SimpleNamespace(enabled=False)
+        view.rain_animation = SimpleNamespace(time=0.0, render_angle=0.0)
 
         active_layer = SimpleNamespace(
             blend_mode="darken",
@@ -1428,6 +1430,7 @@ class TestAtmosphericViewportSizing:
         graphics.shadow_pass.return_value = nullcontext()
         graphics.set_atmospheric_layer = Mock()
         graphics.set_atmospheric_layer.return_value = None
+        graphics.set_rain_effect = Mock()
         graphics.set_actor_lighting_gpu_context = Mock()
 
         # Call present() directly; draw() is not needed for the atmospheric sizing regression.
@@ -1438,3 +1441,151 @@ class TestAtmosphericViewportSizing:
         assert atmospheric_call is not None
         # Arg 1 is viewport_size (after viewport_offset).
         assert atmospheric_call.args[1] == (10, 6)
+
+    def test_present_queues_zoom_compensated_rain_effect_when_enabled(self) -> None:
+        view = object.__new__(WorldView)
+        view.visible = True
+        view.x = 5
+        view.y = 4
+        view.width = 20
+        view.height = 12
+        view._SCROLL_PADDING = 1
+        view._viewport_zoom = 0.5
+        view._shake_offset = (0.0, 0.0)
+        view._active_background_texture = None
+        view._light_overlay_texture = None
+        view._gpu_actor_lightmap_texture = None
+        view._gpu_actor_lightmap_viewport_origin = None
+        view._game_time = 0.0
+        view.camera_frac_offset = (0.0, 0.0)
+        view.rain_config = SimpleNamespace(
+            enabled=True,
+            intensity=0.6,
+            angle=0.2,
+            drop_length=0.9,
+            drop_speed=7.0,
+            drop_spacing=1.4,
+            stream_spacing=0.25,
+            color=(10, 20, 30),
+        )
+        view.rain_animation = SimpleNamespace(time=12.5, render_angle=0.2)
+        rain_exclusion_mask = np.zeros((10, 6), dtype=np.bool_)
+        view._build_rain_exclusion_mask = Mock(return_value=rain_exclusion_mask)
+
+        view.atmospheric_system = Mock()
+        view.atmospheric_system.get_active_layers.return_value = []
+        view.atmospheric_system.config = SimpleNamespace(cloud_coverage=0.0)
+
+        view._get_directional_light = Mock(return_value=None)
+        view._apply_sun_direction_to_graphics = Mock()
+        view._render_light_overlay_gpu_compose = Mock(return_value=None)
+        view._update_tile_animations = Mock()
+        view._update_actor_particles = Mock()
+        view._render_map_unlit = Mock()
+        view._get_background_cache_key = Mock(return_value=("k",))
+        view._texture_cache = Mock()
+        view._texture_cache.get.return_value = True
+        view.controller = SimpleNamespace(
+            clock=SimpleNamespace(last_delta_time=0.016, last_time=1.0),
+            gw=SimpleNamespace(
+                player=SimpleNamespace(x=0, y=0),
+                game_map=SimpleNamespace(
+                    width=200,
+                    height=200,
+                    structural_revision=1,
+                    exploration_revision=1,
+                    decoration_seed=1,
+                ),
+                lights=[],
+            ),
+            mode_stack=[],
+        )
+        view.lighting_system = None
+        view.screen_shake = Mock()
+        view.screen_shake.update.return_value = (0.0, 0.0)
+        view.shadow_renderer = Mock()
+        view.actor_renderer = Mock()
+        view.actor_renderer.get_sorted_visible_actors.return_value = []
+        view.particle_system = Mock()
+        view.environmental_system = Mock()
+        view.environmental_system.render_effects = Mock()
+        view.decal_system = Mock()
+        view.floating_text_manager = Mock()
+        view.map_glyph_buffer = Mock()
+        view.light_source_glyph_buffer = Mock()
+
+        viewport = SimpleNamespace(
+            width_tiles=10,
+            height_tiles=6,
+            offset_x=0,
+            offset_y=0,
+            resize=Mock(),
+        )
+        camera = SimpleNamespace(world_x=0.0, world_y=0.0, set_position=Mock())
+        vs = Mock()
+        vs.viewport = viewport
+        vs.camera = camera
+        vs.update_camera = Mock()
+        vs.get_visible_bounds.return_value = SimpleNamespace(x1=30, y1=40, x2=39, y2=45)
+        vs.get_display_scale_factors.return_value = (2.0, 2.0)
+        vs.get_display_camera_fractional_offset.return_value = (0.0, 0.0)
+        view.viewport_system = vs
+
+        graphics = Mock()
+        graphics.console_to_screen_coords.side_effect = lambda x, y: (
+            x * 10.0,
+            y * 10.0,
+        )
+        graphics.tile_dimensions = (16, 16)
+        graphics.set_noise_seed = Mock()
+        graphics.set_noise_tile_offset = Mock()
+        graphics.render_glyph_buffer_to_texture.return_value = object()
+        graphics.draw_background = Mock()
+        graphics.render_decals = Mock()
+        graphics.render_particles = Mock()
+        graphics.shadow_pass.return_value = nullcontext()
+        graphics.set_atmospheric_layer = Mock()
+        graphics.set_rain_effect = Mock()
+        graphics.set_actor_lighting_gpu_context = Mock()
+
+        view.present(graphics, alpha=InterpolationAlpha(1.0))
+
+        rain_call = graphics.set_rain_effect.call_args
+        assert rain_call is not None
+        assert rain_call.kwargs["viewport_size"] == (10, 6)
+        assert rain_call.kwargs["time"] == 12.5
+        assert rain_call.kwargs["drop_length"] == pytest.approx(1.8)
+        assert rain_call.kwargs["drop_speed"] == pytest.approx(14.0)
+        assert rain_call.kwargs["drop_spacing"] == pytest.approx(2.8)
+        assert rain_call.kwargs["stream_spacing"] == pytest.approx(0.5)
+        assert rain_call.kwargs["rain_exclusion_mask_buffer"] is rain_exclusion_mask
+
+    def test_build_rain_exclusion_mask_marks_player_building_footprint(self) -> None:
+        view = object.__new__(WorldView)
+        building = SimpleNamespace(
+            id=7,
+            footprint=SimpleNamespace(x1=12, y1=22, x2=16, y2=25),
+        )
+        view._compute_roof_state = Mock(return_value=(7, [building]))
+
+        mask = view._build_rain_exclusion_mask((10, 20), (8, 6))
+
+        assert mask is not None
+        expected = np.zeros((8, 6), dtype=np.bool_)
+        expected[2:6, 2:5] = True
+        assert np.array_equal(mask, expected)
+
+    def test_build_rain_exclusion_mask_returns_none_when_player_not_in_building(
+        self,
+    ) -> None:
+        """When the player is outdoors, no exclusion mask is needed."""
+        view = object.__new__(WorldView)
+        building = SimpleNamespace(
+            id=7,
+            footprint=SimpleNamespace(x1=12, y1=22, x2=16, y2=25),
+        )
+        view._compute_roof_state = Mock(return_value=(None, [building]))
+
+        mask = view._build_rain_exclusion_mask((10, 20), (8, 6))
+
+        assert mask is None

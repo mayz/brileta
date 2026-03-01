@@ -37,6 +37,7 @@ from .atlas_manager import WGPUAtlasManager
 from .atmospheric_renderer import WGPUAtmosphericRenderer
 from .glyph_renderer import WGPUGlyphRenderer
 from .light_overlay_composer import WGPULightOverlayComposer
+from .rain_renderer import WGPURainRenderer
 from .resource_manager import WGPUResourceManager
 from .screen_renderer import WGPUScreenRenderer
 from .shader_manager import WGPUShaderManager
@@ -107,6 +108,25 @@ class AtmosphericLayerState:
     turbulence_strength: float
     turbulence_scale: float
     blend_mode: str
+    pixel_bounds: PixelRect
+
+
+@dataclass(frozen=True, slots=True)
+class RainEffectState:
+    """Per-frame snapshot of rain overlay parameters."""
+
+    viewport_offset: WorldTilePos
+    viewport_size: tuple[int, int]
+    tile_dimensions: TileDimensions
+    intensity: float
+    angle: float
+    drop_length: float
+    drop_speed: float
+    drop_spacing: float
+    stream_spacing: float
+    rain_color: colors.Color
+    time: float
+    rain_exclusion_mask_buffer: np.ndarray | None
     pixel_bounds: PixelRect
 
 
@@ -182,9 +202,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self._radial_gradient_texture: wgpu.GPUTexture | None = None
         # Atmospheric renderer for cloud shadows and mist
         self.atmospheric_renderer: WGPUAtmosphericRenderer | None = None
+        self.rain_renderer: WGPURainRenderer | None = None
         self.light_overlay_composer: WGPULightOverlayComposer | None = None
         # Queued atmospheric layers for this frame
         self._atmospheric_layers: list[AtmosphericLayerState] = []
+        self._rain_state: RainEffectState | None = None
         self._gpu_actor_lighting_enabled = False
 
         # Dynamic sprite atlas for procedurally generated actor sprites.
@@ -287,6 +309,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self._radial_gradient_texture = self._create_radial_gradient_texture(256)
 
         self.atmospheric_renderer = WGPUAtmosphericRenderer(
+            self.resource_manager,
+            self.shader_manager,
+            surface_format,
+        )
+        self.rain_renderer = WGPURainRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
@@ -1252,7 +1279,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.effect_renderer.begin_frame()
         if self.atmospheric_renderer is not None:
             self.atmospheric_renderer.begin_frame()
+        if self.rain_renderer is not None:
+            self.rain_renderer.begin_frame()
         self._atmospheric_layers = []
+        self._rain_state = None
 
     def finalize_present(self) -> bool:
         """Finalize frame presentation by rendering to screen."""
@@ -1317,14 +1347,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 render_pass, window_size, self.letterbox_geometry
             )
 
+            # Letterbox region used by atmospheric and rain overlays.
+            letterbox = self.letterbox_geometry or (
+                0,
+                0,
+                int(window_size[0]),
+                int(window_size[1]),
+            )
+
             # Then render atmospheric layers (cloud shadows, ground mist)
             if self._atmospheric_layers and self.atmospheric_renderer is not None:
-                letterbox = self.letterbox_geometry or (
-                    0,
-                    0,
-                    int(window_size[0]),
-                    int(window_size[1]),
-                )
                 for layer in self._atmospheric_layers:
                     self.atmospheric_renderer.render(
                         render_pass,
@@ -1350,6 +1382,28 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                         layer.blend_mode,
                         layer.pixel_bounds,
                     )
+
+            # Then render rain overlay on top of world/actors, under effects/UI.
+            if self._rain_state is not None and self.rain_renderer is not None:
+                rain = self._rain_state
+                self.rain_renderer.render(
+                    render_pass,
+                    window_size,
+                    letterbox,
+                    rain.viewport_offset,
+                    rain.viewport_size,
+                    rain.tile_dimensions,
+                    rain.intensity,
+                    rain.angle,
+                    rain.drop_length,
+                    rain.drop_speed,
+                    rain.drop_spacing,
+                    rain.stream_spacing,
+                    rain.rain_color,
+                    rain.time,
+                    rain.rain_exclusion_mask_buffer,
+                    rain.pixel_bounds,
+                )
 
             # Then render environmental effects (discrete effects like smoke puffs)
             if (
@@ -1837,6 +1891,39 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             )
         )
 
+    def set_rain_effect(
+        self,
+        viewport_offset: WorldTilePos,
+        viewport_size: tuple[int, int],
+        tile_dimensions: TileDimensions,
+        intensity: float,
+        angle: float,
+        drop_length: float,
+        drop_speed: float,
+        drop_spacing: float,
+        stream_spacing: float,
+        rain_color: colors.Color,
+        time: float,
+        rain_exclusion_mask_buffer: np.ndarray | None,
+        pixel_bounds: PixelRect,
+    ) -> None:
+        """Store rain effect data for rendering this frame."""
+        self._rain_state = RainEffectState(
+            viewport_offset=viewport_offset,
+            viewport_size=viewport_size,
+            tile_dimensions=tile_dimensions,
+            intensity=intensity,
+            angle=angle,
+            drop_length=drop_length,
+            drop_speed=drop_speed,
+            drop_spacing=drop_spacing,
+            stream_spacing=stream_spacing,
+            rain_color=rain_color,
+            time=time,
+            rain_exclusion_mask_buffer=rain_exclusion_mask_buffer,
+            pixel_bounds=pixel_bounds,
+        )
+
     def draw_debug_tile_grid(
         self,
         view_origin: WorldTilePos,
@@ -1896,6 +1983,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.background_renderer = None
         self.effect_renderer = None
         self.atmospheric_renderer = None
+        self.rain_renderer = None
         self.light_overlay_composer = None
         self._radial_gradient_texture = None
         self.atlas_texture = None
@@ -1906,6 +1994,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.shader_manager = None
         self.resource_manager = None
         self._world_view_cpu_buffer = None
+        self._rain_state = None
 
         # Let WGPU context cleanup happen naturally
         self.wgpu_context = None

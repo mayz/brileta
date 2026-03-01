@@ -389,6 +389,43 @@ class TestWGPUGraphicsContext:
         assert self.graphics_ctx.console_width_tiles == 50
         assert self.graphics_ctx.console_height_tiles == 33
 
+    def test_set_rain_effect_stores_state_and_prepare_clears_it(self) -> None:
+        """Rain state should queue for one frame and reset at frame start."""
+        self.graphics_ctx.set_rain_effect(
+            viewport_offset=(10, 20),
+            viewport_size=(30, 40),
+            tile_dimensions=(16, 16),
+            intensity=0.5,
+            angle=0.2,
+            drop_length=0.9,
+            drop_speed=8.0,
+            drop_spacing=1.35,
+            stream_spacing=0.33,
+            rain_color=(10, 20, 30),
+            time=1.25,
+            rain_exclusion_mask_buffer=np.zeros((30, 40), dtype=np.bool_),
+            pixel_bounds=(0, 0, 100, 100),
+        )
+
+        assert self.graphics_ctx._rain_state is not None
+        assert self.graphics_ctx._rain_state.viewport_offset == (10, 20)
+        assert self.graphics_ctx._rain_state.viewport_size == (30, 40)
+        assert self.graphics_ctx._rain_state.drop_spacing == 1.35
+        assert self.graphics_ctx._rain_state.stream_spacing == 0.33
+        assert self.graphics_ctx._rain_state.rain_exclusion_mask_buffer is not None
+
+        self.graphics_ctx.screen_renderer = Mock()
+        self.graphics_ctx.ui_renderer = Mock()
+        self.graphics_ctx.background_renderer = Mock()
+        self.graphics_ctx.effect_renderer = Mock()
+        self.graphics_ctx.atmospheric_renderer = Mock()
+        self.graphics_ctx.rain_renderer = Mock()
+
+        self.graphics_ctx.prepare_to_present()
+
+        assert self.graphics_ctx._rain_state is None
+        self.graphics_ctx.rain_renderer.begin_frame.assert_called_once()
+
     def test_finalize_present_returns_false_when_framebuffer_is_zero(self):
         """Presentation should be skipped while minimized (0-sized framebuffer)."""
         self.graphics_ctx.screen_renderer = Mock()

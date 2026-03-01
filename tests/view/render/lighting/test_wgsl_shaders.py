@@ -70,6 +70,55 @@ class TestWGSLLightingShaders:
         assert shader_module is not None
 
     @pytest.mark.skipif(not WGPU_AVAILABLE, reason="wgpu-py not available")
+    def test_rain_effect_shader_compilation(self):
+        """Test that the rain effect WGSL shader compiles."""
+        shader_path = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "assets/shaders/wgsl/effects/rain.wgsl"
+        )
+
+        assert shader_path.exists(), f"Shader not found: {shader_path}"
+        with shader_path.open() as f:
+            shader_source = f.read()
+
+        assert "@vertex" in shader_source
+        assert "@fragment" in shader_source
+        assert "vs_main" in shader_source
+        assert "fs_main" in shader_source
+        assert (
+            "let base_drop_spacing = max(uniforms.spacing_data.z, 0.12);"
+            in shader_source
+        )
+        assert (
+            "let base_density_spacing = max(uniforms.spacing_data.w, 0.01);"
+            in shader_source
+        )
+        assert "rain_exclusion_map" in shader_source
+        assert "textureSampleLevel(\n        rain_exclusion_map," in shader_source
+        assert "let column_spacing = stream_spacing;" not in shader_source
+        assert "let viewport_offset = uniforms.viewport_data.xy;" in shader_source
+        assert (
+            "let world_pos = viewport_offset + (input.screen_uv * viewport_size);"
+            in shader_source
+        )
+        assert (
+            "let vertical_axis = world_pos.y - (time * base_drop_speed);"
+            in shader_source
+        )
+        assert "let along_distance = dot(delta_pos, slant_dir);" in shader_source
+        assert (
+            "let center_y = (f32(cell_y) + 0.5) * base_drop_spacing + along_jitter + (time * base_drop_speed);"
+            in shader_source
+        )
+        assert "(time * base_drop_speed * speed_jitter)" not in shader_source
+        assert "if (occupancy > 0.09)" in shader_source
+
+        adapter = wgpu.gpu.request_adapter()  # type: ignore[possibly-unbound]
+        device = adapter.request_device()
+        shader_module = device.create_shader_module(code=shader_source)
+        assert shader_module is not None
+
+    @pytest.mark.skipif(not WGPU_AVAILABLE, reason="wgpu-py not available")
     def test_critical_shadow_algorithms_preserved(self):
         """Verify that critical shadow algorithms are preserved in WGSL translation."""
 

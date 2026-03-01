@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from brileta import input_events
+from brileta import config, input_events
 from brileta.app import App, AppConfig
 from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.controller import Controller
@@ -132,6 +132,87 @@ def test_show_command_invalid_var() -> None:
     ov._execute_command()
     # With pattern matching, unknown vars are treated as prefix patterns
     assert ov.history[-1] == "No variables matching 'missing'."
+
+
+def test_rain_preset_command_applies_randomized_ranges_and_can_disable() -> None:
+    store: dict[str, object] = {
+        "enabled": False,
+        "stream_spacing": 0.33,
+        "drop_spacing": 1.35,
+        "speed": 25.0,
+        "intensity": 0.4,
+        "angle": 0.0,
+    }
+    live_variable_registry.register(
+        "rain.enabled",
+        getter=lambda: store["enabled"],
+        setter=lambda v: store.__setitem__("enabled", bool(v)),
+    )
+    live_variable_registry.register(
+        "rain.stream_spacing",
+        getter=lambda: store["stream_spacing"],
+        setter=lambda v: store.__setitem__("stream_spacing", float(v)),
+    )
+    live_variable_registry.register(
+        "rain.drop_spacing",
+        getter=lambda: store["drop_spacing"],
+        setter=lambda v: store.__setitem__("drop_spacing", float(v)),
+    )
+    live_variable_registry.register(
+        "rain.speed",
+        getter=lambda: store["speed"],
+        setter=lambda v: store.__setitem__("speed", float(v)),
+    )
+    live_variable_registry.register(
+        "rain.intensity",
+        getter=lambda: store["intensity"],
+        setter=lambda v: store.__setitem__("intensity", float(v)),
+    )
+    live_variable_registry.register(
+        "rain.angle",
+        getter=lambda: store["angle"],
+        setter=lambda v: store.__setitem__("angle", float(v)),
+    )
+
+    ov = make_overlay()
+
+    ov.input_buffer = "rain downpour"
+    ov._execute_command()
+
+    assert store["enabled"] is True
+    stream_value = float(store["stream_spacing"])
+    drop_value = float(store["drop_spacing"])
+    speed_value = float(store["speed"])
+    intensity_value = float(store["intensity"])
+    angle_value = float(store["angle"])
+    preset = config.RAIN_PRESETS["downpour"]
+    stream_lo, stream_hi = preset.stream_spacing
+    drop_lo, drop_hi = preset.drop_spacing
+    speed_lo, speed_hi = preset.speed
+    intensity_lo, intensity_hi = preset.intensity
+    angle_lo, angle_hi = preset.angle
+    assert stream_lo <= stream_value <= stream_hi
+    assert drop_lo <= drop_value <= drop_hi
+    assert speed_lo <= speed_value <= speed_hi
+    assert intensity_lo <= intensity_value <= intensity_hi
+    assert angle_lo <= angle_value <= angle_hi
+    assert any("Applied rain preset 'downpour'" in line for line in ov.history)
+
+    ov.input_buffer = "rain off"
+    ov._execute_command()
+    assert store["enabled"] is False
+    assert ov.history[-1] == "Rain disabled."
+
+
+def test_rain_command_unknown_preset_shows_error() -> None:
+    """An unknown preset name should print an error, not crash."""
+    ov = make_overlay()
+
+    ov.input_buffer = "rain tornado"
+    ov._execute_command()
+
+    assert any("Unknown rain preset 'tornado'" in line for line in ov.history)
+    assert ov.history[-1] == "Usage: rain <downpour|regular|drizzle|off>"
 
 
 @pytest.mark.parametrize("cmd", ["quit", "exit"])

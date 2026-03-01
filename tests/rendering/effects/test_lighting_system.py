@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from brileta import config
@@ -524,6 +525,57 @@ def test_controller_set_sun_angle_elevation() -> None:
     assert sun.azimuth_degrees == 135.0  # Unchanged
     assert sun.elevation_degrees == 20.0
     mock_lighting.on_global_light_changed.assert_called_once()
+
+
+def test_controller_set_rain_enabled_does_not_modify_sun() -> None:
+    """Rain toggle should not change sun intensity or relight the scene."""
+    from brileta.controller import Controller
+
+    gw = GameWorld(30, 30)
+    sun = DirectionalLight.create_sun(intensity=1.0)
+    gw.add_light(sun)
+    gw.lighting_system = Mock()
+
+    controller = object.__new__(Controller)
+    controller.gw = gw
+    controller._rain_enabled = False
+    controller.frame_manager = SimpleNamespace(
+        world_view=SimpleNamespace(rain_config=SimpleNamespace(enabled=False))
+    )
+
+    Controller._set_rain_enabled(controller, True)
+
+    assert controller._rain_enabled is True
+    assert controller.frame_manager.world_view.rain_config.enabled is True
+    assert sun.intensity == 1.0
+    gw.lighting_system.on_global_light_changed.assert_not_called()
+
+    Controller._set_rain_enabled(controller, False)
+
+    assert controller._rain_enabled is False
+    assert controller.frame_manager.world_view.rain_config.enabled is False
+    assert sun.intensity == 1.0
+    gw.lighting_system.on_global_light_changed.assert_not_called()
+
+
+def test_controller_set_rain_enabled_noop_when_state_unchanged() -> None:
+    """Setting the current rain-enabled state should not relight the scene."""
+    from brileta.controller import Controller
+
+    gw = GameWorld(30, 30)
+    gw.lighting_system = Mock()
+
+    controller = object.__new__(Controller)
+    controller.gw = gw
+    controller._rain_enabled = False
+    controller.frame_manager = SimpleNamespace(
+        world_view=SimpleNamespace(rain_config=SimpleNamespace(enabled=True))
+    )
+
+    Controller._set_rain_enabled(controller, False)
+
+    assert controller.frame_manager.world_view.rain_config.enabled is False
+    gw.lighting_system.on_global_light_changed.assert_not_called()
 
 
 # Player Torch Auto-Toggle Tests

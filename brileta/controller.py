@@ -56,6 +56,7 @@ from .util.message_log import MessageLog
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
+from .view.render.effects.rain import RainConfig
 from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
 
@@ -225,6 +226,10 @@ class Controller:
             display_decimals=1,
             value_range=(0.0, 90.0),
         )
+
+        self._rain_enabled: bool = bool(config.RAIN_ENABLED)
+        self._get_rain_config().enabled = self._rain_enabled
+        self._register_rain_live_variables()
 
         # ---- AI Debug Overlay ----
         # Toggle + hovered-actor variables for inspecting NPC utility scoring.
@@ -472,6 +477,7 @@ class Controller:
         # Update frame manager's world view with new lighting system
         wv = self.frame_manager.world_view
         wv.lighting_system = self.gw.lighting_system
+        self._get_rain_config().enabled = self._rain_enabled
 
         # Clear world view caches
         wv.particle_system.clear()
@@ -505,6 +511,110 @@ class Controller:
             sun.set_angles(azimuth=azimuth, elevation=elevation)
         if self.gw.lighting_system:
             self.gw.lighting_system.on_global_light_changed()
+
+    def _get_rain_config(self) -> RainConfig:
+        """Return WorldView rain config, attaching defaults when absent."""
+        world_view = getattr(self.frame_manager, "world_view", None)
+        if world_view is None:
+            return RainConfig.from_config()
+        rain_config = getattr(world_view, "rain_config", None)
+        if rain_config is None:
+            rain_config = RainConfig.from_config()
+            world_view.rain_config = rain_config
+        return rain_config
+
+    def _set_rain_enabled(self, enabled: bool) -> None:
+        """Toggle rain visuals without mutating global lighting."""
+        rain_config = self._get_rain_config()
+        rain_enabled = bool(enabled)
+        if rain_enabled == self._rain_enabled:
+            rain_config.enabled = rain_enabled
+            return
+
+        self._rain_enabled = rain_enabled
+        rain_config.enabled = rain_enabled
+
+    def _register_rain_live_variables(self) -> None:
+        """Register live variables for rain rendering controls.
+
+        Closures resolve the rain config lazily via _get_rain_config() so that
+        live variables always target the current WorldView's config, even after
+        a map reload replaces the WorldView instance.
+        """
+        live_variable_registry.register(
+            "rain.enabled",
+            getter=lambda: self._rain_enabled,
+            setter=lambda v: self._set_rain_enabled(bool(v)),
+            description="Toggle rain overlay.",
+        )
+        live_variable_registry.register(
+            "rain.intensity",
+            getter=lambda: self._get_rain_config().intensity,
+            setter=lambda v: setattr(
+                self._get_rain_config(), "intensity", max(0.0, min(1.0, float(v)))
+            ),
+            description="Rain alpha intensity (0-1).",
+            display_decimals=2,
+            value_range=(0.0, 1.0),
+        )
+        live_variable_registry.register(
+            "rain.angle",
+            getter=lambda: self._get_rain_config().angle,
+            setter=lambda v: setattr(
+                self._get_rain_config(),
+                "angle",
+                max(
+                    -float(config.RAIN_ANGLE_MAX_ABS_RAD),
+                    min(float(config.RAIN_ANGLE_MAX_ABS_RAD), float(v)),
+                ),
+            ),
+            description="Baseline rain tilt in radians (wind varies around this).",
+            display_decimals=2,
+            value_range=(
+                -float(config.RAIN_ANGLE_MAX_ABS_RAD),
+                float(config.RAIN_ANGLE_MAX_ABS_RAD),
+            ),
+        )
+        live_variable_registry.register(
+            "rain.speed",
+            getter=lambda: self._get_rain_config().drop_speed,
+            setter=lambda v: setattr(
+                self._get_rain_config(), "drop_speed", max(8.0, min(120.0, float(v)))
+            ),
+            description="Rain drop speed in tiles/second.",
+            display_decimals=2,
+            value_range=(8.0, 120.0),
+        )
+        live_variable_registry.register(
+            "rain.drop_length",
+            getter=lambda: self._get_rain_config().drop_length,
+            setter=lambda v: setattr(
+                self._get_rain_config(), "drop_length", max(0.05, float(v))
+            ),
+            description="Rain drop length in tiles.",
+            display_decimals=2,
+            value_range=(0.05, 2.5),
+        )
+        live_variable_registry.register(
+            "rain.drop_spacing",
+            getter=lambda: self._get_rain_config().drop_spacing,
+            setter=lambda v: setattr(
+                self._get_rain_config(), "drop_spacing", max(0.1, float(v))
+            ),
+            description="Primary along-fall drop spacing control (tiles).",
+            display_decimals=2,
+            value_range=(0.1, 4.0),
+        )
+        live_variable_registry.register(
+            "rain.stream_spacing",
+            getter=lambda: self._get_rain_config().stream_spacing,
+            setter=lambda v: setattr(
+                self._get_rain_config(), "stream_spacing", max(0.01, min(0.6, float(v)))
+            ),
+            description="Average lateral spacing between nearby drops (tiles).",
+            display_decimals=2,
+            value_range=(0.01, 0.6),
+        )
 
     # ------------------------------------------------------------------
     # AI Debug Overlay

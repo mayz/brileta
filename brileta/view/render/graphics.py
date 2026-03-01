@@ -568,6 +568,28 @@ class GraphicsContext(abc.ABC):
         """
         return
 
+    def set_rain_effect(
+        self,
+        viewport_offset: WorldTilePos,
+        viewport_size: tuple[int, int],
+        tile_dimensions: TileDimensions,
+        intensity: float,
+        angle: float,
+        drop_length: float,
+        drop_speed: float,
+        drop_spacing: float,
+        stream_spacing: float,
+        rain_color: colors.Color,
+        time: float,
+        rain_exclusion_mask_buffer: np.ndarray | None,
+        pixel_bounds: PixelRect,
+    ) -> None:
+        """Queue or ignore rain overlay data.
+
+        Backends that do not support rain rendering intentionally do nothing.
+        """
+        return
+
     def set_noise_seed(self, seed: int) -> None:
         """Set the noise seed for sub-tile brightness variation.
 

@@ -31,6 +31,7 @@ from brileta.view.render.effects.particles import (
     ParticleLayer,
     SubTileParticleSystem,
 )
+from brileta.view.render.effects.rain import RainAnimationState, RainConfig
 from brileta.view.render.effects.screen_shake import ScreenShake
 from brileta.view.render.graphics import GraphicsContext
 from brileta.view.render.lighting.base import LightingSystem
@@ -367,6 +368,8 @@ class WorldView(View):
         self.atmospheric_system = AtmosphericLayerSystem(
             AtmosphericConfig.create_default()
         )
+        self.rain_config = RainConfig.from_config()
+        self.rain_animation = RainAnimationState()
 
     def _compute_zoomed_viewport_size(self) -> tuple[int, int]:
         """Return visible world-tile dimensions for the fixed view rect."""
@@ -731,6 +734,7 @@ class WorldView(View):
             self.environmental_system.update(delta_time)
             self.floating_text_manager.update(delta_time)
             self.atmospheric_system.update(delta_time)
+            self.rain_animation.update(delta_time, self.rain_config)
             # Update decals for age-based cleanup
             self._game_time += delta_time
             self.decal_system.update(delta_time, self._game_time)
@@ -978,13 +982,6 @@ class WorldView(View):
 
         if config.ATMOSPHERIC_EFFECTS_ENABLED:
             with record_time_live_variable("time.render.atmospheric_ms"):
-                active_layers = self.atmospheric_system.get_active_layers()
-                # Render mist first, then shadows, to keep shadows readable on top.
-                active_layers.sort(
-                    key=lambda layer_state: (
-                        0 if layer_state[0].blend_mode == "lighten" else 1
-                    )
-                )
                 sky_exposure_texture = None
                 explored_texture = None
                 visible_texture = None
@@ -1004,6 +1001,14 @@ class WorldView(View):
                     )
                     if callable(get_visible_texture):
                         visible_texture = get_visible_texture()
+
+                active_layers = self.atmospheric_system.get_active_layers()
+                # Render mist first, then shadows, to keep shadows readable on top.
+                active_layers.sort(
+                    key=lambda layer_state: (
+                        0 if layer_state[0].blend_mode == "lighten" else 1
+                    )
+                )
                 roof_surface_mask_buffer = self._build_atmospheric_roof_surface_mask(
                     viewport_offset, viewport_size
                 )
@@ -1046,6 +1051,38 @@ class WorldView(View):
                             round(px_bottom),
                         ),
                     )
+
+        if self.rain_config.enabled:
+            rain_exclusion_mask = self._build_rain_exclusion_mask(
+                viewport_offset,
+                viewport_size,
+            )
+            rain_angle = self.rain_animation.render_angle
+            # Keep perceived rain shape/density/speed stable across viewport zoom.
+            # Rain tuning vars are authored at 1.0x zoom, so compensate tile-space
+            # values before sending them to the shader.
+            zoom_scale = max(float(config.ZOOM_STOPS[0]), float(self._viewport_zoom))
+            zoom_compensation = 1.0 / zoom_scale
+            graphics.set_rain_effect(
+                viewport_offset=viewport_offset,
+                viewport_size=viewport_size,
+                tile_dimensions=graphics.tile_dimensions,
+                intensity=self.rain_config.intensity,
+                angle=rain_angle,
+                drop_length=self.rain_config.drop_length * zoom_compensation,
+                drop_speed=self.rain_config.drop_speed * zoom_compensation,
+                drop_spacing=self.rain_config.drop_spacing * zoom_compensation,
+                stream_spacing=self.rain_config.stream_spacing * zoom_compensation,
+                rain_color=self.rain_config.color,
+                time=self.rain_animation.time,
+                rain_exclusion_mask_buffer=rain_exclusion_mask,
+                pixel_bounds=(
+                    round(px_left),
+                    round(px_top),
+                    round(px_right),
+                    round(px_bottom),
+                ),
+            )
 
         # Render highlights and mode-specific UI on top of actors
         # Render all modes in the stack (bottom-to-top) so higher modes draw on top
@@ -1188,6 +1225,50 @@ class WorldView(View):
         if not np.any(roof_mask):
             return None
         return roof_mask
+
+    def _build_rain_exclusion_mask(
+        self,
+        viewport_offset: WorldTilePos,
+        viewport_size: tuple[int, int],
+    ) -> np.ndarray | None:
+        """Build a viewport-space mask for the current player building interior.
+
+        Rain is a full-screen stochastic overlay, so we only carve out the
+        interior footprint of the building the player is currently inside.
+        """
+        viewport_w, viewport_h = viewport_size
+        if viewport_w <= 0 or viewport_h <= 0:
+            return None
+
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        if player_building_id is None:
+            return None
+
+        player_building = next(
+            (b for b in viewport_buildings if b.id == player_building_id),
+            None,
+        )
+        if player_building is None:
+            return None
+
+        view_x, view_y = viewport_offset
+        view_x2 = view_x + viewport_w
+        view_y2 = view_y + viewport_h
+
+        footprint = player_building.footprint
+        clip_x1 = max(view_x, footprint.x1)
+        clip_y1 = max(view_y, footprint.y1)
+        clip_x2 = min(view_x2, footprint.x2)
+        clip_y2 = min(view_y2, footprint.y2)
+        if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
+            return None
+
+        mask = np.zeros((viewport_w, viewport_h), dtype=np.bool_)
+        mask[
+            (clip_x1 - view_x) : (clip_x2 - view_x),
+            (clip_y1 - view_y) : (clip_y2 - view_y),
+        ] = True
+        return mask
 
     def _filter_roof_occluded_actors(
         self,

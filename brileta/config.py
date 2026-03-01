@@ -7,6 +7,7 @@ Organized by functional area for easy maintenance.
 
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from brileta.game.enums import GeneratorType
 from brileta.types import BackendConfig, RandomSeed
@@ -67,6 +68,63 @@ MIN_CONSOLE_HEIGHT: int = 25
 ENVIRONMENTAL_EFFECTS_ENABLED = True
 # Toggle atmospheric effects (cloud shadows, ground mist)
 ATMOSPHERIC_EFFECTS_ENABLED = True
+# Toggle rain effect (GPU procedural line segments)
+RAIN_ENABLED: bool = False
+RAIN_INTENSITY: float = 0.4
+RAIN_ANGLE: float = 0.15
+# Rain tilt from vertical (radians). Keep below pi/2 so drops always fall down.
+RAIN_ANGLE_MAX_ABS_RAD: float = 0.7
+RAIN_WIND_DRIZZLE_MAX_ABS_RAD: float = 0.15
+RAIN_WIND_DOWNPOUR_MAX_ABS_RAD: float = 0.45
+# Continuous micro-budging around baseline angle.
+RAIN_WIND_MICRO_MAX_ABS_RAD: float = 0.05
+# Gust cadence and envelope timing.
+RAIN_WIND_GUST_INTERVAL_SEC_RANGE: tuple[float, float] = (6.0, 16.0)
+RAIN_WIND_GUST_DURATION_SEC_RANGE: tuple[float, float] = (1.2, 3.5)
+# How quickly render angle tracks the baseline+wind target.
+RAIN_WIND_ANGLE_RESPONSE_RATE: float = 6.0
+RAIN_DROP_LENGTH: float = 0.8
+RAIN_DROP_SPEED: float = 25.0
+RAIN_DROP_SPACING: float = 1.35
+RAIN_STREAM_SPACING: float = 0.33
+RAIN_COLOR: tuple[int, int, int] = (180, 200, 220)
+# Rain-spacing presets (tile units). These are reference ranges used by the
+# dev-console ``rain <preset>`` command to pick randomized values.
+
+
+class RainPreset(NamedTuple):
+    """Randomization ranges for a rain intensity preset."""
+
+    stream_spacing: tuple[float, float]
+    drop_spacing: tuple[float, float]
+    speed: tuple[float, float]
+    intensity: tuple[float, float]
+    angle: tuple[float, float]
+
+
+RAIN_PRESETS: dict[str, RainPreset] = {
+    "downpour": RainPreset(
+        stream_spacing=(0.16, 0.3),
+        drop_spacing=(0.75, 1.5),
+        speed=(27.0, 34.0),
+        intensity=(0.28, 0.40),
+        angle=(-0.45, 0.45),
+    ),
+    "regular": RainPreset(
+        stream_spacing=(0.28, 0.45),
+        drop_spacing=(1.2, 2.4),
+        speed=(22.0, 28.0),
+        intensity=(0.28, 0.40),
+        angle=(-0.30, 0.30),
+    ),
+    "drizzle": RainPreset(
+        stream_spacing=(0.52, 0.6),
+        drop_spacing=(3.2, 4.0),
+        speed=(17.0, 20.5),
+        intensity=(0.28, 0.35),
+        angle=(-0.15, 0.15),
+    ),
+}
 
 # Shake effect
 # Set to False to disable screen shake
