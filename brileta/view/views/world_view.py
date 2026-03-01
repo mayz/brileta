@@ -2913,13 +2913,6 @@ class WorldView(View):
                 "GPU light overlay composition."
             )
 
-        compose_fn = getattr(graphics, "compose_light_overlay_gpu", None)
-        if not callable(compose_fn):
-            raise RuntimeError(
-                "Graphics context is missing compose_light_overlay_gpu(), required "
-                "for GPU light overlay composition."
-            )
-
         vs = self.viewport_system
         gw = self.controller.gw
         bounds = vs.get_visible_bounds()
@@ -3218,7 +3211,7 @@ class WorldView(View):
                 cache_key_suffix="light_source",
             )
 
-        composed_texture = compose_fn(
+        composed_texture = graphics.compose_light_overlay_gpu(
             dark_texture=dark_texture,
             light_texture=light_source_texture,
             lightmap_texture=lightmap_texture,

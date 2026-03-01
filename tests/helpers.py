@@ -315,95 +315,78 @@ class DummyApp(App):
         pass
 
 
-class DummyGraphicsContext:
-    def __init__(self, *_args, **_kwargs) -> None:
+class DummyGraphicsContext(GraphicsContext):
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        super().__init__()
+        self._tile_dimensions = (16, 16)
+        self._native_tile_size = (16, 16)
+        self._console_width_tiles = DEFAULT_TEST_CONSOLE_WIDTH_TILES
+        self._console_height_tiles = DEFAULT_TEST_CONSOLE_HEIGHT_TILES
         self._coordinate_converter = SimpleNamespace(
-            pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
+            pixel_to_tile=lambda x, y: (x, y),
+            tile_to_pixel=lambda x, y: (x, y),
+            tile_width_screen_px=float(self._tile_dimensions[0]),
+            tile_height_screen_px=float(self._tile_dimensions[1]),
         )
-        self.console_width_tiles = DEFAULT_TEST_CONSOLE_WIDTH_TILES
-        self.console_height_tiles = DEFAULT_TEST_CONSOLE_HEIGHT_TILES
         self.resource_manager = None
         self.root_console = SimpleNamespace(
-            width=self.console_width_tiles, height=self.console_height_tiles
+            width=self.console_width_tiles,
+            height=self.console_height_tiles,
         )
 
     def create_canvas(self, transparent: bool = True) -> Any:
         return MagicMock()
 
-    def create_sprite_atlas(self, _width: int, _height: int) -> Any:
-        return None
+    def clear_console(self, *_a: object, **_kw: object) -> None:  # pragma: no cover
+        return
 
-    def set_sprite_atlas_texture(self, _texture: Any) -> None:
-        pass
+    def blit_console(self, *_a: object, **_kw: object) -> None:  # pragma: no cover
+        return
 
-    @property
-    def coordinate_converter(self):
-        return self._coordinate_converter
+    def present_frame(self, *_a: object, **_kw: object) -> None:  # pragma: no cover
+        return
 
-    @property
-    def tile_dimensions(self):
-        return (16, 16)
-
-    def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-        pass
-
-    def blit_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-        pass
-
-    def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-        pass
-
-    # Add minimal implementations for all abstract methods
-    def get_display_scale_factor(self):
+    def get_display_scale_factor(self) -> tuple[float, float]:
         return (1.0, 1.0)
 
-    def render_effects_layer(self, *_a, **_kw):
-        pass
+    def update_dimensions(self, zoom_only: bool = False) -> None:
+        return
 
-    def render_particles(self, *_a, **_kw):
-        pass
+    def draw_actor(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def update_dimensions(self):
-        pass
+    def draw_actor_shadow(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def console_to_screen_coords(self, *_a):
-        return (0, 0)
+    def draw_actor_outline(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def screen_to_console_coords(self, *_a):
-        return (0, 0)
+    def draw_mouse_cursor(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def draw_actor(self, *_a, **_kw):
-        pass
+    def draw_background(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def draw_particles_smooth(self, *_a, **_kw):
-        pass
-
-    def draw_texture_at_screen_pos(self, *_a, **_kw):
-        pass
-
-    def draw_texture_at_tile_pos(self, *_a, **_kw):
-        pass
-
-    def texture_from_console(self, *_a, **_kw):
+    def render_glyph_buffer_to_texture(self, *_a: object, **_kw: object) -> Any:
         return None
 
-    def render_glyph_buffer_to_texture(self, *_a, **_kw):
+    def texture_from_numpy(self, *_a: object, **_kw: object) -> Any:
         return None
 
-    def texture_from_numpy(self, *_a, **_kw):
-        return None
+    def present_texture(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def texture_from_surface(self, *_a, **_kw):
-        return None
+    def draw_texture_alpha(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def reset_texture_mods(self, *_a, **_kw):
-        pass
+    def draw_debug_tile_grid(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def draw_debug_rect(self, *_a, **_kw):
-        pass
+    def apply_environmental_effect(self, *_a: object, **_kw: object) -> None:
+        return
 
-    def release_texture(self, *_a, **_kw):
-        pass
+    def release_texture(self, *_a: object, **_kw: object) -> None:
+        return
 
 
 class DummyFrameManager:
@@ -541,7 +524,7 @@ def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
 
         app = DummyApp()
         graphics = DummyGraphicsContext(context, None, (16, 16))
-        return Controller(app, cast(GraphicsContext, graphics))
+        return Controller(app, graphics)
 
 
 def reset_dummy_controller(controller: Controller) -> None:

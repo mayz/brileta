@@ -1,34 +1,17 @@
-"""
-Defines the abstract interface for a graphics backend in the game.
-
-This module provides the `GraphicsContext` abstract base class, which defines a
-stable contract for all low-level rendering operations. Its primary responsibility
-is to provide a backend-agnostic API for drawing game elements to the screen.
-
-Key Principles:
-- A GraphicsContext knows *how* to draw things (e.g., sprites, text, shapes), but not
-  *what* or *when* to draw them. That is the responsibility of higher-level systems
-  like the `FrameManager` and `View`s.
-- The interface provides high-level drawing commands (e.g., `draw_actor`,
-  `render_particles`) that are independent of the underlying graphics library.
-- It is the final stage in the rendering pipeline, handling the conversion of
-  game-state data into pixels on the screen.
-- It is the single source of truth for screen dimensions and coordinate-space
-  transformations.
-"""
+"""Shared graphics context interface and common rendering implementations."""
 
 from __future__ import annotations
 
-import abc
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from brileta import colors
+from brileta import colors, config
 from brileta.game.enums import BlendMode
 from brileta.types import (
+    ColorRGBAf,
     ColorRGBf,
     InterpolationAlpha,
     Opacity,
@@ -38,11 +21,17 @@ from brileta.types import (
     RootConsoleTilePos,
     SpriteUV,
     TileDimensions,
+    UVRect,
     ViewOffset,
     WorldTilePos,
 )
-from brileta.util.coordinates import CoordinateConverter, Rect
+from brileta.util.coordinates import (
+    CoordinateConverter,
+    Rect,
+    convert_particle_to_screen_coords,
+)
 from brileta.util.glyph_buffer import GlyphBuffer
+from brileta.util.tilesets import unicode_to_cp437
 from brileta.view.render.effects.decals import DecalSystem
 from brileta.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from brileta.view.render.viewport import ViewportSystem
@@ -52,28 +41,127 @@ if TYPE_CHECKING:
     from brileta.view.ui.cursor_manager import CursorManager
 
 
-class GraphicsContext(abc.ABC):
-    """Abstract base class for drawing graphics to the screen."""
+@runtime_checkable
+class ScreenRenderer(Protocol):
+    """Protocol for the screen-quad renderer used by GraphicsContext."""
+
+    def add_quad(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        uv_coords: UVRect,
+        color_rgba: ColorRGBAf,
+    ) -> None: ...
+
+
+class GraphicsContext:
+    """Concrete base class for all graphics backends.
+
+    This class provides shared coordinate conversion and render helper logic.
+    Backend-specific contexts should inherit and override backend-dependent
+    methods.
+    """
+
+    # CP437 index for the solid-block glyph (█), used for filled quads.
+    SOLID_BLOCK_CHAR: int = 219
 
     # Backends without explicit resource managers inherit the default None value.
     resource_manager: WGPUResourceManager | None = None
 
+    def __init__(self) -> None:
+        """Initialize common state shared by graphics backends."""
+
+        self._tile_dimensions: TileDimensions = (20, 20)
+        self._native_tile_size: TileDimensions = (20, 20)
+        self._scale_factor: float = 1.0
+        self._console_width_tiles: int = 80
+        self._console_height_tiles: int = 50
+        self._coordinate_converter: CoordinateConverter | None = None
+
+        self.letterbox_geometry: PixelRect | None = None
+        self.uv_map: np.ndarray | None = None
+        self.screen_renderer: ScreenRenderer | None = None
+
     @property
-    @abc.abstractmethod
     def tile_dimensions(self) -> TileDimensions:
-        pass
+        """Current tile dimensions used for display rendering."""
+        return self._tile_dimensions
 
     @property
-    @abc.abstractmethod
     def console_width_tiles(self) -> int:
-        pass
+        """Current console width in tiles."""
+        return self._console_width_tiles
 
     @property
-    @abc.abstractmethod
     def console_height_tiles(self) -> int:
-        pass
+        """Current console height in tiles."""
+        return self._console_height_tiles
 
-    @abc.abstractmethod
+    @property
+    def native_tile_size(self) -> TileDimensions:
+        """Native tile dimensions loaded from the tileset atlas."""
+        return self._native_tile_size
+
+    @property
+    def scale_factor(self) -> float:
+        """Effective content scale factor (DPI scale * zoom)."""
+        return self._scale_factor
+
+    @property
+    def gpu_max_texture_dimension_2d(self) -> int:
+        """GPU max 2D texture dimension.
+
+        Backends can override with device-specific limits.
+        """
+        return 8192
+
+    @property
+    def locked_content_scale(self) -> int | None:
+        """Locked content scale for DPI stabilization, if supported."""
+        return None
+
+    @property
+    def coordinate_converter(self) -> CoordinateConverter:
+        """Converter for screen pixel <-> tile coordinate mapping."""
+        if self._coordinate_converter is None:
+            self._setup_coordinate_converter()
+        converter = self._coordinate_converter
+        assert converter is not None
+        return converter
+
+    def _precalculate_uv_map(self) -> np.ndarray:
+        """Pre-calculate UV coordinates for all CP437 atlas characters."""
+        uv_map = np.zeros((256, 4), dtype="f4")
+        for i in range(256):
+            col = i % config.TILESET_COLUMNS
+            row = i // config.TILESET_COLUMNS
+            u1 = col / config.TILESET_COLUMNS
+            v1 = row / config.TILESET_ROWS
+            u2 = (col + 1) / config.TILESET_COLUMNS
+            v2 = (row + 1) / config.TILESET_ROWS
+            uv_map[i] = [u1, v1, u2, v2]
+        return uv_map
+
+    @staticmethod
+    def _cp437_index_for_char(char: str) -> int:
+        """Map a Python character to a CP437 atlas index."""
+        codepoint = ord(char) if char else ord(" ")
+        if 0 <= codepoint <= 255:
+            return codepoint
+        return unicode_to_cp437(codepoint)
+
+    @staticmethod
+    def _color_to_rgba(color: colors.Color, alpha: Opacity) -> ColorRGBAf:
+        """Normalize a 0-255 RGB color and opacity to a 0.0-1.0 RGBA tuple."""
+        return (
+            color[0] / 255.0,
+            color[1] / 255.0,
+            color[2] / 255.0,
+            max(0.0, min(1.0, alpha)),
+        )
+
     def render_glyph_buffer_to_texture(
         self,
         glyph_buffer: GlyphBuffer,
@@ -81,19 +169,9 @@ class GraphicsContext(abc.ABC):
         secondary_override: Any = None,
         cache_key_suffix: str = "",
     ) -> Any:
-        """
-        Takes a GlyphBuffer scene description and renders it to a new,
-        backend-specific texture object.
+        """Render a GlyphBuffer to a backend-specific texture."""
+        raise NotImplementedError
 
-        This is potentially an expensive operation, and the result should be
-        cached by the caller if it will be used across multiple frames.
-
-        Returns:
-            An opaque texture handle of a backend-specific type.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_actor(
         self,
         char: str,
@@ -107,26 +185,9 @@ class GraphicsContext(abc.ABC):
         world_pos: WorldTilePos | None = None,
         tile_bg: colors.Color | None = None,
     ) -> None:
-        """Draw an actor character at sub-pixel screen coordinates.
+        """Draw an actor character at sub-pixel screen coordinates."""
+        raise NotImplementedError
 
-        Args:
-            char: Character to draw (e.g., '@', 'g')
-            color: Base actor color in 0-255 RGB format
-            screen_x: Screen X coordinate in pixels (can be fractional)
-            screen_y: Screen Y coordinate in pixels (can be fractional)
-            light_intensity: RGB lighting multipliers in 0.0-1.0 range
-            interpolation_alpha: Interpolation factor between previous and current
-                state (0.0-1.0). Used for smooth movement between updates.
-            scale_x: Horizontal scale factor (1.0 = normal width).
-            scale_y: Vertical scale factor (1.0 = normal height).
-            world_pos: Optional world tile coordinates used by backends that
-                sample lighting directly on GPU.
-            tile_bg: Optional tile background RGB in 0-255 format. Backends that
-                perform actor contrast checks in shader space can use this value.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_actor_shadow(
         self,
         char: str,
@@ -141,7 +202,7 @@ class GraphicsContext(abc.ABC):
         fade_tip: bool = True,
     ) -> None:
         """Draw a projected glyph shadow as a stretched parallelogram quad."""
-        pass
+        raise NotImplementedError
 
     def draw_sprite_shadow(
         self,
@@ -174,26 +235,7 @@ class GraphicsContext(abc.ABC):
         world_pos: WorldTilePos | None = None,
         tile_bg: colors.Color | None = None,
     ) -> None:
-        """Draw a sprite from the dynamic sprite atlas at sub-pixel coordinates.
-
-        Behaves like draw_actor() but samples from the sprite atlas
-        instead of the CP437 glyph atlas.  Backends that don't support the
-        sprite atlas do nothing (no-op default).
-
-        Args:
-            sprite_uv: UV rectangle in the sprite atlas texture.
-            color: Base actor color in 0-255 RGB format.
-            screen_x: Screen X coordinate in pixels (can be fractional).
-            screen_y: Screen Y coordinate in pixels (can be fractional).
-            light_intensity: RGB lighting multipliers in 0.0-1.0 range.
-            interpolation_alpha: Interpolation factor for smooth movement.
-            scale_x: Horizontal scale factor (1.0 = one tile wide).
-            scale_y: Vertical scale factor (1.0 = one tile tall).
-            ground_anchor_y: Tile-relative Y anchor for the sprite's bottom
-                edge (0.0=tile top, 1.0=tile bottom).
-            world_pos: World tile coordinates for GPU lightmap sampling.
-            tile_bg: Tile background color for actor contrast checks.
-        """
+        """Draw a sprite from the dynamic sprite atlas at sub-pixel coordinates."""
         return
 
     def draw_sprite_smooth_batch(
@@ -210,11 +252,7 @@ class GraphicsContext(abc.ABC):
         world_pos: np.ndarray,
         tile_bg: np.ndarray,
     ) -> None:
-        """Batch-draw multiple sprites from the sprite atlas.
-
-        Vectorized version of :meth:`draw_sprite_smooth` for rendering many
-        sprite actors in one call, avoiding per-actor Python overhead.
-        """
+        """Batch-draw multiple sprites from the sprite atlas."""
         return
 
     def draw_sprite_shadow_batch(
@@ -232,22 +270,11 @@ class GraphicsContext(abc.ABC):
         ground_anchor_y: np.ndarray,
         fade_tip: bool = True,
     ) -> None:
-        """Batch-draw many sprite-silhouette shadows with vectorized geometry.
-
-        Vectorized version of :meth:`draw_sprite_shadow` for rendering many
-        actor shadows in one call, avoiding per-actor Python overhead.
-        """
+        """Batch-draw many sprite-silhouette shadows."""
         return
 
     def create_sprite_atlas(self, width: int, height: int) -> Any | None:
-        """Create a dynamic sprite atlas if supported by the backend.
-
-        Args:
-            width: Atlas texture width in pixels (power of two).
-            height: Atlas texture height in pixels (power of two).
-
-        Backends that do not implement sprite-atlas rendering return ``None``.
-        """
+        """Create a dynamic sprite atlas if supported by the backend."""
         return None
 
     def set_sprite_atlas_texture(self, texture: Any | None) -> None:
@@ -255,10 +282,9 @@ class GraphicsContext(abc.ABC):
         return
 
     def set_sun_direction(self, sun_dx: float, sun_dy: float) -> None:
-        """Set per-frame sun direction for sprite directional shading, if supported."""
+        """Set per-frame sun direction for sprite shading, if supported."""
         return
 
-    @abc.abstractmethod
     def draw_actor_outline(
         self,
         char: str,
@@ -269,39 +295,17 @@ class GraphicsContext(abc.ABC):
         scale_x: float = 1.0,
         scale_y: float = 1.0,
     ) -> None:
-        """Draw an outlined version of a character glyph for combat targeting.
+        """Draw an outlined version of a glyph for targeting."""
+        raise NotImplementedError
 
-        Renders a 1-pixel outline tracing the glyph shape. The outline is
-        pre-generated in an outlined tileset and tinted with the specified color.
-
-        Args:
-            char: Character to draw (e.g., 'g' for goblin)
-            screen_x: Screen X coordinate in pixels (can be fractional)
-            screen_y: Screen Y coordinate in pixels (can be fractional)
-            color: RGB color to tint the outline
-            alpha: Opacity of the outline (0.0-1.0), used for shimmer effect
-            scale_x: Horizontal scale factor (1.0 = normal width).
-            scale_y: Vertical scale factor (1.0 = normal height).
-        """
-        pass
-
-    @abc.abstractmethod
     def get_display_scale_factor(self) -> tuple[float, float]:
-        """Get the (x_scale, y_scale) factor for high-DPI displays.
+        """Return display scale factor for high-DPI displays."""
+        raise NotImplementedError
 
-        Returns (1.0, 1.0) for standard DPI displays.
-        Returns higher values (e.g., 2.0, 2.0) for high-DPI displays.
-
-        This is used to properly scale UI elements like cursors on high-DPI displays.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
-        """Draws the active cursor using data from the cursor manager."""
-        pass
+        """Draw the active cursor."""
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def draw_tile_highlight(
         self,
         root_x: float,
@@ -312,10 +316,21 @@ class GraphicsContext(abc.ABC):
         scale_x: float = 1.0,
         scale_y: float = 1.0,
     ) -> None:
-        """Draws a semi-transparent highlight over a single tile."""
-        pass
+        """Draw a filled highlight quad over a tile."""
+        if self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
 
-    @abc.abstractmethod
+        px_x, px_y = self.console_to_screen_coords(root_x, root_y)
+        w, h = self.tile_dimensions
+        scaled_w = w * scale_x
+        scaled_h = h * scale_y
+        uv = self.uv_map[self.SOLID_BLOCK_CHAR]
+        self.screen_renderer.add_quad(
+            px_x, px_y, scaled_w, scaled_h, uv, self._color_to_rgba(color, alpha)
+        )
+
     def render_particles(
         self,
         particle_system: SubTileParticleSystem,
@@ -324,25 +339,47 @@ class GraphicsContext(abc.ABC):
         view_offset: ViewOffset,
         viewport_system: ViewportSystem | None = None,
     ) -> None:
-        """
-        Renders all particles from a SubTileParticleSystem for a specific layer.
+        """Render particles by adding each active particle to the quad buffer."""
+        if self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
 
-        This method is responsible for iterating through the active particles,
-        culling those outside the viewport, calculating their final screen
-        positions, and drawing them.
+        particle_scale = (1.0, 1.0)
+        if viewport_system is not None:
+            particle_scale = viewport_system.get_display_scale_factors()
 
-        Args:
-            particle_system: The data source containing all particle states.
-            layer: The specific layer to render (e.g., UNDER_ACTORS or OVER_ACTORS).
-            viewport_bounds: The currently visible area in the GraphicsContext's
-                             internal tile coordinates
-                             (e.g., world_view.width x world_view.height).
-            view_offset: The offset of the viewport in root console coordinates,
-                         used for calculating final screen positions.
-        """
-        pass
+        for i in range(particle_system.active_count):
+            if particle_system.layers[i] != layer.value:
+                continue
 
-    @abc.abstractmethod
+            coords = convert_particle_to_screen_coords(
+                particle_system,
+                i,
+                viewport_bounds,
+                view_offset,
+                self,
+                viewport_system,
+            )
+            if coords is None:
+                continue
+
+            screen_x, screen_y = coords
+            if not np.isnan(particle_system.flash_intensity[i]):
+                alpha = particle_system.flash_intensity[i]
+            else:
+                alpha = particle_system.lifetimes[i] / particle_system.max_lifetimes[i]
+
+            self._draw_particle_to_buffer(
+                particle_system.chars[i],
+                tuple(particle_system.colors[i]),
+                screen_x,
+                screen_y,
+                Opacity(alpha),
+                scale_x=particle_scale[0],
+                scale_y=particle_scale[1],
+            )
+
     def render_decals(
         self,
         decal_system: DecalSystem,
@@ -351,23 +388,77 @@ class GraphicsContext(abc.ABC):
         viewport_system: ViewportSystem,
         game_time: float,
     ) -> None:
+        """Render decals from world-space sub-tile coordinates."""
+        if self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
+
+        decal_scale_x, decal_scale_y = viewport_system.get_display_scale_factors()
+        for (tile_x, tile_y), decals in decal_system.decals.items():
+            screen_tile_x, screen_tile_y = viewport_system.world_to_screen(
+                tile_x, tile_y
+            )
+
+            if not (
+                -1 <= screen_tile_x < viewport_bounds.width + 1
+                and -1 <= screen_tile_y < viewport_bounds.height + 1
+            ):
+                continue
+
+            for decal in decals:
+                alpha = decal_system.get_alpha(decal, game_time)
+                if alpha <= 0:
+                    continue
+
+                world_screen_x, world_screen_y = viewport_system.world_to_screen_float(
+                    decal.x,
+                    decal.y,
+                )
+                console_x = view_offset[0] + world_screen_x
+                console_y = view_offset[1] + world_screen_y
+                pixel_x, pixel_y = self.console_to_screen_coords(console_x, console_y)
+
+                self._draw_particle_to_buffer(
+                    decal.char,
+                    decal.color,
+                    pixel_x,
+                    pixel_y,
+                    Opacity(alpha),
+                    scale_x=decal_scale_x,
+                    scale_y=decal_scale_y,
+                )
+
+    def _draw_particle_to_buffer(
+        self,
+        char: str,
+        color: colors.Color,
+        screen_x: float,
+        screen_y: float,
+        alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+    ) -> None:
+        """Draw a single particle by adding its quad to the screen buffer.
+
+        Callers must guard against ``screen_renderer`` / ``uv_map`` being None
+        before entering their render loops.
         """
-        Renders all visible decals from a DecalSystem.
+        assert self.screen_renderer is not None
+        assert self.uv_map is not None
 
-        Decals are persistent tile-based visual marks (like blood splatters)
-        that should be rendered after the background but before actors and
-        particles.
+        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
+        w, h = self.tile_dimensions
+        self.screen_renderer.add_quad(
+            screen_x,
+            screen_y,
+            w * scale_x,
+            h * scale_y,
+            uv_coords,
+            self._color_to_rgba(color, alpha),
+        )
 
-        Args:
-            decal_system: The data source containing all decal states.
-            viewport_bounds: The currently visible area in tile coordinates.
-            view_offset: The offset of the viewport in root console coordinates.
-            viewport_system: The viewport system for coordinate conversion.
-            game_time: Current game time for calculating decal alpha (fade-out).
-        """
-        pass
-
-    @abc.abstractmethod
     def apply_environmental_effect(
         self,
         position: tuple[float, float],
@@ -380,47 +471,54 @@ class GraphicsContext(abc.ABC):
         radius_scale_y: float = 1.0,
     ) -> None:
         """Apply a circular environmental effect using cached textures."""
-        pass
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def update_dimensions(self, zoom_only: bool = False) -> None:
-        """Update coordinate converter when window dimensions change."""
-        pass
+        """Update dimension-dependent coordinate state when window changes."""
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
-        """
-        Converts root console coordinates to final, hardware-rendered
-        screen pixel coordinates.
+        """Convert root-console coordinates to final screen pixel coordinates."""
+        if self.letterbox_geometry is None:
+            return (
+                int(console_x * self._tile_dimensions[0]),
+                int(console_y * self._tile_dimensions[1]),
+            )
 
-        This critical transformation step accounts for the current window size,
-        aspect ratio, and any letterboxing or pillarboxing applied by the
-        GraphicsContext.
+        offset_x, offset_y, scaled_w, scaled_h = self.letterbox_geometry
+        screen_x = offset_x + console_x * (scaled_w / self.console_width_tiles)
+        screen_y = offset_y + console_y * (scaled_h / self.console_height_tiles)
+        return (screen_x, screen_y)
 
-        Args:
-            console_x: The x-coordinate on the root console grid. Must be a float
-                    to represent sub-tile positions for smooth rendering.
-            console_y: The y-coordinate on the root console grid. Must be a float.
-
-        Returns:
-            A PixelPos tuple (px_x, px_y) representing the top-left corner of the
-            given console coordinate on the final rendered screen.
-        """
-        pass
-
-    @abc.abstractmethod
     def pixel_to_tile(
-        self, pixel_x: PixelCoord, pixel_y: PixelCoord
+        self,
+        pixel_x: PixelCoord,
+        pixel_y: PixelCoord,
     ) -> RootConsoleTilePos:
-        """Converts final screen pixel coordinates to root console tile coordinates."""
-        pass
+        """Convert screen pixel coordinates to root-console tile coordinates."""
+        if self._coordinate_converter is None:
+            return (
+                int(pixel_x // self._tile_dimensions[0]),
+                int(pixel_y // self._tile_dimensions[1]),
+            )
 
-    @abc.abstractmethod
+        if self.letterbox_geometry is not None:
+            offset_x, offset_y, _, _ = self.letterbox_geometry
+            adjusted_pixel_x = pixel_x - offset_x
+            adjusted_pixel_y = pixel_y - offset_y
+        else:
+            adjusted_pixel_x = pixel_x
+            adjusted_pixel_y = pixel_y
+
+        return self._coordinate_converter.pixel_to_tile(
+            adjusted_pixel_x,
+            adjusted_pixel_y,
+        )
+
     def texture_from_numpy(self, pixels: np.ndarray, transparent: bool = True) -> Any:
-        """Creates a backend-specific texture from a raw NumPy RGBA pixel array."""
-        pass
+        """Create a backend texture from RGBA or RGB numpy pixels."""
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def present_texture(
         self,
         texture: Any,
@@ -429,14 +527,9 @@ class GraphicsContext(abc.ABC):
         width_tiles: float,
         height_tiles: float,
     ) -> None:
-        """Present a texture to the screen at a given tile-coordinate region.
+        """Present a texture in a tile-coordinate destination region."""
+        raise NotImplementedError
 
-        Accepts fractional tile values so pixel-based overlays can preserve
-        their exact dimensions without rounding to the tile grid.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_texture_alpha(
         self,
         texture: Any,
@@ -447,22 +540,9 @@ class GraphicsContext(abc.ABC):
         scale_x: float = 1.0,
         scale_y: float = 1.0,
     ) -> None:
-        """Draw a texture at pixel coordinates with alpha modulation.
+        """Draw a texture at pixel coordinates with alpha modulation."""
+        raise NotImplementedError
 
-        Used for effects like floating text that need sub-tile positioning
-        and fade effects.
-
-        Args:
-            texture: Backend-specific texture object
-            screen_x: X position in screen pixels
-            screen_y: Y position in screen pixels
-            alpha: Overall opacity (0.0 to 1.0)
-            scale_x: Optional horizontal pixel scaling
-            scale_y: Optional vertical pixel scaling
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_background(
         self,
         texture: Any,
@@ -473,21 +553,9 @@ class GraphicsContext(abc.ABC):
         offset_x_pixels: float = 0.0,
         offset_y_pixels: float = 0.0,
     ) -> None:
-        """Draws the main world background texture. This is an immediate draw call
-        that should happen before other rendering.
+        """Draw the main world background texture."""
+        raise NotImplementedError
 
-        Args:
-            texture: The texture to draw.
-            x_tile: X position in tiles.
-            y_tile: Y position in tiles.
-            width_tiles: Width in tiles.
-            height_tiles: Height in tiles.
-            offset_x_pixels: Optional sub-pixel X offset for screen shake.
-            offset_y_pixels: Optional sub-pixel Y offset for screen shake.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_rect_outline(
         self,
         px_x: int,
@@ -497,48 +565,63 @@ class GraphicsContext(abc.ABC):
         color: colors.Color,
         alpha: Opacity,
     ) -> None:
-        """Draws an unfilled rectangle outline directly to the screen."""
-        pass
+        """Draw an unfilled rectangle outline using the screen renderer."""
+        if self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
 
-    @property
-    @abc.abstractmethod
-    def coordinate_converter(self) -> CoordinateConverter:
-        """Provides access to the coordinate converter for converting between
-        console and screen coordinates."""
-        pass
+        color_rgba = self._color_to_rgba(color, alpha)
+        uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
 
-    @abc.abstractmethod
+        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)
+        self.screen_renderer.add_quad(
+            px_x,
+            px_y + px_h - 1,
+            px_w,
+            1,
+            uv_coords,
+            color_rgba,
+        )
+        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)
+        self.screen_renderer.add_quad(
+            px_x + px_w - 1,
+            px_y,
+            1,
+            px_h,
+            uv_coords,
+            color_rgba,
+        )
+
     def create_canvas(self, transparent: bool = True) -> Any:
-        """Creates a backend-appropriate canvas for drawing operations."""
-        pass
+        """Create a backend canvas for drawing operations."""
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def release_texture(self, texture: Any) -> None:
-        """Release a texture's GPU resources.
+        """Release a backend texture and any associated GPU resources."""
+        raise NotImplementedError
 
-        Call this when done with a texture created via texture_from_numpy().
-        Each backend handles cleanup appropriately for its texture type.
-
-        Args:
-            texture: The backend-specific texture object to release.
-        """
-        pass
-
-    @abc.abstractmethod
     def draw_debug_tile_grid(
         self,
         view_origin: WorldTilePos,
         view_size: tuple[int, int],
         offset_pixels: ViewOffset,
     ) -> None:
-        """Render a debug tile grid overlay for the given view bounds.
+        """Render a debug tile grid overlay for the current world view."""
+        raise NotImplementedError
 
-        Args:
-            view_origin: Top-left corner of the view in tile coordinates.
-            view_size: Size of the view in tiles (width, height).
-            offset_pixels: Pixel offset for screen shake effects.
-        """
-        pass
+    def compose_light_overlay_gpu(
+        self,
+        dark_texture: Any,
+        light_texture: Any,
+        lightmap_texture: Any,
+        visible_mask_buffer: np.ndarray,
+        viewport_bounds: Rect,
+        viewport_offset: WorldTilePos,
+        pad_tiles: int,
+    ) -> Any:
+        """Compose light overlay directly on GPU, when backend supports it."""
+        raise NotImplementedError
 
     def set_atmospheric_layer(
         self,
@@ -564,10 +647,7 @@ class GraphicsContext(abc.ABC):
         *,
         affects_foreground: bool = True,
     ) -> None:
-        """Queue or ignore atmospheric layer data.
-
-        Backends that do not support atmospheric rendering intentionally do nothing.
-        """
+        """Queue or ignore atmospheric layer data."""
         return
 
     def set_rain_effect(
@@ -586,43 +666,103 @@ class GraphicsContext(abc.ABC):
         rain_exclusion_mask_buffer: np.ndarray | None,
         pixel_bounds: PixelRect,
     ) -> None:
-        """Queue or ignore rain overlay data.
-
-        Backends that do not support rain rendering intentionally do nothing.
-        """
+        """Queue or ignore rain overlay data."""
         return
 
     def set_noise_seed(self, seed: int) -> None:
-        """Set the noise seed for sub-tile brightness variation.
-
-        Called once per frame before render_glyph_buffer_to_texture() so the
-        fragment shader can produce deterministic per-pixel brightness noise.
-        Backends that do not support this intentionally do nothing.
-        """
+        """Set sub-tile noise seed, if the backend supports it."""
         return
 
     def set_noise_tile_offset(self, offset_x: int, offset_y: int) -> None:
-        """Set the world-space tile offset for stable noise hashing.
-
-        Converts buffer-space tile indices to world coordinates so the noise
-        pattern stays anchored to world tiles regardless of camera scrolling.
-        Backends that do not support this intentionally do nothing.
-        """
+        """Set world-space tile offset for stable noise hashing."""
         return
 
     def cleanup(self) -> None:
-        """Release backend resources before shutdown.
-
-        Backends that do not own explicit resources intentionally do nothing.
-        """
+        """Release backend resources before shutdown."""
         return
 
     @contextmanager
     def shadow_pass(self) -> Iterator[None]:
-        """Context manager that brackets shadow geometry in the vertex buffer.
-
-        The default implementation is a no-op.  Backends override this to record
-        vertex-buffer offsets so that shadow quads can be drawn in a separate
-        render pass with different blend state.
-        """
+        """Bracket shadow geometry generation, if supported by backend."""
         yield
+
+    def _calculate_letterbox_geometry(
+        self,
+        framebuffer_width: int,
+        framebuffer_height: int,
+        display_tile_width: int,
+        display_tile_height: int,
+    ) -> PixelRect:
+        """Calculate integer-scaled letterbox geometry for the framebuffer."""
+        tile_width = max(1, display_tile_width)
+        tile_height = max(1, display_tile_height)
+        console_width, console_height = self._calculate_console_tile_dimensions(
+            framebuffer_width,
+            framebuffer_height,
+            tile_width,
+            tile_height,
+        )
+
+        rendered_width = console_width * tile_width
+        rendered_height = console_height * tile_height
+        offset_x = (framebuffer_width - rendered_width) // 2
+        offset_y = (framebuffer_height - rendered_height) // 2
+
+        return (offset_x, offset_y, rendered_width, rendered_height)
+
+    @staticmethod
+    def _calculate_console_tile_dimensions(
+        framebuffer_width: int,
+        framebuffer_height: int,
+        display_tile_width: int,
+        display_tile_height: int,
+    ) -> tuple[int, int]:
+        """Calculate console dimensions from framebuffer and display tile size."""
+        tile_width = max(1, display_tile_width)
+        tile_height = max(1, display_tile_height)
+        console_width = max(1, framebuffer_width // tile_width)
+        console_height = max(1, framebuffer_height // tile_height)
+        return (console_width, console_height)
+
+    def _setup_coordinate_converter(self) -> None:
+        """Set up coordinate conversion using letterbox geometry when available."""
+        if self.letterbox_geometry is not None:
+            _, _, scaled_w, scaled_h = self.letterbox_geometry
+            self._coordinate_converter = CoordinateConverter(
+                console_width_in_tiles=self.console_width_tiles,
+                console_height_in_tiles=self.console_height_tiles,
+                renderer_scaled_width=scaled_w,
+                renderer_scaled_height=scaled_h,
+            )
+        else:
+            fallback_w, fallback_h = self._coordinate_converter_fallback_scaled_size()
+            self._coordinate_converter = CoordinateConverter(
+                console_width_in_tiles=self.console_width_tiles,
+                console_height_in_tiles=self.console_height_tiles,
+                renderer_scaled_width=fallback_w,
+                renderer_scaled_height=fallback_h,
+            )
+
+    def _coordinate_converter_fallback_scaled_size(self) -> tuple[int, int]:
+        """Return fallback scaled dimensions for converter setup."""
+        return (800, 600)
+
+    def _preprocess_pixels_for_texture(
+        self,
+        pixels: np.ndarray,
+        transparent: bool = True,
+    ) -> np.ndarray:
+        """Normalize RGB/RGBA input into an RGBA pixel array."""
+        if pixels.ndim != 3 or pixels.shape[2] not in (3, 4):
+            raise ValueError("Expected RGBA or RGB image array")
+
+        height, width = pixels.shape[:2]
+        components = pixels.shape[2]
+
+        if components == 3:
+            rgba_pixels = np.zeros((height, width, 4), dtype=pixels.dtype)
+            rgba_pixels[:, :, :3] = pixels
+            rgba_pixels[:, :, 3] = 255 if not transparent else 0
+            pixels = rgba_pixels
+
+        return pixels

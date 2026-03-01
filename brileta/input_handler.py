@@ -271,15 +271,15 @@ class InputHandler:
         screen_x = float(event.position.x * scale_x)
         screen_y = float(event.position.y * scale_y)
 
-        letterbox = getattr(self.graphics, "letterbox_geometry", None)
+        letterbox = self.graphics.letterbox_geometry
         if letterbox is not None:
             offset_x, offset_y, _scaled_w, _scaled_h = letterbox
             screen_x -= float(offset_x)
             screen_y -= float(offset_y)
 
-        converter = getattr(self.graphics, "coordinate_converter", None)
-        tile_w_screen = float(getattr(converter, "tile_width_screen_px", 0.0))
-        tile_h_screen = float(getattr(converter, "tile_height_screen_px", 0.0))
+        converter = self.graphics.coordinate_converter
+        tile_w_screen = float(converter.tile_width_screen_px)
+        tile_h_screen = float(converter.tile_height_screen_px)
         tile_w_internal, tile_h_internal = self.graphics.tile_dimensions
 
         if tile_w_screen <= 0.0 or tile_h_screen <= 0.0:

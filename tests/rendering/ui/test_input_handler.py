@@ -113,6 +113,12 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
 
     renderer = SimpleNamespace(
         tile_dimensions=(1, 1),
+        letterbox_geometry=None,
+        coordinate_converter=SimpleNamespace(
+            tile_width_screen_px=1.0,
+            tile_height_screen_px=1.0,
+            pixel_to_tile=lambda x, y: (x, y),
+        ),
         root_console=SimpleNamespace(width=80, height=50),
         pixel_to_tile=lambda x, y: (x, y),
         get_display_scale_factor=lambda: (1.0, 1.0),
@@ -377,12 +383,17 @@ def test_overlay_mouse_event_conversion_without_letterbox() -> None:
     assert converted.position.y == 60.0
 
 
-def test_overlay_mouse_event_conversion_falls_back_without_converter() -> None:
-    """Missing coordinate converter should fall back to adjusted screen pixels."""
+def test_overlay_mouse_event_conversion_falls_back_with_negative_converter_tile_size() -> (
+    None
+):
+    """Non-positive converter tile dimensions should use pixel-space fallback."""
     ih, _ = make_input_handler()
     ih.graphics.tile_dimensions = (20, 20)
     ih.graphics.letterbox_geometry = (10, 5, 800, 600)
-    ih.graphics.coordinate_converter = None
+    ih.graphics.coordinate_converter = SimpleNamespace(
+        tile_width_screen_px=-1.0,
+        tile_height_screen_px=-2.0,
+    )
     ih.graphics.get_display_scale_factor = lambda: (1.0, 1.0)
 
     event = input_events.MouseMotion(

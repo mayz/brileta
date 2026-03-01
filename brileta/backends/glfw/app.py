@@ -279,7 +279,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
         self, window_size: tuple[int, int], framebuffer_size: tuple[int, int]
     ) -> bool:
         """Return True when transient DPI signals should defer relayout."""
-        locked_scale_raw = getattr(self.graphics, "locked_content_scale", None)
+        locked_scale_raw = self.graphics.locked_content_scale
         if isinstance(locked_scale_raw, int | float):
             locked_scale = max(1, int(locked_scale_raw))
         else:

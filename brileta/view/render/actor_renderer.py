@@ -261,10 +261,7 @@ class ActorRenderer:
         draw_root_y = root_y + (viewport_scale_y - 1.0) * anchor_y[si]
 
         # Vectorized console-to-screen-coords.
-        # letterbox_geometry is not on the GraphicsContext ABC, so one getattr
-        # is needed.  console_width_tiles / console_height_tiles / tile_dimensions
-        # are guaranteed by the ABC and accessed directly.
-        letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
+        letterbox_geometry = self.graphics.letterbox_geometry
         if isinstance(letterbox_geometry, tuple):
             lx, ly, lw, lh = letterbox_geometry
             console_w = self.graphics.console_width_tiles

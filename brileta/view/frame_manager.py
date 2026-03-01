@@ -246,7 +246,7 @@ class FrameManager:
         # region and leave excessive empty black space under compact HUD content.
         native_tile_height = max(
             1,
-            int(getattr(self.graphics, "native_tile_size", tile_dimensions)[1]),
+            int(self.graphics.native_tile_size[1]),
         )
         display_tile_height = max(1, tile_dimensions[1])
         reference_bottom_ui_height_px = reference_bottom_ui_height * native_tile_height
@@ -547,7 +547,7 @@ class FrameManager:
 
         adjusted_x = pixel_x + (frac_px_x - base_px_x)
         adjusted_y = pixel_y + (frac_px_y - base_px_y)
-        letterbox_geometry = getattr(graphics, "letterbox_geometry", None)
+        letterbox_geometry = graphics.letterbox_geometry
         if letterbox_geometry is None:
             root_tile_pos = graphics.pixel_to_tile(adjusted_x, adjusted_y)
             return self.get_world_coords_from_root_tile_coords(root_tile_pos)

@@ -400,7 +400,7 @@ class Controller:
 
             # Phase 2: Compute the atlas size and create it.
             all_sprites = tree_sprites + boulder_sprites
-            gpu_max = getattr(self.graphics, "gpu_max_texture_dimension_2d", 8192)
+            gpu_max = self.graphics.gpu_max_texture_dimension_2d
             atlas_side = compute_atlas_size(all_sprites, gpu_max)
 
             atlas = self.graphics.create_sprite_atlas(atlas_side, atlas_side)

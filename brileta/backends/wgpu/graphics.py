@@ -26,12 +26,10 @@ from brileta.types import (
     WorldTilePos,
 )
 from brileta.util.coordinates import (
-    CoordinateConverter,
     Rect,
 )
 from brileta.util.glyph_buffer import GlyphBuffer
-from brileta.util.tilesets import unicode_to_cp437
-from brileta.view.render.base_graphics import BaseGraphicsContext
+from brileta.view.render.graphics import GraphicsContext
 
 from .atlas_manager import WGPUAtlasManager
 from .atmospheric_renderer import WGPUAtmosphericRenderer
@@ -156,7 +154,7 @@ def _infer_compose_tile_dimensions(
     return (tile_width, tile_height)
 
 
-class WGPUGraphicsContext(BaseGraphicsContext):
+class WGPUGraphicsContext(GraphicsContext):
     """WGPU graphics context implementation."""
 
     _CONTENT_SCALE_RELOCK_STABLE_SAMPLES = 4
@@ -1112,14 +1110,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Queue the outlined texture for batched rendering
         self.ui_renderer.add_textured_quad(self.outlined_atlas_texture, vertices)
 
-    @staticmethod
-    def _cp437_index_for_char(char: str) -> int:
-        """Map a Python character to a CP437 atlas index."""
-        codepoint = ord(char) if char else ord(" ")
-        if 0 <= codepoint <= 255:
-            return codepoint
-        return unicode_to_cp437(codepoint)
-
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get display scale factor for high-DPI displays."""
         try:
@@ -1707,27 +1697,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             texture_format="rgba8unorm",
         )
 
-    def _setup_coordinate_converter(self) -> None:
-        """Set up the coordinate converter with letterbox scaled dimensions."""
-        if self.letterbox_geometry is not None:
-            # Use letterbox scaled dimensions like ModernGL
-            _, _, scaled_w, scaled_h = self.letterbox_geometry
-            self._coordinate_converter = CoordinateConverter(
-                console_width_in_tiles=self.console_width_tiles,
-                console_height_in_tiles=self.console_height_tiles,
-                renderer_scaled_width=scaled_w,
-                renderer_scaled_height=scaled_h,
-            )
-        else:
-            # Fallback to window dimensions
-            width, height = self.window.get_framebuffer_size()
-            self._coordinate_converter = CoordinateConverter(
-                console_width_in_tiles=self.console_width_tiles,
-                console_height_in_tiles=self.console_height_tiles,
-                renderer_scaled_width=width,
-                renderer_scaled_height=height,
-            )
-
     def _calculate_letterbox_geometry_and_tiles(self) -> None:
         """Calculate integer-scaled letterbox geometry and dynamic console size.
 
@@ -1804,6 +1773,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             display_tile_height,
         )
         self._setup_coordinate_converter()
+
+    def _coordinate_converter_fallback_scaled_size(self) -> tuple[int, int]:
+        """Use current framebuffer dimensions when letterbox geometry is unavailable."""
+        width, height = self.window.get_framebuffer_size()
+        return (int(width), int(height))
 
     def _observe_content_scale(
         self,

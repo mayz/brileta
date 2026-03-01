@@ -331,10 +331,7 @@ class ShadowRenderer:
         console_y: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Vectorized ``GraphicsContext.console_to_screen_coords``."""
-        # letterbox_geometry is not on the GraphicsContext ABC, so we use
-        # getattr once.  The remaining attributes (tile_dimensions,
-        # console_width_tiles, console_height_tiles) are guaranteed by the ABC.
-        letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
+        letterbox_geometry = self.graphics.letterbox_geometry
         if not isinstance(letterbox_geometry, tuple):
             tile_w, tile_h = self.graphics.tile_dimensions
             return (
