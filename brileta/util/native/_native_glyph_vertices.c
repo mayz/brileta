@@ -33,6 +33,7 @@ typedef struct {
     uint8_t split_fg[4];         /* Foreground RGBA for below-split portion  */
     float split_noise;           /* Noise amplitude for below-split portion  */
     uint8_t split_noise_pattern; /* Noise pattern for below-split portion    */
+    uint32_t wear_pack;          /* Packed roof wear data (material|condition|edge) */
 } GlyphCell;
 #pragma pack(pop)
 
@@ -54,12 +55,13 @@ typedef struct {
     float split_fg_color[4];      /* Foreground RGBA as 0.0-1.0               */
     float split_noise_amplitude;  /* Noise amplitude for below-split portion  */
     uint32_t split_noise_pattern; /* Noise pattern for below-split portion    */
+    uint32_t wear_pack;           /* Packed roof wear data              */
 } GlyphVertex;
 
 /* Compile-time size checks against the numpy dtype sizes. */
-_Static_assert(sizeof(GlyphCell) == 51, "GlyphCell size must match GLYPH_DTYPE (51 bytes)");
-_Static_assert(sizeof(GlyphVertex) == 156,
-               "GlyphVertex size must match TEXTURE_VERTEX_DTYPE (156 bytes)");
+_Static_assert(sizeof(GlyphCell) == 55, "GlyphCell size must match GLYPH_DTYPE (55 bytes)");
+_Static_assert(sizeof(GlyphVertex) == 160,
+               "GlyphVertex size must match TEXTURE_VERTEX_DTYPE (160 bytes)");
 
 /* ── Core encoding loop (GIL-free) ── */
 
@@ -166,6 +168,7 @@ static int encode_glyph_vertices(const GlyphCell *glyph_data, /* (w, h) C-contig
             memcpy(v[0].split_fg_color, s_fg, sizeof(s_fg));
             v[0].split_noise_amplitude = s_noise;
             v[0].split_noise_pattern = s_npat;
+            v[0].wear_pack = cell->wear_pack;
 
             /* Copy shared fields to vertices 1-5 (position/UV patched below). */
             memcpy(&v[1], &v[0], sizeof(GlyphVertex));

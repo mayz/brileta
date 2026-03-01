@@ -102,6 +102,10 @@ class Building:
             perspective, in tile units.  Randomized per building.
         chimney_shadow_height: Physical height above the roof for shadow
             computation, in tile units.  Coupled to projected height.
+        condition: Weathering/degradation state from 0.0 (pristine) to 1.0
+            (dilapidated). Set during generation and used by the roof
+            substitution renderer to paint material-specific weathering
+            effects (stain patches, moss, rust, etc.).
     """
 
     id: int
@@ -117,6 +121,13 @@ class Building:
     chimney_type: ChimneyType = ChimneyType.STONE
     chimney_projected_height: float = CHIMNEY_MIN_PROJECTED_HEIGHT
     chimney_shadow_height: float = CHIMNEY_MIN_SHADOW_HEIGHT
+    condition: float = 0.0
+    """Weathering/degradation state from 0.0 (pristine) to 1.0 (dilapidated).
+
+    Set during generation based on building type. Drives visual weathering
+    on roofs: stain patches, moss/lichen, thinning, rust. Higher values
+    produce more patches, darker patches, wider coverage.
+    """
 
     # Cached perspective values - computed once in __post_init__ from
     # floor_count (which is immutable after building generation).
@@ -129,6 +140,7 @@ class Building:
     def __post_init__(self) -> None:
         """Pre-compute perspective values from floor_count."""
         self.flat_section_ratio = saturate(float(self.flat_section_ratio))
+        self.condition = saturate(float(self.condition))
 
         pno = min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
         self.perspective_north_offset = pno

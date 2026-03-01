@@ -45,6 +45,8 @@ TEXTURE_VERTEX_DTYPE = np.dtype(
         ("split_fg_color", "4f4"),  # Foreground RGBA for below-split portion
         ("split_noise_amplitude", "f4"),  # Noise amplitude for below-split portion
         ("split_noise_pattern", "u4"),  # Noise pattern for below-split portion
+        # Packed roof wear data for per-pixel shader effects.
+        ("wear_pack", "u4"),
     ]
 )
 
@@ -159,6 +161,7 @@ class WGPUGlyphRenderer:
             "split_fg_color": dtype_fields["split_fg_color"][1],
             "split_noise_amplitude": dtype_fields["split_noise_amplitude"][1],
             "split_noise_pattern": dtype_fields["split_noise_pattern"][1],
+            "wear_pack": dtype_fields["wear_pack"][1],
         }
         vertex_layout = [
             {
@@ -238,6 +241,11 @@ class WGPUGlyphRenderer:
                         "format": "uint32",
                         "offset": offsets["split_noise_pattern"],
                         "shader_location": 16,
+                    },
+                    {
+                        "format": "uint32",
+                        "offset": offsets["wear_pack"],
+                        "shader_location": 17,
                     },
                 ],
             }

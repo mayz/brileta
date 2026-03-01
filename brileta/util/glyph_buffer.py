@@ -28,6 +28,10 @@ GLYPH_DTYPE = np.dtype(
         ("split_fg", "4B"),  # Foreground RGBA for the below-split portion
         ("split_noise", np.float32),  # Noise amplitude for the below-split portion
         ("split_noise_pattern", np.uint8),  # Noise pattern for the below-split portion
+        # Packed wear/aging data for per-pixel shader effects on roofs.
+        # Bits 0-7: material (0=none, 1=thatch, 2=shingle, 3=tin),
+        # bits 8-15: condition (0-255), bits 16-23: edge proximity (0-255).
+        ("wear_pack", np.uint32),
     ]
 )
 
@@ -70,6 +74,7 @@ class GlyphBuffer:
         self.data["split_fg"] = (0, 0, 0, 0)
         self.data["split_noise"] = 0.0
         self.data["split_noise_pattern"] = 0
+        self.data["wear_pack"] = 0
 
     def put_char(
         self,
@@ -96,6 +101,7 @@ class GlyphBuffer:
             self.data["split_fg"][x, y] = (0, 0, 0, 0)
             self.data["split_noise"][x, y] = 0.0
             self.data["split_noise_pattern"][x, y] = 0
+            self.data["wear_pack"][x, y] = 0
 
     def print(
         self,

@@ -57,6 +57,9 @@ class BuildingTemplate:
         floor_count: Number of floors (future multi-story support).
         has_chimney: Whether buildings of this type get a chimney. The
             position is randomized within the interior at creation time.
+        condition_range: (min, max) range for the building's weathering
+            condition. Sampled uniformly per building during generation.
+            0.0 = pristine, 1.0 = dilapidated.
     """
 
     name: str
@@ -77,6 +80,7 @@ class BuildingTemplate:
     low_slope_flat_section_buckets: int = 4
     floor_count: int = 1
     has_chimney: bool = False
+    condition_range: tuple[float, float] = (0.0, 0.5)
 
     def generate_size(self, rng: RNG) -> TileDimensions:
         """Generate random dimensions within the template's constraints.
@@ -175,6 +179,14 @@ class BuildingTemplate:
         elif roof_profile == "flat":
             flat_section_ratio = 1.0
 
+        # Building condition (weathering/degradation) sampled uniformly
+        # within the template's configured range.
+        min_cond, max_cond = self.condition_range
+        if rng is None or min_cond >= max_cond:
+            condition = (min_cond + max_cond) * 0.5
+        else:
+            condition = rng.uniform(min_cond, max_cond)
+
         return Building(
             id=building_id,
             building_type=self.building_type,
@@ -186,6 +198,7 @@ class BuildingTemplate:
             chimney_offset=chimney_offset,
             chimney_projected_height=chimney_projected_height,
             chimney_shadow_height=chimney_shadow_height,
+            condition=condition,
         )
 
 
@@ -206,6 +219,7 @@ SMALL_HOUSE_TEMPLATE = BuildingTemplate(
     weight=2.0,  # Common - many small houses in a settlement
     roof_style="thatch",
     has_chimney=True,
+    condition_range=(0.0, 0.65),  # Wide range - some pristine, some worn
 )
 
 MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
@@ -221,6 +235,7 @@ MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
     weight=2.0,  # Less common than small houses
     roof_style="thatch",
     has_chimney=True,
+    condition_range=(0.0, 0.55),  # Some pristine, slightly better than small houses
 )
 
 # =============================================================================
@@ -241,6 +256,7 @@ GENERAL_STORE_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,  # Only one general store per town
     roof_style="shingle",
     roof_profile_family=("gable", "low_slope"),
+    condition_range=(0.0, 0.45),  # Commercial - kept presentable, some pristine
 )
 
 BUTCHER_TEMPLATE = BuildingTemplate(
@@ -257,6 +273,7 @@ BUTCHER_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,
     roof_style="shingle",
     roof_profile_family=("gable", "low_slope"),
+    condition_range=(0.0, 0.5),  # Commercial - moderate upkeep
 )
 
 BLACKSMITH_TEMPLATE = BuildingTemplate(
@@ -274,6 +291,7 @@ BLACKSMITH_TEMPLATE = BuildingTemplate(
     roof_style="tin",
     roof_profile_family=("gable", "low_slope"),
     has_chimney=True,
+    condition_range=(0.05, 0.65),  # Industrial - heat and soot, some newer
 )
 
 # =============================================================================
@@ -294,6 +312,7 @@ TAVERN_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,  # One tavern per settlement
     roof_style="shingle",
     has_chimney=True,
+    condition_range=(0.0, 0.4),  # Well-maintained public building
 )
 
 INN_TEMPLATE = BuildingTemplate(
@@ -310,6 +329,7 @@ INN_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,  # One inn per settlement
     roof_style="shingle",
     has_chimney=True,
+    condition_range=(0.0, 0.4),  # Well-maintained public building
 )
 
 LIBRARY_TEMPLATE = BuildingTemplate(
@@ -326,6 +346,7 @@ LIBRARY_TEMPLATE = BuildingTemplate(
     max_per_settlement=1,
     roof_style="shingle",
     roof_profile_family=("gable", "low_slope"),
+    condition_range=(0.0, 0.3),  # Best-maintained building in the settlement
 )
 
 # =============================================================================
@@ -346,6 +367,7 @@ SHOP_TEMPLATE = BuildingTemplate(
     max_per_settlement=3,  # Can have a few different shops
     roof_style="shingle",
     roof_profile_family=("gable", "low_slope"),
+    condition_range=(0.0, 0.45),  # Commercial - kept reasonably presentable
 )
 
 WAREHOUSE_TEMPLATE = BuildingTemplate(
@@ -362,6 +384,7 @@ WAREHOUSE_TEMPLATE = BuildingTemplate(
     max_per_settlement=2,
     roof_style="tin",
     roof_profile_family=("low_slope", "flat"),
+    condition_range=(0.0, 0.6),  # Utilitarian - function over appearance
 )
 
 

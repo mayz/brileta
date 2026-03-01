@@ -86,6 +86,20 @@ def _adjust_color_brightness(
     return np.clip(colors.astype(np.int16) + offset, 0, 255).astype(np.uint8)
 
 
+# Wear material IDs packed into wear_pack bits 0-7.
+_WEAR_MAT_THATCH: int = 1
+_WEAR_MAT_SHINGLE: int = 2
+_WEAR_MAT_TIN: int = 3
+_WEAR_MATERIAL_MAP: dict[str, int] = {
+    "thatch": _WEAR_MAT_THATCH,
+    "shingle": _WEAR_MAT_SHINGLE,
+    "tin": _WEAR_MAT_TIN,
+}
+# How many tiles inward from the roof perimeter the edge proximity fades to
+# zero.  Controls how far moss, lichen, and edge-concentrated wear extend.
+_WEAR_EDGE_FADE_TILES: float = 3.0
+
+
 def _apply_noise_pattern_overrides(
     tile_ids: np.ndarray, roof_result: _RoofSubstitutionResult
 ) -> np.ndarray:
@@ -131,6 +145,7 @@ class _RoofSubstitutionResult(NamedTuple):
     split_fg: np.ndarray | None = None  # (N, 4) uint8 RGBA
     split_noise: np.ndarray | None = None  # float32
     split_noise_pattern: np.ndarray | None = None  # uint8
+    wear_pack: np.ndarray | None = None  # (N,) uint32
 
 
 @dataclass(slots=True)
@@ -157,6 +172,8 @@ class _RoofStamp:
     split_fg: np.ndarray  # (w, ext_h, 4) uint8 RGBA
     split_noise: np.ndarray  # (w, ext_h) float32
     split_noise_pattern: np.ndarray  # (w, ext_h) uint8
+    # Packed weathering data for the fragment shader (material|condition|edge).
+    wear_pack: np.ndarray  # (w, ext_h) uint32
 
 
 @dataclass(slots=True)
@@ -601,6 +618,7 @@ class WorldView(View):
                 )
             ),
             round(building.chimney_projected_height, 3),
+            round(float(building.condition), 3),
         )
 
     @staticmethod
@@ -1515,6 +1533,7 @@ class WorldView(View):
                 split_fg=np.zeros((width, ext_h, 4), dtype=np.uint8),
                 split_noise=np.zeros((width, ext_h), dtype=np.float32),
                 split_noise_pattern=np.zeros((width, ext_h), dtype=np.uint8),
+                wear_pack=np.zeros((width, ext_h), dtype=np.uint32),
             )
 
         if width <= 0 or ext_h <= 0:
@@ -1866,6 +1885,43 @@ class WorldView(View):
                 # produces a smooth projected shadow identical in style to
                 # tree/actor shadows.
 
+        # --- Wear pack: encode per-tile data for the fragment shader ---
+        # Pack material ID, building condition, edge proximity, and a
+        # per-building hash into a uint32 per roof tile.  The fragment
+        # shader uses this to apply per-pixel FBM-noise wear effects
+        # (stains, moss, rust, etc.) that flow across tile boundaries.
+        # Bits 0-7: material, 8-15: condition, 16-23: edge, 24-31: hash.
+        wear_pack_arr = np.zeros((width, ext_h), dtype=np.uint32)
+        material_id = _WEAR_MATERIAL_MAP.get(building.roof_style, 0)
+        if material_id > 0 and building.condition > 0.001 and np.any(all_roof):
+            cond_byte = min(255, int(building.condition * 255.0))
+            # Per-building hash for independent sub-effect variation.
+            # Derived from footprint position so it's deterministic.
+            bld_hash = (
+                (int(fp.x1) * 73856093) ^ (int(fp.y1) * 19349663) ^ 0x5A3E7F1D
+            ) & 0xFF
+
+            # Edge proximity: 1.0 at roof perimeter, fading to 0.0 inward.
+            roof_wx = world_x_grid[all_roof]
+            roof_wy = world_y_grid[all_roof]
+            dist_w = (roof_wx - fp.x1).astype(np.float32)
+            dist_e = (fp.x2 - 1 - roof_wx).astype(np.float32)
+            dist_n = (roof_wy - visual_roof_y_min).astype(np.float32)
+            dist_s = (visual_roof_y_max - roof_wy).astype(np.float32)
+            edge_dist = np.minimum(
+                np.minimum(dist_w, dist_e), np.minimum(dist_n, dist_s)
+            )
+            edge_byte = np.minimum(
+                255,
+                (np.clip(1.0 - edge_dist / _WEAR_EDGE_FADE_TILES, 0.0, 1.0) * 255.0),
+            ).astype(np.uint32)
+            wear_pack_arr[all_roof] = (
+                np.uint32(material_id)
+                | (np.uint32(cond_byte) << np.uint32(8))
+                | (edge_byte << np.uint32(16))
+                | (np.uint32(bld_hash) << np.uint32(24))
+            )
+
         return _RoofStamp(
             chars,
             fg_rgb,
@@ -1880,6 +1936,7 @@ class WorldView(View):
             split_fg_arr,
             split_noise_arr,
             split_noise_pattern_arr,
+            wear_pack_arr,
         )
 
     def _render_chimney_shadows(
@@ -2238,6 +2295,7 @@ class WorldView(View):
         split_noise_pattern_arr: np.ndarray | None = None
         noise_pattern_arr: np.ndarray | None = None
         noise_pattern_mask_arr: np.ndarray | None = None
+        wear_pack_arr: np.ndarray | None = None
 
         for building in viewport_buildings:
             if building.id == player_building_id:
@@ -2367,6 +2425,16 @@ class WorldView(View):
                 split_noise_arr[split_idx] = stamp.split_noise[sx, sy]
                 split_noise_pattern_arr[split_idx] = stamp.split_noise_pattern[sx, sy]
 
+            # Copy wear_pack from stamp for shader-based weathering.
+            has_weather = stamp.wear_pack[stamp_x, stamp_y] > 0
+            if np.any(has_weather):
+                if wear_pack_arr is None:
+                    wear_pack_arr = np.zeros(n, dtype=np.uint32)
+                w_idx = target_indices[has_weather]
+                wx = stamp_x[has_weather]
+                wy = stamp_y[has_weather]
+                wear_pack_arr[w_idx] = stamp.wear_pack[wx, wy]
+
         if not any_roof_applied or effective_tile_ids is None:
             return no_change
         return _RoofSubstitutionResult(
@@ -2378,6 +2446,7 @@ class WorldView(View):
             split_fg_arr,
             split_noise_arr,
             split_noise_pattern_arr,
+            wear_pack_arr,
         )
 
     @record_time_live_variable("time.render.map_unlit_ms")
@@ -2527,6 +2596,12 @@ class WorldView(View):
             buf["split_noise"][final_buf_x, final_buf_y] = roof_result.split_noise
             buf["split_noise_pattern"][final_buf_x, final_buf_y] = (
                 roof_result.split_noise_pattern
+            )
+
+        # Write packed weathering data for per-pixel shader effects.
+        if roof_result.wear_pack is not None:
+            self.map_glyph_buffer.data["wear_pack"][final_buf_x, final_buf_y] = (
+                roof_result.wear_pack
             )
 
     def _get_directional_light(self) -> DirectionalLight | None:
@@ -3181,6 +3256,12 @@ class WorldView(View):
                         lbuf["split_noise_pattern"][final_buf_x, final_buf_y] = (
                             lit_roof_result.split_noise_pattern
                         )
+
+                    # Write packed weathering data for per-pixel shader effects.
+                    if lit_roof_result.wear_pack is not None:
+                        light_source_buffer.data["wear_pack"][
+                            final_buf_x, final_buf_y
+                        ] = lit_roof_result.wear_pack
 
                     self._light_cache.buf_x = final_buf_x
                     self._light_cache.buf_y = final_buf_y

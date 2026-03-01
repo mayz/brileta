@@ -25,6 +25,7 @@ struct VertexInput {
     @location(14) in_split_fg_color: vec4<f32>,
     @location(15) in_split_noise_amplitude: f32,
     @location(16) in_split_noise_pattern: u32,
+    @location(17) in_wear_pack: u32,
 }
 
 // Vertex output / Fragment input structure
@@ -48,6 +49,7 @@ struct VertexOutput {
     @location(14) v_split_fg_color: vec4<f32>,
     @location(15) v_split_noise_amplitude: f32,
     @location(16) @interpolate(flat) v_split_noise_pattern: u32,
+    @location(17) @interpolate(flat) v_wear_pack: u32,
 }
 
 // Uniform buffer: texture size + noise parameters + world-space tile offset.
@@ -77,6 +79,249 @@ fn pcg_hash(input: u32) -> u32 {
     var state = input * 747796405u + 2891336453u;
     let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
+}
+
+// ---------------------------------------------------------------------------
+// Smooth value noise for organic wear effects.
+// Uses PCG-hashed grid corners with Hermite interpolation for sub-pixel
+// continuity. Coordinates are in tile units so patches are zoom-stable.
+// ---------------------------------------------------------------------------
+
+// Hash a 2D integer grid point to a float in [0, 1).
+fn hash_2d(ix: i32, iy: i32, seed: u32) -> f32 {
+    let h = pcg_hash(bitcast<u32>(ix) ^ (bitcast<u32>(iy) * 2654435761u) ^ seed);
+    return f32(h & 0xFFFFu) / 65536.0;
+}
+
+// Value noise with Hermite smoothstep interpolation between grid corners.
+fn value_noise(x: f32, y: f32, seed: u32) -> f32 {
+    let ix = i32(floor(x));
+    let iy = i32(floor(y));
+    let fx = fract(x);
+    let fy = fract(y);
+    // Smooth interpolation weights (3t^2 - 2t^3).
+    let sx = fx * fx * (3.0 - 2.0 * fx);
+    let sy = fy * fy * (3.0 - 2.0 * fy);
+
+    let n00 = hash_2d(ix, iy, seed);
+    let n10 = hash_2d(ix + 1, iy, seed);
+    let n01 = hash_2d(ix, iy + 1, seed);
+    let n11 = hash_2d(ix + 1, iy + 1, seed);
+
+    return mix(mix(n00, n10, sx), mix(n01, n11, sx), sy);
+}
+
+// Fractal Brownian Motion: layered octaves of value noise for organic shapes.
+// Returns a value roughly in [0, 1).
+fn fbm(x: f32, y: f32, octaves: u32, seed: u32) -> f32 {
+    var value = 0.0;
+    var amp = 0.5;
+    var px = x;
+    var py = y;
+    for (var i = 0u; i < octaves; i++) {
+        value += amp * value_noise(px, py, seed + i * 37u);
+        amp *= 0.5;
+        // Scale up with slight offset to break grid alignment.
+        px = px * 2.03 + 1.7;
+        py = py * 2.03 + 1.3;
+    }
+    return value;
+}
+
+// ---------------------------------------------------------------------------
+// Material-specific wear functions.
+// Each takes the current fragment color, continuous world-space tile
+// coordinates, the building condition (0-1), and edge proximity (0-1,
+// 1.0 = at roof perimeter).
+// ---------------------------------------------------------------------------
+
+// Wear material IDs (packed in wear_pack bits 0-7).
+const WEAR_MAT_THATCH: u32 = 1u;
+const WEAR_MAT_SHINGLE: u32 = 2u;
+const WEAR_MAT_TIN: u32 = 3u;
+
+// Derive a per-building random weight for one sub-effect.
+// Returns a value in [0, 1] where 0 = effect absent, 1 = full strength.
+// Different salt values produce independent weights per building.
+fn effect_weight(bld_hash: u32, salt: u32) -> f32 {
+    let h = pcg_hash(bld_hash ^ salt);
+    return f32(h & 0xFFFFu) / 65535.0;
+}
+
+// Thatch: water staining (dark brown patches), moss/lichen at edges (green),
+// thinning (lighter worn patches), general age darkening.
+// Each sub-effect is independently scaled by a per-building random weight
+// so different buildings show different combinations of wear.
+fn wear_thatch(
+    color: vec4<f32>, wtx: f32, wty: f32,
+    condition: f32, edge_prox: f32, seed: u32, bld_hash: u32,
+) -> vec4<f32> {
+    var c = color.rgb;
+
+    // Per-building weights: each sub-effect may be strong on one building
+    // and absent on another, creating variety across the town.
+    let w_stain = effect_weight(bld_hash, 0x1111u);
+    let w_moss = effect_weight(bld_hash, 0x2222u);
+    let w_thin = effect_weight(bld_hash, 0x3333u);
+
+    // Water staining: irregular dark patches with warm brown shift.
+    // Higher threshold so staining forms distinct patches, not half the roof.
+    if (w_stain > 0.25) {
+        let eff = (w_stain - 0.25) / 0.75;
+        let stain = fbm(wtx * 0.4, wty * 0.4, 4u, seed);
+        let stain_thresh = 0.4 + condition * 0.15;
+        let stain_str = smoothstep(stain_thresh - 0.06, stain_thresh + 0.06, stain);
+        let stain_int = stain_str * condition * 0.18 * eff;
+        c -= vec3<f32>(stain_int * 0.5, stain_int * 0.85, stain_int * 0.9);
+    }
+
+    // Moss/lichen concentrated at roof edges where moisture collects.
+    if (w_moss > 0.3) {
+        let eff = (w_moss - 0.3) / 0.7;
+        let moss = fbm(wtx * 0.55 + 7.3, wty * 0.55 + 3.7, 3u, seed ^ 0xA1B2u);
+        let moss_thresh = 0.35 + (1.0 - edge_prox) * 0.4;
+        let moss_str = smoothstep(moss_thresh - 0.06, moss_thresh + 0.06, moss);
+        let moss_int = moss_str * condition * 0.14 * edge_prox * eff;
+        c += vec3<f32>(-moss_int, moss_int * 0.6, -moss_int * 0.5);
+    }
+
+    // Thinning: lighter patches where straw is worn through.
+    if (w_thin > 0.4) {
+        let eff = (w_thin - 0.4) / 0.6;
+        let thin = fbm(wtx * 0.35 + 13.1, wty * 0.35 + 9.2, 3u, seed ^ 0xC3D4u);
+        let thin_thresh = 0.55 - condition * 0.15;
+        let thin_str = smoothstep(thin_thresh - 0.05, thin_thresh + 0.05, thin);
+        let thin_int = thin_str * condition * 0.12 * eff;
+        c += vec3<f32>(thin_int);
+    }
+
+    // General age darkening (always present, but mild).
+    c -= vec3<f32>(condition * 0.04);
+
+    return vec4<f32>(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+}
+
+// Shingle/slate: lichen patches at edges (grey-green), water runoff streaks
+// (vertical dark bands), cracked tile gaps, color fading.
+fn wear_shingle(
+    color: vec4<f32>, wtx: f32, wty: f32,
+    condition: f32, edge_prox: f32, seed: u32, bld_hash: u32,
+) -> vec4<f32> {
+    var c = color.rgb;
+
+    let w_lichen = effect_weight(bld_hash, 0x4444u);
+    let w_streak = effect_weight(bld_hash, 0x5555u);
+    let w_crack = effect_weight(bld_hash, 0x6666u);
+
+    // Lichen: grey-green spots concentrated at edges.
+    if (w_lichen > 0.3) {
+        let eff = (w_lichen - 0.3) / 0.7;
+        let lichen = fbm(wtx * 0.5 + 2.1, wty * 0.5 + 5.8, 3u, seed);
+        let lichen_thresh = 0.4 + (1.0 - edge_prox) * 0.4;
+        let lichen_str = smoothstep(lichen_thresh - 0.05, lichen_thresh + 0.05, lichen);
+        let lichen_int = lichen_str * condition * 0.13 * (0.3 + 0.7 * edge_prox) * eff;
+        c += vec3<f32>(-lichen_int * 0.3, lichen_int * 0.4, -lichen_int * 0.15);
+    }
+
+    // Water runoff streaks: stretched vertically for a dripping appearance.
+    if (w_streak > 0.25) {
+        let eff = (w_streak - 0.25) / 0.75;
+        let streak = fbm(wtx * 0.3 + 8.4, wty * 0.7 + 1.2, 3u, seed ^ 0xE5F6u);
+        let streak_thresh = 0.4 + condition * 0.15;
+        let streak_str = smoothstep(streak_thresh - 0.06, streak_thresh + 0.06, streak);
+        let streak_int = streak_str * condition * 0.13 * eff;
+        c -= vec3<f32>(streak_int);
+    }
+
+    // Cracked/slipped tile gaps: very sparse high-frequency dark spots.
+    if (w_crack > 0.5) {
+        let eff = (w_crack - 0.5) / 0.5;
+        let crack = value_noise(wtx * 1.2 + 4.5, wty * 1.2 + 6.7, seed ^ 0x1234u);
+        let crack_str = smoothstep(0.88 - condition * 0.08, 0.92, crack);
+        let crack_int = crack_str * condition * 0.25 * eff;
+        c -= vec3<f32>(crack_int);
+    }
+
+    // Color fading: desaturation toward neutral grey (always present, mild).
+    let lum = dot(c, vec3<f32>(0.299, 0.587, 0.114));
+    let fade = condition * 0.08;
+    c = mix(c, vec3<f32>(lum), fade);
+
+    return vec4<f32>(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+}
+
+// Tin/metal: rust patches (orange-brown), patina/verdigris (green-grey tint
+// on non-rusted areas), general oxidation darkening.
+fn wear_tin(
+    color: vec4<f32>, wtx: f32, wty: f32,
+    condition: f32, edge_prox: f32, seed: u32, bld_hash: u32,
+) -> vec4<f32> {
+    var c = color.rgb;
+
+    let w_rust = effect_weight(bld_hash, 0x7777u);
+    let w_patina = effect_weight(bld_hash, 0x8888u);
+    let w_oxide = effect_weight(bld_hash, 0x9999u);
+
+    // Rust has two layers, mimicking real corrugated tin:
+    // 1) Surface rust - warm, saturated orange-brown oxidation.
+    // 2) Deep rust swirls - dark reddish-brown concentrated patches where water
+    //    pooled and rust ate deep. Still clearly warm-toned, not grey/black.
+    //
+    // Key design: condition controls COVERAGE (threshold) not OPACITY.
+    // A low-condition building has fewer, smaller rust spots that are still
+    // fully opaque. This prevents the "transparent wash" problem where
+    // multiplying by condition makes rust invisible at typical values.
+    var rust_str = 0.0;
+    if (w_rust > 0.2) {
+        let eff = (w_rust - 0.2) / 0.8;
+
+        // Layer 1: Surface rust. Warm orange patches against clean metal.
+        // Condition raises the threshold, shrinking coverage at low condition.
+        let surf_noise = fbm(wtx * 0.3 + 3.2, wty * 0.3 + 7.9, 3u, seed);
+        let surf_thresh = 0.65 - condition * 0.35;
+        let surf_str = smoothstep(surf_thresh - 0.04, surf_thresh + 0.08, surf_noise) * eff;
+        // Saturated orange-brown: clearly reads as rust against grey tin.
+        let surf_color = vec3<f32>(0.65, 0.30, 0.08);
+        c = mix(c, surf_color, surf_str * 0.55);
+
+        // Layer 2: Deep rust swirls. Separate noise at different scale/offset.
+        // Low frequency for large dramatic shapes with detail breakup.
+        let deep_broad = fbm(wtx * 0.18 + 9.7, wty * 0.18 + 2.1, 4u, seed ^ 0xDEADu);
+        let deep_detail = fbm(wtx * 0.6 + 5.5, wty * 0.6 + 13.3, 3u, seed ^ 0xBEEFu);
+        let deep_combined = deep_broad * 0.65 + deep_detail * 0.35;
+        // Condition widens coverage: high condition = more deep rust patches.
+        let deep_thresh = 0.7 - condition * 0.35;
+        let deep_str = smoothstep(deep_thresh - 0.03, deep_thresh + 0.06, deep_combined) * eff;
+        // Dark reddish-brown, warm enough to clearly read as rust.
+        let deep_color = vec3<f32>(0.28, 0.10, 0.04);
+        c = mix(c, deep_color, deep_str * 0.7);
+
+        rust_str = max(surf_str, deep_str);
+    }
+
+    // Patina/verdigris on non-rusted areas: subtle green-grey shift.
+    if (w_patina > 0.35) {
+        let eff = (w_patina - 0.35) / 0.65;
+        let patina = fbm(wtx * 0.35 + 11.5, wty * 0.35 + 2.3, 3u, seed ^ 0x7890u);
+        let patina_thresh = 0.4 + condition * 0.2;
+        let anti_rust = 1.0 - rust_str;
+        let patina_str = smoothstep(patina_thresh - 0.06, patina_thresh + 0.06, patina);
+        let patina_int = patina_str * anti_rust * condition * 0.1 * eff;
+        c += vec3<f32>(-patina_int * 0.4, patina_int * 0.3, patina_int * 0.15);
+    }
+
+    // General oxidation darkening - reduced on rusted areas so rust color
+    // stays warm and saturated rather than being desaturated back to grey.
+    if (w_oxide > 0.3) {
+        let eff = (w_oxide - 0.3) / 0.7;
+        let anti_rust = 1.0 - rust_str * 0.8;
+        let oxide = fbm(wtx * 0.3 + 6.1, wty * 0.3 + 0.4, 3u, seed ^ 0xABCDu);
+        let oxide_str = smoothstep(0.35, 0.65, oxide);
+        let oxide_int = oxide_str * condition * 0.07 * eff * anti_rust;
+        c -= vec3<f32>(oxide_int);
+    }
+
+    return vec4<f32>(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
 }
 
 // Cardinal edge direction index order (matches WorldView transport schema):
@@ -123,6 +368,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_split_fg_color = input.in_split_fg_color;
     output.v_split_noise_amplitude = input.in_split_noise_amplitude;
     output.v_split_noise_pattern = input.in_split_noise_pattern;
+    output.v_wear_pack = input.in_wear_pack;
     // Pass raw pixel position through for sub-tile coordinate computation
     output.v_pixel_pos = input.in_vert;
 
@@ -502,6 +748,36 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 clamp(color.b + offset, 0.0, 1.0),
                 color.a,
             );
+        }
+    }
+
+    // --- Per-pixel wear effects for roof surfaces ---
+    // Driven by the packed wear_pack value set by the CPU roof substitution.
+    // Uses FBM noise in continuous tile-space coordinates for organic patches
+    // that flow across tile boundaries without grid alignment.
+    let w_pack = input.v_wear_pack;
+    if (w_pack != 0u) {
+        let w_material = w_pack & 0xFFu;
+        let w_condition = f32((w_pack >> 8u) & 0xFFu) / 255.0;
+        let w_edge_prox = f32((w_pack >> 16u) & 0xFFu) / 255.0;
+        let w_bld_hash = (w_pack >> 24u) & 0xFFu;
+
+        // Continuous tile-space coordinates: stable across zoom levels.
+        let wtx = f32(world_tile_x) + local_x / tile_w;
+        let wty = f32(world_tile_y) + local_y / tile_h;
+        let w_seed = uniforms.u_noise_seed ^ 0x57A10000u;
+
+        switch w_material {
+            case WEAR_MAT_THATCH: {
+                color = wear_thatch(color, wtx, wty, w_condition, w_edge_prox, w_seed, w_bld_hash);
+            }
+            case WEAR_MAT_SHINGLE: {
+                color = wear_shingle(color, wtx, wty, w_condition, w_edge_prox, w_seed, w_bld_hash);
+            }
+            case WEAR_MAT_TIN: {
+                color = wear_tin(color, wtx, wty, w_condition, w_edge_prox, w_seed, w_bld_hash);
+            }
+            default: {}
         }
     }
 
