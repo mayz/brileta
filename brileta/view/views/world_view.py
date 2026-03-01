@@ -65,6 +65,7 @@ _EDGE_BLEND_CARDINAL_DIRECTIONS: tuple[Direction, ...] = (
 _ROOF_TILE_IDS: tuple[int, ...] = (
     int(tile_types.TileTypeID.ROOF_THATCH),
     int(tile_types.TileTypeID.ROOF_SHINGLE),
+    int(tile_types.TileTypeID.ROOF_TIN),
 )
 _EDGE_BLEND_HARD_EDGE_NEIGHBOR_TILE_IDS: tuple[int, ...] = (
     int(tile_types.TileTypeID.WALL),
@@ -84,6 +85,28 @@ def _adjust_color_brightness(
     return np.clip(colors.astype(np.int16) + offset, 0, 255).astype(np.uint8)
 
 
+def _apply_noise_pattern_overrides(
+    tile_ids: np.ndarray, roof_result: _RoofSubstitutionResult
+) -> np.ndarray:
+    """Return sub-tile pattern IDs, applying per-building roof overrides.
+
+    Roof materials like tin and shingle need orientation-dependent patterns
+    (e.g., corrugation running down-slope).  The roof substitution pass stores
+    these overrides in *roof_result*; this helper merges them onto the
+    default tile-type pattern map.
+    """
+    pattern = tile_types.get_sub_tile_pattern_map(tile_ids)
+    if (
+        roof_result.noise_pattern is not None
+        and roof_result.noise_pattern_mask is not None
+        and np.any(roof_result.noise_pattern_mask)
+    ):
+        mask = roof_result.noise_pattern_mask
+        pattern = pattern.copy()
+        pattern[mask] = roof_result.noise_pattern[mask]
+    return pattern
+
+
 _LIGHT_OVERLAY_MASK_HIDDEN = np.uint8(0)
 _LIGHT_OVERLAY_MASK_ROOF_OPAQUE = np.uint8(128)
 _LIGHT_OVERLAY_MASK_ROOF_SUNLIT = np.uint8(192)
@@ -100,6 +123,8 @@ class _RoofSubstitutionResult(NamedTuple):
     """Result of roof substitution including split data for perspective offset."""
 
     effective_tile_ids: np.ndarray
+    noise_pattern: np.ndarray | None = None  # (N,) uint8 override values
+    noise_pattern_mask: np.ndarray | None = None  # (N,) bool
     split_y: np.ndarray | None = None
     split_bg: np.ndarray | None = None  # (N, 4) uint8 RGBA
     split_fg: np.ndarray | None = None  # (N, 4) uint8 RGBA
@@ -123,6 +148,8 @@ class _RoofStamp:
     tile_ids: np.ndarray  # (w, ext_h) int32
     draw_mask: np.ndarray  # (w, ext_h) bool
     north_overhang: int  # Rows extending above fp.y1 for perspective shift
+    noise_pattern: np.ndarray  # (w, ext_h) uint8
+    noise_pattern_mask: np.ndarray  # (w, ext_h) bool
     # Sub-tile split data for perspective boundary tiles.
     split_y: np.ndarray  # (w, ext_h) float32
     split_bg: np.ndarray  # (w, ext_h, 4) uint8 RGBA
@@ -560,6 +587,8 @@ class WorldView(View):
             int(building.footprint.x2),
             int(building.footprint.y2),
             str(building.roof_style),
+            str(building.roof_profile),
+            round(float(building.flat_section_ratio), 3),
             int(building.floor_count),
             tuple((int(x), int(y)) for x, y in building.door_positions),
             (
@@ -1478,6 +1507,8 @@ class WorldView(View):
                 tile_ids=z2.copy(),
                 draw_mask=np.zeros((width, ext_h), dtype=np.bool_),
                 north_overhang=N,
+                noise_pattern=np.zeros((width, ext_h), dtype=np.uint8),
+                noise_pattern_mask=np.zeros((width, ext_h), dtype=np.bool_),
                 split_y=np.zeros((width, ext_h), dtype=np.float32),
                 split_bg=np.zeros((width, ext_h, 4), dtype=np.uint8),
                 split_fg=np.zeros((width, ext_h, 4), dtype=np.uint8),
@@ -1493,6 +1524,8 @@ class WorldView(View):
         fg_rgb = np.zeros((width, ext_h, 3), dtype=np.uint8)
         bg_rgb = np.zeros((width, ext_h, 3), dtype=np.uint8)
         tile_ids = np.zeros((width, ext_h), dtype=np.int32)
+        noise_pattern_arr = np.zeros((width, ext_h), dtype=np.uint8)
+        noise_pattern_mask_arr = np.zeros((width, ext_h), dtype=np.bool_)
         split_y_arr = np.zeros((width, ext_h), dtype=np.float32)
         split_bg_arr = np.zeros((width, ext_h, 4), dtype=np.uint8)
         split_fg_arr = np.zeros((width, ext_h, 4), dtype=np.uint8)
@@ -1567,10 +1600,15 @@ class WorldView(View):
             building.roof_style, tile_types.TileTypeID.ROOF_THATCH
         )
         roof_tile_id_int = int(roof_tile_id)
+        roof_noise_pattern = tile_types.get_roof_noise_pattern(
+            roof_tile_id, building.ridge_axis
+        )
 
         # Roof and split tiles both use the roof tile_id for lighting lookups.
         roof_and_split = full_roof | south_split_mask | chimney_mask
         tile_ids[roof_and_split] = roof_tile_id_int
+        noise_pattern_arr[roof_and_split] = np.uint8(roof_noise_pattern)
+        noise_pattern_mask_arr[roof_and_split] = True
 
         all_roof = full_roof | south_split_mask
         if np.any(all_roof):
@@ -1620,29 +1658,74 @@ class WorldView(View):
 
             if building.ridge_axis == "horizontal":
                 shifted_center = (fp.y1 + fp.y2) / 2.0 - N
-                ridge_offset = ry + 0.5 - shifted_center
+                ridge_axis_offset = ry + 0.5 - shifted_center
                 sun_component = sun_dy
             else:
                 center = (fp.x1 + fp.x2) / 2.0
-                ridge_offset = rx + 0.5 - center
+                ridge_axis_offset = rx + 0.5 - center
                 sun_component = sun_dx
 
-            is_ridge = np.abs(ridge_offset) < 0.6
-            is_sun_side = (ridge_offset * sun_component) > 0
+            abs_ridge_offset = np.abs(ridge_axis_offset)
+            is_ridge = abs_ridge_offset < 0.6
+            is_sun_side = (ridge_axis_offset * sun_component) > 0
             intensity = abs(sun_component)
-            ridge_brightness = np.where(
-                is_ridge,
-                np.int16(round(6 * intensity)),
-                np.where(
-                    is_sun_side,
-                    np.int16(round(18 * intensity)),
-                    np.int16(round(-18 * intensity)),
-                ),
-            )
+            roof_profile = building.roof_profile
 
-            ridge_offset = ridge_brightness[:, np.newaxis]
-            bg_rgb[all_roof] = _adjust_color_brightness(bg_rgb[all_roof], ridge_offset)
-            fg_rgb[all_roof] = _adjust_color_brightness(fg_rgb[all_roof], ridge_offset)
+            # Corrugated tin still has a pitched profile, but its smoother,
+            # manufactured surface reads better with slightly gentler ridge
+            # contrast than thatch/shingle.
+            if roof_tile_id_int == int(tile_types.TileTypeID.ROOF_TIN):
+                ridge_peak = 4
+                slope_peak = 12
+            else:
+                ridge_peak = 6
+                slope_peak = 18
+
+            if roof_profile == "flat":
+                ridge_brightness = np.full(
+                    rx.shape, np.int16(round(2 * intensity)), dtype=np.int16
+                )
+            elif roof_profile == "low_slope":
+                short_axis_span = (
+                    int(fp.height)
+                    if building.ridge_axis == "horizontal"
+                    else int(fp.width)
+                )
+                flat_half_span = max(
+                    0.6, short_axis_span * float(building.flat_section_ratio) * 0.5
+                )
+                in_flat_section = abs_ridge_offset < flat_half_span
+                # round() returns int in Python 3; peaks stay integer-valued for
+                # stable per-tile brightness offsets.
+                low_slope_peak = max(4, round(slope_peak * 0.6))
+                flat_peak = max(1, round(ridge_peak * 0.5))
+                ridge_brightness = np.where(
+                    in_flat_section,
+                    np.int16(round(flat_peak * intensity)),
+                    np.where(
+                        is_sun_side,
+                        np.int16(round(low_slope_peak * intensity)),
+                        np.int16(round(-low_slope_peak * intensity)),
+                    ),
+                )
+            else:
+                ridge_brightness = np.where(
+                    is_ridge,
+                    np.int16(round(ridge_peak * intensity)),
+                    np.where(
+                        is_sun_side,
+                        np.int16(round(slope_peak * intensity)),
+                        np.int16(round(-slope_peak * intensity)),
+                    ),
+                )
+
+            ridge_brightness_offset = ridge_brightness[:, np.newaxis]
+            bg_rgb[all_roof] = _adjust_color_brightness(
+                bg_rgb[all_roof], ridge_brightness_offset
+            )
+            fg_rgb[all_roof] = _adjust_color_brightness(
+                fg_rgb[all_roof], ridge_brightness_offset
+            )
 
         # --- Eave darkening on shifted roof perimeter ---
         # The visual roof spans from the first full roof row to the south
@@ -1789,6 +1872,8 @@ class WorldView(View):
             tile_ids,
             draw_mask,
             N,
+            noise_pattern_arr,
+            noise_pattern_mask_arr,
             split_y_arr,
             split_bg_arr,
             split_fg_arr,
@@ -2089,7 +2174,7 @@ class WorldView(View):
         Returns effective tile IDs and optional per-tile split data arrays.
         """
         n = len(tile_ids)
-        no_change = _RoofSubstitutionResult(tile_ids)
+        no_change = _RoofSubstitutionResult(tile_ids, None, None)
         if n == 0:
             return no_change
 
@@ -2150,6 +2235,8 @@ class WorldView(View):
         split_fg_arr: np.ndarray | None = None
         split_noise_arr: np.ndarray | None = None
         split_noise_pattern_arr: np.ndarray | None = None
+        noise_pattern_arr: np.ndarray | None = None
+        noise_pattern_mask_arr: np.ndarray | None = None
 
         for building in viewport_buildings:
             if building.id == player_building_id:
@@ -2242,6 +2329,20 @@ class WorldView(View):
             fg_rgb[target_indices] = stamp.fg_rgb[stamp_x, stamp_y]
             bg_rgb[target_indices] = stamp.bg_rgb[stamp_x, stamp_y]
 
+            # Override sub-tile pattern IDs for roofs that require per-building
+            # orientation (e.g., tin corrugation following roof slope direction).
+            has_pattern_override = stamp.noise_pattern_mask[stamp_x, stamp_y]
+            if np.any(has_pattern_override):
+                if noise_pattern_arr is None:
+                    noise_pattern_arr = np.zeros(n, dtype=np.uint8)
+                    noise_pattern_mask_arr = np.zeros(n, dtype=np.bool_)
+                assert noise_pattern_mask_arr is not None
+                override_idx = target_indices[has_pattern_override]
+                ox = stamp_x[has_pattern_override]
+                oy = stamp_y[has_pattern_override]
+                noise_pattern_arr[override_idx] = stamp.noise_pattern[ox, oy]
+                noise_pattern_mask_arr[override_idx] = True
+
             # Copy split data from stamp for perspective boundary tiles.
             has_split = stamp.split_y[stamp_x, stamp_y] > 0
             if np.any(has_split):
@@ -2269,6 +2370,8 @@ class WorldView(View):
             return no_change
         return _RoofSubstitutionResult(
             effective_tile_ids,
+            noise_pattern_arr,
+            noise_pattern_mask_arr,
             split_y_arr,
             split_bg_arr,
             split_fg_arr,
@@ -2400,7 +2503,7 @@ class WorldView(View):
             tile_types.get_sub_tile_jitter_map(effective_unlit_tile_ids)
         )
         self.map_glyph_buffer.data["noise_pattern"][final_buf_x, final_buf_y] = (
-            tile_types.get_sub_tile_pattern_map(effective_unlit_tile_ids)
+            _apply_noise_pattern_overrides(effective_unlit_tile_ids, roof_result)
         )
         # Edge transitions create organic feathering between terrain types.
         # At low zoom, tiles are too small for the blending to be visible.
@@ -3054,7 +3157,9 @@ class WorldView(View):
                     )
                     light_source_buffer.data["noise_pattern"][
                         final_buf_x, final_buf_y
-                    ] = tile_types.get_sub_tile_pattern_map(effective_world_tile_ids)
+                    ] = _apply_noise_pattern_overrides(
+                        effective_world_tile_ids, lit_roof_result
+                    )
                     if self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD:
                         self._apply_tile_edge_transition_data(
                             glyph_buffer=light_source_buffer,

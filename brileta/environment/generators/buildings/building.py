@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 from brileta.types import FootprintOffset, WorldTilePos
 from brileta.util.coordinates import Rect
@@ -51,6 +52,10 @@ class ChimneyType(Enum):
     STONE = "stone"
 
 
+RoofProfile = Literal["gable", "low_slope", "flat"]
+RoofStyle = Literal["thatch", "shingle", "tin"]
+
+
 @dataclass
 class Room:
     """A single room within a building.
@@ -83,7 +88,12 @@ class Building:
         footprint: The outer bounds of the building including walls.
         rooms: List of Room objects inside this building.
         door_positions: List of (x, y) positions where doors are placed.
-        roof_style: Visual roof style used by render-time roof substitution.
+        roof_style: Visual roof style used by render-time roof substitution
+            (e.g., "thatch", "shingle", "tin").
+        roof_profile: Roof shape profile ("gable", "low_slope", or "flat").
+        flat_section_ratio: Fraction of the short roof axis treated as a flat
+            center section for "low_slope" profiles. Ignored for "gable" and
+            "flat" profiles.
         floor_count: Number of floors (stored for future multi-story phases).
         chimney_offset: Optional (dx, dy) offset from footprint top-left where a
             chimney sits. None means no chimney on this building.
@@ -99,7 +109,9 @@ class Building:
     footprint: Rect
     rooms: list[Room] = field(default_factory=list)
     door_positions: list[WorldTilePos] = field(default_factory=list)
-    roof_style: str = "thatch"
+    roof_style: RoofStyle = "thatch"
+    roof_profile: RoofProfile = "gable"
+    flat_section_ratio: float = 0.0
     floor_count: int = 1
     chimney_offset: FootprintOffset | None = None
     chimney_type: ChimneyType = ChimneyType.STONE
@@ -116,6 +128,8 @@ class Building:
 
     def __post_init__(self) -> None:
         """Pre-compute perspective values from floor_count."""
+        self.flat_section_ratio = max(0.0, min(1.0, float(self.flat_section_ratio)))
+
         pno = min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
         self.perspective_north_offset = pno
         self.perspective_ceil_offset = math.ceil(pno)

@@ -12,10 +12,12 @@ import random
 
 from brileta.environment.generators.buildings import Building, BuildingTemplate, Room
 from brileta.environment.generators.buildings.templates import (
+    BLACKSMITH_TEMPLATE,
     MEDIUM_HOUSE_TEMPLATE,
     SHOP_TEMPLATE,
     SMALL_HOUSE_TEMPLATE,
     TAVERN_TEMPLATE,
+    WAREHOUSE_TEMPLATE,
     get_default_templates,
 )
 from brileta.util.coordinates import Rect
@@ -43,7 +45,29 @@ class TestBuildingRoomDataclasses:
         assert building.rooms == []
         assert building.door_positions == []
         assert building.roof_style == "thatch"
+        assert building.roof_profile == "gable"
+        assert building.flat_section_ratio == 0.0
         assert building.floor_count == 1
+
+    def test_building_clamps_flat_section_ratio_to_valid_range(self) -> None:
+        """flat_section_ratio is clamped into [0.0, 1.0] during post-init."""
+        low = Building(
+            id=11,
+            building_type="warehouse",
+            footprint=Rect(0, 0, 12, 10),
+            roof_profile="low_slope",
+            flat_section_ratio=-0.25,
+        )
+        high = Building(
+            id=12,
+            building_type="warehouse",
+            footprint=Rect(0, 0, 12, 10),
+            roof_profile="low_slope",
+            flat_section_ratio=1.75,
+        )
+
+        assert low.flat_section_ratio == 0.0
+        assert high.flat_section_ratio == 1.0
 
     def test_building_with_rooms_and_doors(self) -> None:
         """Building can be created with rooms and door positions."""
@@ -313,7 +337,62 @@ class TestBuildingTemplate:
         assert building.rooms == []
         assert building.door_positions == []
         assert building.roof_style == "shingle"
+        assert building.roof_profile == "gable"
+        assert building.flat_section_ratio == 0.0
         assert building.floor_count == 3
+
+    def test_template_profile_family_selects_low_slope_and_quantizes_flat_section(
+        self,
+    ) -> None:
+        """Low-slope profiles should use deterministic quantized flat-section ratios."""
+        template = BuildingTemplate(
+            name="test_workshop",
+            building_type="workshop",
+            min_width=12,
+            max_width=16,
+            min_height=10,
+            max_height=14,
+            roof_style="tin",
+            roof_profile_family=("low_slope",),
+            low_slope_flat_section_range=(0.45, 0.75),
+            low_slope_flat_section_buckets=4,
+        )
+        rng = random.Random(1)
+
+        building = template.create_building(
+            building_id=5,
+            position=(20, 30),
+            width=14,
+            height=12,
+            rng=rng,
+        )
+
+        assert building.roof_profile == "low_slope"
+        # 4 buckets in [0.45, 0.75] => {0.45, 0.55, 0.65, 0.75}
+        assert round(building.flat_section_ratio, 2) in {0.45, 0.55, 0.65, 0.75}
+
+    def test_template_profile_family_can_select_flat_profile(self) -> None:
+        """Flat profile should set full flat-section ratio."""
+        template = BuildingTemplate(
+            name="test_warehouse",
+            building_type="warehouse",
+            min_width=12,
+            max_width=16,
+            min_height=10,
+            max_height=14,
+            roof_style="tin",
+            roof_profile_family=("flat",),
+        )
+
+        building = template.create_building(
+            building_id=6,
+            position=(10, 10),
+            width=14,
+            height=12,
+        )
+
+        assert building.roof_profile == "flat"
+        assert building.flat_section_ratio == 1.0
 
     def test_template_door_placement_on_perimeter(self) -> None:
         """Doors placed on building perimeter (validated in layer tests)."""
@@ -382,6 +461,7 @@ class TestDefaultTemplates:
         assert "shop_floor" in template.room_types
         assert "back_room" in template.room_types
         assert template.roof_style == "shingle"
+        assert template.roof_profile_family == ("gable", "low_slope")
 
     def test_tavern_template(self) -> None:
         """Tavern is larger with multiple rooms."""
@@ -399,6 +479,13 @@ class TestDefaultTemplates:
         assert template.room_count_max == 6
         assert "main_hall" in template.room_types
         assert template.roof_style == "shingle"
+
+    def test_industrial_templates_use_tin_roofs(self) -> None:
+        """Blacksmiths and warehouses use tin roofs with industrial profiles."""
+        assert BLACKSMITH_TEMPLATE.roof_style == "tin"
+        assert WAREHOUSE_TEMPLATE.roof_style == "tin"
+        assert BLACKSMITH_TEMPLATE.roof_profile_family == ("gable", "low_slope")
+        assert WAREHOUSE_TEMPLATE.roof_profile_family == ("low_slope", "flat")
 
     def test_get_default_templates(self) -> None:
         """get_default_templates returns expected templates."""

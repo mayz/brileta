@@ -321,7 +321,12 @@ class TestTileEdgeTransitionMetadata:
 
     @pytest.mark.parametrize(
         "architectural_tile_id",
-        [TileTypeID.WALL, TileTypeID.ROOF_THATCH, TileTypeID.ROOF_SHINGLE],
+        [
+            TileTypeID.WALL,
+            TileTypeID.ROOF_THATCH,
+            TileTypeID.ROOF_SHINGLE,
+            TileTypeID.ROOF_TIN,
+        ],
     )
     def test_suppresses_blending_toward_architectural_neighbors_only(
         self, architectural_tile_id: TileTypeID
@@ -357,10 +362,14 @@ class TestTileEdgeTransitionMetadata:
         # Grass should still own its natural boundary with dirt.
         assert grass_mask_before & east_bit
 
-        # Rigid architectural tiles (wall/shingle roof) force grass to own the
+        # Rigid architectural tiles (wall/shingle/tin roof) force grass to own the
         # boundary pre-suppression. Thatch may own instead when tuned to higher
         # edge_blend so the roof can render a soft self-darkened edge.
-        if architectural_tile_id in (TileTypeID.WALL, TileTypeID.ROOF_SHINGLE):
+        if architectural_tile_id in (
+            TileTypeID.WALL,
+            TileTypeID.ROOF_SHINGLE,
+            TileTypeID.ROOF_TIN,
+        ):
             assert grass_mask_before & west_bit
 
         _suppress_edge_blend_toward_hard_edges(
@@ -1117,6 +1126,329 @@ class TestRoofSubstitution:
         # West tile (sun-facing) should be brighter than east tile (shadow).
         assert np.all(bg_rgb[0] > bg_rgb[1])
         assert np.all(fg_rgb[0] > fg_rgb[1])
+
+    def test_tin_ridge_shading_uses_lower_contrast_than_thatch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Tin roofs should use softer ridge/slope shading deltas."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: SimpleNamespace(
+            direction=SimpleNamespace(x=0.0, y=-1.0),
+            elevation_degrees=45.0,
+        )
+
+        building = Building(
+            id=4,
+            building_type="warehouse",
+            footprint=Rect(10, 10, 10, 8),
+            roof_style="tin",
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        # Matches the horizontal-ridge test sampling: sun-facing, ridge, shadow.
+        world_x = np.array([12, 12, 12], dtype=np.int32)
+        world_y = np.array([10, 12, 15], dtype=np.int32)
+        tile_ids = np.full(3, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(3, ord("."), dtype=np.int32)
+        fg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+        np.testing.assert_array_equal(
+            result.effective_tile_ids,
+            np.array(
+                [TileTypeID.ROOF_TIN, TileTypeID.ROOF_TIN, TileTypeID.ROOF_TIN],
+                dtype=np.uint8,
+            ),
+        )
+
+        roof_dark = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_TIN)["dark"]
+        base_bg = np.asarray(roof_dark["bg"], dtype=np.int16)
+        base_fg = np.asarray(roof_dark["fg"], dtype=np.int16)
+        roof_tint = np.asarray(
+            WorldView._building_roof_color_offset(building, decoration_seed=0),
+            dtype=np.int16,
+        )
+
+        # Tin uses lower contrast than default roofs: +12 / +4 / -12
+        np.testing.assert_array_equal(
+            bg_rgb[0], np.clip(base_bg + roof_tint + 12, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[1], np.clip(base_bg + roof_tint + 4, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[2], np.clip(base_bg + roof_tint - 12, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[0], np.clip(base_fg + 12, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[1], np.clip(base_fg + 4, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[2], np.clip(base_fg - 12, 0, 255).astype(np.uint8)
+        )
+
+    @pytest.mark.parametrize(
+        ("footprint", "expected_pattern"),
+        [
+            (
+                Rect(10, 10, 10, 8),  # horizontal ridge -> ribs run vertically
+                tile_types.SUB_TILE_PATTERN_VERTICAL_RIBS,
+            ),
+            (
+                Rect(10, 10, 8, 10),  # vertical ridge -> ribs run horizontally
+                tile_types.SUB_TILE_PATTERN_HORIZONTAL_RIBS,
+            ),
+        ],
+    )
+    def test_tin_corrugation_orientation_follows_ridge_axis(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        footprint: Rect,
+        expected_pattern: int,
+    ) -> None:
+        """Tin corrugation should run down-slope (perpendicular to ridge line)."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=8,
+            building_type="warehouse",
+            footprint=footprint,
+            roof_style="tin",
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        world_x = np.array([footprint.x1 + 2], dtype=np.int32)
+        world_y = np.array([footprint.y1 + 2], dtype=np.int32)
+        tile_ids = np.array([TileTypeID.FLOOR], dtype=np.uint8)
+        chars = np.array([ord(".")], dtype=np.int32)
+        fg_rgb = np.full((1, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((1, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        assert result.noise_pattern is not None
+        assert result.noise_pattern_mask is not None
+        assert bool(result.noise_pattern_mask[0]) is True
+        assert int(result.noise_pattern[0]) == expected_pattern
+
+    @pytest.mark.parametrize(
+        ("footprint", "expected_pattern"),
+        [
+            (
+                Rect(10, 10, 10, 8),  # horizontal ridge -> horizontal courses
+                tile_types.SUB_TILE_PATTERN_STAGGERED_ROWS,
+            ),
+            (
+                Rect(10, 10, 8, 10),  # vertical ridge -> vertical courses
+                tile_types.SUB_TILE_PATTERN_STAGGERED_COLUMNS,
+            ),
+        ],
+    )
+    def test_shingle_course_orientation_follows_ridge_axis(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        footprint: Rect,
+        expected_pattern: int,
+    ) -> None:
+        """Shingle courses should run parallel to the ridge line."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=10,
+            building_type="shop",
+            footprint=footprint,
+            roof_style="shingle",
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        world_x = np.array([footprint.x1 + 2], dtype=np.int32)
+        world_y = np.array([footprint.y1 + 2], dtype=np.int32)
+        tile_ids = np.array([TileTypeID.FLOOR], dtype=np.uint8)
+        chars = np.array([ord(".")], dtype=np.int32)
+        fg_rgb = np.full((1, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((1, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        assert result.noise_pattern is not None
+        assert result.noise_pattern_mask is not None
+        assert bool(result.noise_pattern_mask[0]) is True
+        assert int(result.noise_pattern[0]) == expected_pattern
+
+    def test_low_slope_profile_blends_flat_center_and_sloped_sides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Low-slope roofs use flat-center brightness with gentler outer slopes."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: SimpleNamespace(
+            direction=SimpleNamespace(x=0.0, y=-1.0),
+            elevation_degrees=45.0,
+        )
+        # Wide footprint -> horizontal ridge. Low-slope tin roof with a
+        # medium flat center band.
+        building = Building(
+            id=13,
+            building_type="warehouse",
+            footprint=Rect(10, 10, 12, 10),
+            roof_style="tin",
+            roof_profile="low_slope",
+            flat_section_ratio=0.5,
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        # y=10 -> sun-facing outer slope, y=13 -> flat center, y=17 -> shadow slope.
+        world_x = np.array([13, 13, 13], dtype=np.int32)
+        world_y = np.array([10, 13, 17], dtype=np.int32)
+        tile_ids = np.full(3, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(3, ord("."), dtype=np.int32)
+        fg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+        np.testing.assert_array_equal(
+            result.effective_tile_ids,
+            np.array(
+                [TileTypeID.ROOF_TIN, TileTypeID.ROOF_TIN, TileTypeID.ROOF_TIN],
+                dtype=np.uint8,
+            ),
+        )
+
+        roof_dark = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_TIN)["dark"]
+        base_bg = np.asarray(roof_dark["bg"], dtype=np.int16)
+        base_fg = np.asarray(roof_dark["fg"], dtype=np.int16)
+        roof_tint = np.asarray(
+            WorldView._building_roof_color_offset(building, decoration_seed=0),
+            dtype=np.int16,
+        )
+
+        # low_slope tin: slope_peak=12 -> low_slope_peak=7, flat_peak=2.
+        np.testing.assert_array_equal(
+            bg_rgb[0], np.clip(base_bg + roof_tint + 7, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[1], np.clip(base_bg + roof_tint + 2, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[2], np.clip(base_bg + roof_tint - 7, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[0], np.clip(base_fg + 7, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[1], np.clip(base_fg + 2, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[2], np.clip(base_fg - 7, 0, 255).astype(np.uint8)
+        )
+
+    def test_flat_roof_profile_disables_two_sided_ridge_split(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Flat roofs should not brighten one slope and darken the opposite slope."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: SimpleNamespace(
+            direction=SimpleNamespace(x=0.0, y=-1.0),
+            elevation_degrees=45.0,
+        )
+        building = Building(
+            id=9,
+            building_type="warehouse",
+            footprint=Rect(10, 10, 10, 8),
+            roof_style="tin",
+            roof_profile="flat",
+            flat_section_ratio=1.0,
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        world_x = np.array([12, 12], dtype=np.int32)
+        world_y = np.array([10, 15], dtype=np.int32)
+        tile_ids = np.full(2, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(2, ord("."), dtype=np.int32)
+        fg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+
+        view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        np.testing.assert_array_equal(fg_rgb[0], fg_rgb[1])
+        np.testing.assert_array_equal(bg_rgb[0], bg_rgb[1])
 
     def test_tags_occluded_actors_under_opaque_roof(self) -> None:
         """Actors under opaque roofs are tagged as occluded, not removed."""

@@ -63,6 +63,15 @@ struct Uniforms {
 @group(0) @binding(1) var u_atlas: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
 
+// Sub-tile pattern IDs (must match brileta.environment.tile_types).
+const SUB_TILE_PATTERN_BLOCKS_2X2: u32 = 0u;
+const SUB_TILE_PATTERN_FINE_GRAIN: u32 = 1u;
+const SUB_TILE_PATTERN_STAGGERED_ROWS: u32 = 2u;
+const SUB_TILE_PATTERN_DIAGONAL_BANDS: u32 = 3u;
+const SUB_TILE_PATTERN_HORIZONTAL_RIBS: u32 = 4u;
+const SUB_TILE_PATTERN_VERTICAL_RIBS: u32 = 5u;
+const SUB_TILE_PATTERN_STAGGERED_COLUMNS: u32 = 6u;
+
 // PCG hash - fast, high-quality 32-bit hash for spatial noise.
 fn pcg_hash(input: u32) -> u32 {
     var state = input * 747796405u + 2891336453u;
@@ -368,51 +377,118 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let pattern = noise_pattern;
         var sub_cell: u32;
         var pattern_offset = 0.0;
+        var use_tile_hash = true;
 
-        if (pattern == 0u) {
-            // 2x2 blocks (backward-compatible default behavior)
-            let sub_x = u32(floor(local_x / (tile_w * 0.5)));
-            let sub_y = u32(floor(local_y / (tile_h * 0.5)));
-            sub_cell = sub_x + sub_y * 2u;
-        } else if (pattern == 1u) {
-            // Fine-grain organic noise: hash from world pixel position so the
-            // noise field is continuous across tile boundaries (no visible grid).
-            // ~2px cells produce per-pixel-scale variation that reads as fuzzy
-            // organic texture (straw/fur).
-            let world_px_x = world_tile_x * u32(tile_w) + u32(local_x);
-            let world_px_y = world_tile_y * u32(tile_h) + u32(local_y);
-            let fine_x = world_px_x / 3u;  // ~3px wide (horizontal straw direction)
-            let fine_y = world_px_y / 4u;  // ~4px tall
-            let fine_hash_input = fine_x ^ (fine_y * 2654435761u) ^ uniforms.u_noise_seed;
-            let fine_h = pcg_hash(fine_hash_input);
-            let fine_noise_01 = f32(fine_h & 0xFFFFu) / 65535.0;
-            let fine_offset = (fine_noise_01 * 2.0 - 1.0) * noise_amplitude;
-            color = vec4<f32>(
-                clamp(color.r + fine_offset, 0.0, 1.0),
-                clamp(color.g + fine_offset, 0.0, 1.0),
-                clamp(color.b + fine_offset, 0.0, 1.0),
-                color.a,
-            );
-        } else if (pattern == 2u) {
-            // Staggered rows: 3 rows x 2 cols, odd rows shifted by half tile width
-            let row_h = tile_h / 3.0;
-            let row = u32(clamp(floor(local_y / row_h), 0.0, 2.0));
-            let offset = select(0.0, tile_w * 0.5, (row % 2u) == 1u);
-            let col = u32(floor((local_x + offset) / (tile_w * 0.5))) % 2u;
-            sub_cell = col + row * 2u;
-            let cell_y = local_y - f32(row) * row_h;
-            let cell_y_01 = clamp(cell_y / max(row_h, 1.0), 0.0, 1.0);
-            // Exposed shingle edges catch slightly more light than the tucked bottom.
-            pattern_offset = mix(0.015, -0.015, cell_y_01);
-        } else {
-            // Diagonal bands along x + y
-            let band = u32(floor((local_x + local_y) / (tile_w * 0.4)));
-            sub_cell = band % 6u;
+        switch pattern {
+            case SUB_TILE_PATTERN_BLOCKS_2X2: {
+                // 2x2 blocks (backward-compatible default behavior)
+                let sub_x = u32(floor(local_x / (tile_w * 0.5)));
+                let sub_y = u32(floor(local_y / (tile_h * 0.5)));
+                sub_cell = sub_x + sub_y * 2u;
+            }
+            case SUB_TILE_PATTERN_FINE_GRAIN: {
+                // Fine-grain organic noise: hash from world pixel position so the
+                // noise field is continuous across tile boundaries (no visible grid).
+                // ~2px cells produce per-pixel-scale variation that reads as fuzzy
+                // organic texture (straw/fur).
+                let world_px_x = world_tile_x * u32(tile_w) + u32(local_x);
+                let world_px_y = world_tile_y * u32(tile_h) + u32(local_y);
+                let fine_x = world_px_x / 3u;  // ~3px wide (horizontal straw direction)
+                let fine_y = world_px_y / 4u;  // ~4px tall
+                let fine_hash_input = fine_x ^ (fine_y * 2654435761u) ^ uniforms.u_noise_seed;
+                let fine_h = pcg_hash(fine_hash_input);
+                let fine_noise_01 = f32(fine_h & 0xFFFFu) / 65535.0;
+                let fine_offset = (fine_noise_01 * 2.0 - 1.0) * noise_amplitude;
+                color = vec4<f32>(
+                    clamp(color.r + fine_offset, 0.0, 1.0),
+                    clamp(color.g + fine_offset, 0.0, 1.0),
+                    clamp(color.b + fine_offset, 0.0, 1.0),
+                    color.a,
+                );
+                use_tile_hash = false;
+            }
+            case SUB_TILE_PATTERN_STAGGERED_ROWS: {
+                // Staggered rows: 3 rows x 2 cols, odd rows shifted by half tile width
+                let row_h = tile_h / 3.0;
+                let row = u32(clamp(floor(local_y / row_h), 0.0, 2.0));
+                let offset = select(0.0, tile_w * 0.5, (row % 2u) == 1u);
+                let col = u32(floor((local_x + offset) / (tile_w * 0.5))) % 2u;
+                sub_cell = col + row * 2u;
+                let cell_y = local_y - f32(row) * row_h;
+                let cell_y_01 = clamp(cell_y / max(row_h, 1.0), 0.0, 1.0);
+                // Exposed shingle edges catch slightly more light than the tucked bottom.
+                pattern_offset = mix(0.015, -0.015, cell_y_01);
+            }
+            case SUB_TILE_PATTERN_STAGGERED_COLUMNS: {
+                // Rotated variant of staggered rows for vertical shingle courses:
+                // 3 cols x 2 rows, odd columns shifted by half tile height.
+                let col_w = tile_w / 3.0;
+                let col = u32(clamp(floor(local_x / col_w), 0.0, 2.0));
+                let offset = select(0.0, tile_h * 0.5, (col % 2u) == 1u);
+                let row = u32(floor((local_y + offset) / (tile_h * 0.5))) % 2u;
+                sub_cell = row + col * 2u;
+                let cell_x = local_x - f32(col) * col_w;
+                let cell_x_01 = clamp(cell_x / max(col_w, 1.0), 0.0, 1.0);
+                // Exposed shingle edges catch slightly more light than tucked edges.
+                pattern_offset = mix(0.015, -0.015, cell_x_01);
+            }
+            case SUB_TILE_PATTERN_DIAGONAL_BANDS: {
+                // Diagonal bands along x + y
+                let band = u32(floor((local_x + local_y) / (tile_w * 0.4)));
+                sub_cell = band % 6u;
+            }
+            case SUB_TILE_PATTERN_HORIZONTAL_RIBS: {
+                // Horizontal ribs for corrugated metal. Uses world pixel Y so
+                // bands stay continuous across tile boundaries.
+                let world_px_y = f32(world_tile_y) * tile_h + local_y;
+                // Slightly off-integer band count avoids exact pixel alignment
+                // that can create stronger moire/aliasing artifacts at some zooms.
+                let ribs_per_tile = 4.9;
+                let band_period_px = max(tile_h / ribs_per_tile, 1.0);
+                let rib_phase = (world_px_y / band_period_px) * 6.28318530718;
+                let rib_wave = sin(rib_phase);
+                // Sharpen the profile slightly so ridges read as manufactured ribs.
+                let rib_profile = sign(rib_wave) * pow(abs(rib_wave), 0.65);
+                let rib_offset = rib_profile * noise_amplitude;
+                color = vec4<f32>(
+                    clamp(color.r + rib_offset, 0.0, 1.0),
+                    clamp(color.g + rib_offset, 0.0, 1.0),
+                    clamp(color.b + rib_offset, 0.0, 1.0),
+                    color.a,
+                );
+                use_tile_hash = false;
+            }
+            case SUB_TILE_PATTERN_VERTICAL_RIBS: {
+                // Vertical ribs for corrugated metal. Uses world pixel X so
+                // bands stay continuous across tile boundaries.
+                let world_px_x = f32(world_tile_x) * tile_w + local_x;
+                // Keep the same slight off-integer frequency as horizontal ribs
+                // to reduce alignment artifacts.
+                let ribs_per_tile = 4.9;
+                let band_period_px = max(tile_w / ribs_per_tile, 1.0);
+                let rib_phase = (world_px_x / band_period_px) * 6.28318530718;
+                let rib_wave = sin(rib_phase);
+                let rib_profile = sign(rib_wave) * pow(abs(rib_wave), 0.65);
+                let rib_offset = rib_profile * noise_amplitude;
+                color = vec4<f32>(
+                    clamp(color.r + rib_offset, 0.0, 1.0),
+                    clamp(color.g + rib_offset, 0.0, 1.0),
+                    clamp(color.b + rib_offset, 0.0, 1.0),
+                    color.a,
+                );
+                use_tile_hash = false;
+            }
+            default: {
+                // Fallback to 2x2 blocks.
+                let sub_x = u32(floor(local_x / (tile_w * 0.5)));
+                let sub_y = u32(floor(local_y / (tile_h * 0.5)));
+                sub_cell = sub_x + sub_y * 2u;
+            }
         }
 
-        // Tile-based hash for patterns that use sub_cell (all except pattern 1,
-        // which computes its own world-pixel-based hash above).
-        if (pattern != 1u) {
+        // Tile-based hash for patterns that use sub_cell. Patterns with custom
+        // world-space logic disable this via use_tile_hash.
+        if (use_tile_hash) {
             let hash_input = world_tile_x ^ (world_tile_y * 2654435761u) ^ (sub_cell * 2246822519u) ^ uniforms.u_noise_seed;
             let h = pcg_hash(hash_input);
 

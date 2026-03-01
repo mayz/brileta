@@ -50,6 +50,8 @@ ROOF_THATCH_DARK: Color = (55, 47, 30)  # Muted straw/brown in shadow
 ROOF_THATCH_LIGHT: Color = (138, 118, 78)  # Sunlit straw/thatch, less saturated
 ROOF_SHINGLE_DARK: Color = (38, 42, 48)  # Cool slate in shadow
 ROOF_SHINGLE_LIGHT: Color = (92, 102, 116)  # Sunlit slate shingles
+ROOF_TIN_DARK: Color = (78, 82, 86)  # Corrugated metal in shadow
+ROOF_TIN_LIGHT: Color = (130, 136, 140)  # Sunlit corrugated metal
 
 # Chimney colors (stone chimney rising through roof)
 CHIMNEY_STONE_DARK: Color = (70, 65, 55)  # Warm grey fieldstone in shadow

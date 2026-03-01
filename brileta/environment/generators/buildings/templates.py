@@ -23,6 +23,8 @@ from .building import (
     CHIMNEY_MIN_PROJECTED_HEIGHT,
     CHIMNEY_MIN_SHADOW_HEIGHT,
     Building,
+    RoofProfile,
+    RoofStyle,
 )
 
 
@@ -46,7 +48,12 @@ class BuildingTemplate:
         room_types: List of room type names to use for rooms.
         weight: Selection weight (higher = more common). Default 1.0.
         max_per_settlement: Max instances per settlement. None = unlimited.
-        roof_style: Render-time roof style ("thatch" or "shingle").
+        roof_style: Render-time roof style ("thatch", "shingle", or "tin").
+        roof_profile_family: Allowed roof profile variants for this archetype.
+        low_slope_flat_section_range: Quantized range for the central flat band
+            ratio when a low-slope roof profile is selected.
+        low_slope_flat_section_buckets: Number of deterministic buckets used when
+            sampling low-slope flat-section ratios.
         floor_count: Number of floors (future multi-story support).
         has_chimney: Whether buildings of this type get a chimney. The
             position is randomized within the interior at creation time.
@@ -64,7 +71,10 @@ class BuildingTemplate:
     room_types: tuple[str, ...] = ("main",)
     weight: float = 1.0
     max_per_settlement: int | None = None
-    roof_style: str = "thatch"
+    roof_style: RoofStyle = "thatch"
+    roof_profile_family: tuple[RoofProfile, ...] = ("gable",)
+    low_slope_flat_section_range: tuple[float, float] = (0.45, 0.75)
+    low_slope_flat_section_buckets: int = 4
     floor_count: int = 1
     has_chimney: bool = False
 
@@ -110,8 +120,8 @@ class BuildingTemplate:
             position: (x, y) position of the top-left corner.
             width: Width of the building.
             height: Height of the building.
-            rng: Random number generator for chimney placement. Required
-                when has_chimney is True.
+            rng: Random number generator for chimney placement and roof-profile
+                variant selection. Required for full procedural variation.
 
         Returns:
             A new Building object with the specified footprint.
@@ -142,11 +152,36 @@ class BuildingTemplate:
                 CHIMNEY_MAX_SHADOW_HEIGHT - CHIMNEY_MIN_SHADOW_HEIGHT
             )
 
+        # Roof profile selection is constrained by archetype (template) and
+        # sampled deterministically from the generation RNG.
+        profiles = self.roof_profile_family or ("gable",)
+        if rng is None or len(profiles) == 1:
+            roof_profile: RoofProfile = profiles[0]
+        else:
+            roof_profile = profiles[rng.randint(0, len(profiles) - 1)]
+
+        flat_section_ratio = 0.0
+        if roof_profile == "low_slope":
+            min_ratio, max_ratio = self.low_slope_flat_section_range
+            min_ratio = max(0.0, min(1.0, float(min_ratio)))
+            max_ratio = max(min_ratio, min(1.0, float(max_ratio)))
+            bucket_count = max(1, int(self.low_slope_flat_section_buckets))
+            if rng is None or bucket_count == 1:
+                flat_section_ratio = (min_ratio + max_ratio) * 0.5
+            else:
+                bucket = rng.randint(0, bucket_count - 1)
+                t = bucket / float(bucket_count - 1)
+                flat_section_ratio = min_ratio + (max_ratio - min_ratio) * t
+        elif roof_profile == "flat":
+            flat_section_ratio = 1.0
+
         return Building(
             id=building_id,
             building_type=self.building_type,
             footprint=footprint,
             roof_style=self.roof_style,
+            roof_profile=roof_profile,
+            flat_section_ratio=flat_section_ratio,
             floor_count=self.floor_count,
             chimney_offset=chimney_offset,
             chimney_projected_height=chimney_projected_height,
@@ -205,6 +240,7 @@ GENERAL_STORE_TEMPLATE = BuildingTemplate(
     weight=1.0,
     max_per_settlement=1,  # Only one general store per town
     roof_style="shingle",
+    roof_profile_family=("gable", "low_slope"),
 )
 
 BUTCHER_TEMPLATE = BuildingTemplate(
@@ -220,6 +256,7 @@ BUTCHER_TEMPLATE = BuildingTemplate(
     weight=0.8,
     max_per_settlement=1,
     roof_style="shingle",
+    roof_profile_family=("gable", "low_slope"),
 )
 
 BLACKSMITH_TEMPLATE = BuildingTemplate(
@@ -234,7 +271,8 @@ BLACKSMITH_TEMPLATE = BuildingTemplate(
     room_types=("forge", "workshop", "storage"),
     weight=0.8,
     max_per_settlement=1,
-    roof_style="shingle",
+    roof_style="tin",
+    roof_profile_family=("gable", "low_slope"),
     has_chimney=True,
 )
 
@@ -287,6 +325,7 @@ LIBRARY_TEMPLATE = BuildingTemplate(
     weight=0.5,  # Rare - not every town has a library
     max_per_settlement=1,
     roof_style="shingle",
+    roof_profile_family=("gable", "low_slope"),
 )
 
 # =============================================================================
@@ -306,6 +345,7 @@ SHOP_TEMPLATE = BuildingTemplate(
     weight=1.5,  # Generic shops are fairly common
     max_per_settlement=3,  # Can have a few different shops
     roof_style="shingle",
+    roof_profile_family=("gable", "low_slope"),
 )
 
 WAREHOUSE_TEMPLATE = BuildingTemplate(
@@ -320,7 +360,8 @@ WAREHOUSE_TEMPLATE = BuildingTemplate(
     room_types=("storage", "loading_area", "office"),
     weight=0.6,
     max_per_settlement=2,
-    roof_style="shingle",
+    roof_style="tin",
+    roof_profile_family=("low_slope", "flat"),
 )
 
 

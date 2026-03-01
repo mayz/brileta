@@ -43,6 +43,7 @@ def test_roof_style_tile_type_mapping() -> None:
     """Roof style strings should map to virtual roof tile IDs."""
     assert ROOF_STYLE_TILE_TYPES["thatch"] == TileTypeID.ROOF_THATCH
     assert ROOF_STYLE_TILE_TYPES["shingle"] == TileTypeID.ROOF_SHINGLE
+    assert ROOF_STYLE_TILE_TYPES["tin"] == TileTypeID.ROOF_TIN
 
 
 def test_tile_material_field() -> None:
@@ -342,6 +343,7 @@ def test_sub_tile_pattern_map_returns_expected_patterns() -> None:
             TileTypeID.COBBLESTONE,
             TileTypeID.ROOF_THATCH,
             TileTypeID.ROOF_SHINGLE,
+            TileTypeID.ROOF_TIN,
             TileTypeID.FLOOR,
         ],
         dtype=np.uint8,
@@ -351,7 +353,34 @@ def test_sub_tile_pattern_map_returns_expected_patterns() -> None:
     assert int(patterns[0]) == tile_types.SUB_TILE_PATTERN_BLOCKS_2X2
     assert int(patterns[1]) == tile_types.SUB_TILE_PATTERN_FINE_GRAIN
     assert int(patterns[2]) == tile_types.SUB_TILE_PATTERN_STAGGERED_ROWS
-    assert int(patterns[3]) == tile_types.SUB_TILE_PATTERN_BLOCKS_2X2
+    assert int(patterns[3]) == tile_types.SUB_TILE_PATTERN_VERTICAL_RIBS
+    assert int(patterns[4]) == tile_types.SUB_TILE_PATTERN_BLOCKS_2X2
+
+
+def test_get_roof_noise_pattern_respects_ridge_orientation() -> None:
+    """Roof pattern lookup should return rotated variant for vertical ridges."""
+    # Tin: base is vertical ribs (horizontal ridge), rotated is horizontal ribs.
+    assert (
+        tile_types.get_roof_noise_pattern(TileTypeID.ROOF_TIN, "horizontal")
+        == tile_types.SUB_TILE_PATTERN_VERTICAL_RIBS
+    )
+    assert (
+        tile_types.get_roof_noise_pattern(TileTypeID.ROOF_TIN, "vertical")
+        == tile_types.SUB_TILE_PATTERN_HORIZONTAL_RIBS
+    )
+    # Shingle: base is staggered rows, rotated is staggered columns.
+    assert (
+        tile_types.get_roof_noise_pattern(TileTypeID.ROOF_SHINGLE, "horizontal")
+        == tile_types.SUB_TILE_PATTERN_STAGGERED_ROWS
+    )
+    assert (
+        tile_types.get_roof_noise_pattern(TileTypeID.ROOF_SHINGLE, "vertical")
+        == tile_types.SUB_TILE_PATTERN_STAGGERED_COLUMNS
+    )
+    # Thatch has no rotated variant - same pattern for both axes.
+    assert tile_types.get_roof_noise_pattern(
+        TileTypeID.ROOF_THATCH, "horizontal"
+    ) == tile_types.get_roof_noise_pattern(TileTypeID.ROOF_THATCH, "vertical")
 
 
 def test_edge_blend_map_marks_organic_vs_rigid_tiles() -> None:
@@ -383,6 +412,7 @@ def test_edge_self_darken_map_returns_expected_values() -> None:
             TileTypeID.GRASS,
             TileTypeID.ROOF_THATCH,
             TileTypeID.ROOF_SHINGLE,
+            TileTypeID.ROOF_TIN,
             TileTypeID.WALL,
         ],
         dtype=np.uint8,
@@ -393,6 +423,7 @@ def test_edge_self_darken_map_returns_expected_values() -> None:
     assert int(edge_self_darken[1]) == 35
     assert int(edge_self_darken[2]) == 0
     assert int(edge_self_darken[3]) == 0
+    assert int(edge_self_darken[4]) == 0
 
 
 # --- Terrain Decoration Tests ---

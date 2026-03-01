@@ -57,11 +57,13 @@ class TileTypeID(IntEnum):
     # Virtual roof tiles (render-time substitution only; never placed in GameMap.tiles)
     ROOF_THATCH = auto()
     ROOF_SHINGLE = auto()
+    ROOF_TIN = auto()
 
 
 ROOF_STYLE_TILE_TYPES: dict[str, TileTypeID] = {
     "thatch": TileTypeID.ROOF_THATCH,
     "shingle": TileTypeID.ROOF_SHINGLE,
+    "tin": TileTypeID.ROOF_TIN,
 }
 
 
@@ -450,6 +452,19 @@ register_tile_type(
     ),
 )
 
+register_tile_type(
+    TileTypeID.ROOF_TIN,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Tin Roof",
+        material=ImpactMaterial.METAL,
+        shadow_height=4,
+        dark=(ord("="), (112, 116, 120), colors.ROOF_TIN_DARK),
+        light=(ord("="), (170, 176, 182), colors.ROOF_TIN_LIGHT),
+    ),
+)
+
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---
 # These arrays are built *after* all tile types have been registered.
@@ -731,6 +746,21 @@ def get_sub_tile_pattern_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     return _tile_type_properties_sub_tile_pattern[tile_type_ids_map]
 
 
+def get_roof_noise_pattern(tile_type_id: TileTypeID, ridge_axis: str) -> int:
+    """Return the sub-tile pattern for a roof tile, respecting ridge orientation.
+
+    For roof materials with axis-dependent textures (corrugated ribs, shingle
+    courses), the rotated variant is returned when the building's ridge runs
+    vertically. Falls back to the base pattern when no rotated variant exists.
+    """
+    deco = _TERRAIN_DECORATION_DEFS.get(tile_type_id)
+    if deco is None:
+        return SUB_TILE_PATTERN_BLOCKS_2X2
+    if ridge_axis == "vertical" and deco.sub_tile_pattern_rotated is not None:
+        return deco.sub_tile_pattern_rotated
+    return deco.sub_tile_pattern
+
+
 def get_edge_blend_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """Converts a map of TileTypeIDs into per-tile organic edge blend amplitudes."""
     return _tile_type_properties_edge_blend[tile_type_ids_map]
@@ -757,6 +787,9 @@ SUB_TILE_PATTERN_BLOCKS_2X2 = 0
 SUB_TILE_PATTERN_FINE_GRAIN = 1
 SUB_TILE_PATTERN_STAGGERED_ROWS = 2
 SUB_TILE_PATTERN_DIAGONAL_BANDS = 3
+SUB_TILE_PATTERN_HORIZONTAL_RIBS = 4
+SUB_TILE_PATTERN_VERTICAL_RIBS = 5
+SUB_TILE_PATTERN_STAGGERED_COLUMNS = 6
 
 
 class TerrainDecorationDef(NamedTuple):
@@ -801,7 +834,21 @@ class TerrainDecorationDef(NamedTuple):
     bg_jitter's tile-level variation."""
 
     sub_tile_pattern: int = SUB_TILE_PATTERN_BLOCKS_2X2
-    """Fragment shader sub-tile pattern selector (0 = legacy 2x2 blocks)."""
+    """Fragment shader sub-tile pattern selector (0 = legacy 2x2 blocks).
+
+    For roof materials this is the pattern used on horizontal-ridge buildings
+    (wider than tall). See *sub_tile_pattern_rotated* for the vertical-ridge
+    variant.
+    """
+
+    sub_tile_pattern_rotated: int | None = None
+    """Optional 90-degree variant of *sub_tile_pattern*.
+
+    Used for vertical-ridge buildings (taller than wide). When ``None``, the
+    base *sub_tile_pattern* is used regardless of ridge orientation. Only
+    meaningful for roof tile types whose visual texture is axis-dependent
+    (e.g., corrugated ribs, shingle courses).
+    """
 
     edge_self_darken: int = 0
     """Darken edge blending toward this tile's own background when enabled.
@@ -861,6 +908,17 @@ _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
         fg_jitter=4,
         sub_tile_jitter=0.014,
         sub_tile_pattern=SUB_TILE_PATTERN_STAGGERED_ROWS,
+        sub_tile_pattern_rotated=SUB_TILE_PATTERN_STAGGERED_COLUMNS,
+        edge_blend=0.0,
+    ),
+    TileTypeID.ROOF_TIN: TerrainDecorationDef(
+        glyphs=[" "],
+        bg_jitter=1,
+        fg_jitter=0,
+        sub_tile_jitter=0.022,
+        sub_tile_pattern=SUB_TILE_PATTERN_VERTICAL_RIBS,
+        sub_tile_pattern_rotated=SUB_TILE_PATTERN_HORIZONTAL_RIBS,
+        edge_self_darken=0,
         edge_blend=0.0,
     ),
 }
