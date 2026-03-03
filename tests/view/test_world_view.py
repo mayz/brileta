@@ -1496,11 +1496,11 @@ class TestRoofSubstitution:
         assert player not in occluded
         assert visible_actor not in occluded
 
-    def test_occlusion_requires_actor_inside_building(self) -> None:
-        """Actors outside the building footprint are NOT occluded even if under
-        the shifted roof.  The outline treatment is for actors physically inside
-        the building, not outdoor actors that happen to fall under the
-        perspective-shifted roof overhang (e.g. trees north of the building).
+    def test_occlusion_covers_visual_roof_including_overhang(self) -> None:
+        """Actors under the visual roof are occluded, including those in the
+        perspective overhang zone north of the building footprint.  The roof
+        is drawn over those positions, so actors there need the outline
+        treatment to remain visible.
         """
         view = object.__new__(WorldView)
 
@@ -1519,8 +1519,8 @@ class TestRoofSubstitution:
             floor_count=2,
         )
 
-        # y=18 is in the north overhang zone [17, 20) but OUTSIDE the
-        # building footprint.  Should NOT be occluded.
+        # y=18 is in the north overhang zone [17, 20), outside the building
+        # footprint but under the drawn roof.  Should be occluded.
         actor_in_overhang = _MockActor(14, 18)
         # y=22 is inside the building AND under the shifted roof [17, 27).
         actor_inside = _MockActor(14, 22)
@@ -1546,8 +1546,8 @@ class TestRoofSubstitution:
             viewport_bounds_world=Rect(0, 0, 40, 40),
         )
 
-        # Actor in the north overhang is outside the building - not occluded.
-        assert actor_in_overhang not in occluded
+        # Actor in the north overhang is under the drawn roof - occluded.
+        assert actor_in_overhang in occluded
         # Actor inside the building AND under the shifted roof IS occluded.
         assert actor_inside in occluded
         # Actor in the wall face zone is not under the shifted roof.

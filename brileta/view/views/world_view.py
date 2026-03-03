@@ -1390,13 +1390,13 @@ class WorldView(View):
                 continue
 
             for building in roof_visible_buildings:
-                # Check containment first (cheapest - just 1-2 rect checks).
-                # Then verify the actor is under the visual roof (not in
-                # the wall-face zone).  Uses analytical per-rect bounds
-                # instead of materialising a tile set.
+                # Check if the actor is under the visual roof (which extends
+                # into the perspective overhang north of the footprint).
+                # Do NOT gate on contains_point() - actors in the overhang
+                # zone are outside the footprint but still visually behind
+                # the drawn roof and need the outline treatment.
                 if (
-                    building.contains_point(ax, ay)
-                    and self._is_under_visual_roof(building, ax, ay)
+                    self._is_under_visual_roof(building, ax, ay)
                     and (ax, ay) not in building_clear_tiles[building.id]
                 ):
                     occluded_set.add(actor)
