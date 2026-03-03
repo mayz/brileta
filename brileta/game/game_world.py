@@ -771,24 +771,29 @@ class GameWorld:
     def _populate_settlement_npcs(self, max_attempts_per_npc: int = 15) -> None:
         """Populate a settlement with NPCs in buildings, near doors, and on streets.
 
-        Uses the building data from map generation to place NPCs:
-        - Indoor NPCs: Placed inside building rooms (scaled to building count)
-        - Doorway NPCs: Placed just outside building entrances
-        - Street NPCs: Placed on street tiles for outdoor activity
-
-        The total NPC count scales with the number of buildings.
+        Total NPC count is derived from map area and the crowd modifier
+        (see config.SETTLEMENT_NPCS_PER_KTILE). The total is then split into
+        indoor, near-doorway, and street phases by configured fractions. Street
+        absorbs any remainder from integer rounding so the sum is exact.
         """
         if not self.buildings:
             return
 
-        num_buildings = len(self.buildings)
+        # Derive total NPC headcount from map area and crowd modifier.
+        map_area = self.game_map.width * self.game_map.height
+        total_npcs = int(
+            map_area
+            / 1000
+            * config.SETTLEMENT_NPCS_PER_KTILE
+            * config.SETTLEMENT_NPC_CROWD_MODIFIER
+        )
 
-        # Scale NPC counts to building count
-        # ~2 indoor NPCs per building, 1 near doors, 1-2 on streets
-        indoor_npcs = num_buildings * 2
-        doorway_npcs = num_buildings
-        street_npcs = max(3, num_buildings // 2)
-        total_npcs = indoor_npcs + doorway_npcs + street_npcs
+        # Split into placement phases. Street gets the remainder from rounding.
+        indoor_npcs = int(total_npcs * config.SETTLEMENT_NPC_INDOOR_FRACTION)
+        near_doorway_npcs = int(
+            total_npcs * config.SETTLEMENT_NPC_NEAR_DOORWAY_FRACTION
+        )
+        street_npcs = total_npcs - indoor_npcs - near_doorway_npcs
         spawn_plan = self._build_npc_spawn_plan(total_npcs)
         spawn_name_counts: dict[str, int] = {}
 
@@ -803,9 +808,9 @@ class GameWorld:
             spawn_name_counts,
         )
 
-        # 2. Place NPCs near building doors
+        # 2. Place NPCs near building doorways
         npc_index = self._place_doorway_npcs(
-            doorway_npcs,
+            near_doorway_npcs,
             npc_index,
             max_attempts_per_npc,
             spawn_plan,

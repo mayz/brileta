@@ -259,6 +259,18 @@ SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
 # which variant is chosen.  Templates with both weights at 0 never get a wing.
 SETTLEMENT_BUILDING_COMPOUND_SHAPE_CHANCE = 0.55
 
+# NPC population density.
+# Total NPC count = (map_area / 1000) * NPCS_PER_KTILE * CROWD_MODIFIER.
+# "Ktile" = 1000 tiles of total map area (width * height).
+SETTLEMENT_NPCS_PER_KTILE: float = 7.0
+SETTLEMENT_NPC_CROWD_MODIFIER: float = 1.0
+
+# Where NPCs are placed (fractions of total, must sum to 1.0).
+# Street gets the remainder from integer rounding.
+SETTLEMENT_NPC_INDOOR_FRACTION: float = 0.50
+SETTLEMENT_NPC_NEAR_DOORWAY_FRACTION: float = 0.25
+SETTLEMENT_NPC_STREET_FRACTION: float = 0.25
+
 # Tree placement
 # Wild trees: forested borders around the settlement. Noise modulation creates
 # groves and clearings so the player has natural paths through the trees.

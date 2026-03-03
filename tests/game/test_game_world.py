@@ -851,3 +851,54 @@ class TestNPCSpawnHelpers:
             pos = gw._find_spawn_near_player(target_distance=4, max_attempts=1)
 
         assert pos == (13, 10)
+
+
+# ---------------------------------------------------------------------------
+# TestNPCDensityCalculation
+# ---------------------------------------------------------------------------
+
+
+class TestNPCDensityCalculation:
+    """Pure arithmetic tests for area-based NPC density computation."""
+
+    def test_total_count_from_area_and_density(self) -> None:
+        """Total = int(area / 1000 * NPCS_PER_KTILE * CROWD_MODIFIER)."""
+        from brileta import config
+
+        # 120x80 = 9600 tiles. At 7.0 per Ktile -> int(9600/1000 * 7.0) = 67.
+        area = 120 * 80
+        total = int(
+            area
+            / 1000
+            * config.SETTLEMENT_NPCS_PER_KTILE
+            * config.SETTLEMENT_NPC_CROWD_MODIFIER
+        )
+        assert total == 67
+
+    def test_crowd_modifier_scales_total(self) -> None:
+        from brileta import config
+
+        area = 120 * 80
+        base = int(area / 1000 * config.SETTLEMENT_NPCS_PER_KTILE * 1.0)
+        doubled = int(area / 1000 * config.SETTLEMENT_NPCS_PER_KTILE * 2.0)
+        assert doubled == base * 2
+
+    def test_placement_fractions_sum_to_total(self) -> None:
+        """indoor + near-doorway + street must equal total (remainder to street)."""
+        from brileta import config
+
+        area = 120 * 80
+        total = int(
+            area
+            / 1000
+            * config.SETTLEMENT_NPCS_PER_KTILE
+            * config.SETTLEMENT_NPC_CROWD_MODIFIER
+        )
+        indoor = int(total * config.SETTLEMENT_NPC_INDOOR_FRACTION)
+        near_doorway = int(total * config.SETTLEMENT_NPC_NEAR_DOORWAY_FRACTION)
+        street = total - indoor - near_doorway
+
+        assert indoor + near_doorway + street == total
+        assert indoor == 33  # int(67 * 0.50)
+        assert near_doorway == 16  # int(67 * 0.25)
+        assert street == 18  # 67 - 33 - 16
