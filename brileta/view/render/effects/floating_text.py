@@ -327,11 +327,18 @@ class FloatingTextManager:
         screen_x, screen_y = graphics.console_to_screen_coords(root_x, root_y)
         scale_x, scale_y = viewport_system.get_display_scale_factors()
 
+        # Bubbles render at fixed pixel size so they stay readable at any zoom.
+        # Non-bubble text (damage numbers etc.) scales with the world.
+        if text.bubble:
+            draw_sx, draw_sy = 1.0, 1.0
+        else:
+            draw_sx, draw_sy = scale_x, scale_y
+
         # Center the texture horizontally on the tile
         tile_w, _ = graphics.tile_dimensions
         scaled_tile_w = tile_w * scale_x
-        centered_x = screen_x + (scaled_tile_w - (text._texture_width * scale_x)) / 2
-        centered_y = screen_y - (text._texture_height * scale_y)  # Above the tile
+        centered_x = screen_x + (scaled_tile_w - (text._texture_width * draw_sx)) / 2
+        centered_y = screen_y - (text._texture_height * draw_sy)  # Above the tile
 
         # Draw with alpha
         graphics.draw_texture_alpha(
@@ -339,8 +346,8 @@ class FloatingTextManager:
             centered_x,
             centered_y,
             Opacity(text.alpha),
-            scale_x=scale_x,
-            scale_y=scale_y,
+            scale_x=draw_sx,
+            scale_y=draw_sy,
         )
 
     @property
