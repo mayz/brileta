@@ -15,6 +15,7 @@ from brileta.sprites.primitives import (
 from brileta.types import Facing
 
 from .clothing import _draw_armor_torso, _draw_bare_torso, _draw_belly_mass
+from .hair import HAIR_IDX_TALL
 from .specs import (
     CircleStampSpec,
     EllipseStampSpec,
@@ -175,12 +176,11 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
 
     s_shadow, s_mid, _s_hi = appearance.skin_pal
     c_shadow, c_mid, _c_hi = appearance.cloth_pal
-    is_broad = params.shoulder_width > params.torso_rx
-    is_belly = params.belly_ry > 0
-    is_thin = (
-        params.arm_thickness == 1 and params.hand_radius > 0 and params.neck_rx > 0
-    )
-    is_child = params.neck_rx == 0 and params.hand_radius == 0
+    build = appearance.build_name
+    is_broad = build == "broad"
+    is_belly = build == "belly"
+    is_thin = build == "thin"
+    is_child = build == "child"
 
     if is_child or is_belly:
         shoulder_factor = 0.18
@@ -206,8 +206,8 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
         arm_end_y += 1.8
 
     arm_alpha = 220 if params.arm_thickness == 1 else 225
-    hand_drop = 0.3 if is_thin else 0.5
-    hand_alpha = 210 if is_thin else 215
+    hand_drop = 0.3 if (is_thin or is_child) else 0.5
+    hand_alpha = 210 if (is_thin or is_child) else 215
 
     if appearance.clothing_fn is _draw_bare_torso:
         arm_shadow_rgb = (
@@ -389,14 +389,14 @@ def _layer_neck(context: CharacterDrawContext) -> None:
     params = context.params
     appearance = context.appearance
     if context.facing != Facing.NORTH and params.neck_rx > 0 and params.neck_ry > 0:
-        is_broad = params.shoulder_width > params.torso_rx
-        is_belly = params.belly_ry > 0
-        is_thin = (
-            params.arm_thickness == 1 and params.hand_radius > 0 and params.neck_rx > 0
-        )
+        build = appearance.build_name
+        is_broad = build == "broad"
+        is_belly = build == "belly"
+        is_thin = build == "thin"
+        is_child = build == "child"
         if is_belly or is_broad:
             neck_y = context.head_cy + context.hr + 0.1
-        elif is_thin:
+        elif is_thin or is_child:
             neck_y = context.head_cy + context.hr + 0.15
         else:
             neck_y = context.head_cy + context.hr + params.neck_gap * 0.5
@@ -485,7 +485,7 @@ def _layer_head(context: CharacterDrawContext) -> None:
                 hardness=0.72,
             ),
         ]
-        if appearance.hair_style_idx != 4:
+        if appearance.hair_style_idx != HAIR_IDX_TALL:
             specs_list.append(
                 EllipseStampSpec(
                     cx=_expr("hx", "hr", 0.28),

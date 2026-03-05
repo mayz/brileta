@@ -28,7 +28,14 @@ from .appearance import (
     character_sprite_seed,
 )
 from .clothing import CLOTHING_DEFS, CLOTHING_STYLE_NAMES
-from .hair import HAIR_STYLE_NAMES
+from .hair import (
+    HAIR_IDX_BALD,
+    HAIR_IDX_LONG,
+    HAIR_IDX_MEDIUM,
+    HAIR_IDX_SHORT,
+    HAIR_IDX_TALL,
+    HAIR_STYLE_NAMES,
+)
 from .renderer import (
     CARICATURE_TEMPLATES,
     draw_character_pose,
@@ -49,6 +56,11 @@ __all__ = [
     "CLOTHING_DEFS",
     "CLOTHING_PALETTES",
     "CLOTHING_STYLE_NAMES",
+    "HAIR_IDX_BALD",
+    "HAIR_IDX_LONG",
+    "HAIR_IDX_MEDIUM",
+    "HAIR_IDX_SHORT",
+    "HAIR_IDX_TALL",
     "HAIR_PALETTES",
     "HAIR_STYLE_NAMES",
     "HUMANOID_GLYPHS",

@@ -95,8 +95,7 @@ def _build_character_draw_context(
     )
 
 
-_CHARACTER_LAYER_PIPELINE_SOUTH: tuple[CharacterLayerStep, ...] = (
-    # SOUTH-facing keeps torso mass below both arm passes.
+_CHARACTER_LAYER_PIPELINE: tuple[CharacterLayerStep, ...] = (
     ("legs", _layer_legs),
     ("belly", _layer_belly),
     ("torso", _layer_torso),
@@ -107,39 +106,6 @@ _CHARACTER_LAYER_PIPELINE_SOUTH: tuple[CharacterLayerStep, ...] = (
     ("hair", _layer_hair),
     ("face", _layer_face_final),
 )
-
-_CHARACTER_LAYER_PIPELINE_NORTH: tuple[CharacterLayerStep, ...] = (
-    # NORTH-facing shares the same z-stack but has different per-layer internals.
-    ("legs", _layer_legs),
-    ("belly", _layer_belly),
-    ("torso", _layer_torso),
-    ("back_arm", _layer_back_arm),
-    ("front_arm", _layer_front_arm),
-    ("neck", _layer_neck),
-    ("head", _layer_head),
-    ("hair", _layer_hair),
-    ("face", _layer_face_final),
-)
-
-_CHARACTER_LAYER_PIPELINE_SIDE: tuple[CharacterLayerStep, ...] = (
-    # Side profile has explicit arm depth: back arm then front arm.
-    ("legs", _layer_legs),
-    ("belly", _layer_belly),
-    ("torso", _layer_torso),
-    ("back_arm", _layer_back_arm),
-    ("front_arm", _layer_front_arm),
-    ("neck", _layer_neck),
-    ("head", _layer_head),
-    ("hair", _layer_hair),
-    ("face", _layer_face_final),
-)
-
-_CHARACTER_LAYER_PIPELINES_BY_FACING: dict[Facing, tuple[CharacterLayerStep, ...]] = {
-    Facing.SOUTH: _CHARACTER_LAYER_PIPELINE_SOUTH,
-    Facing.NORTH: _CHARACTER_LAYER_PIPELINE_NORTH,
-    Facing.WEST: _CHARACTER_LAYER_PIPELINE_SIDE,
-    Facing.EAST: _CHARACTER_LAYER_PIPELINE_SIDE,
-}
 
 
 def _draw_character(
@@ -149,8 +115,7 @@ def _draw_character(
 ) -> None:
     """Draw one character via an explicit ordered layer pipeline."""
     context = _build_character_draw_context(canvas, appearance, pose)
-    layer_pipeline = _CHARACTER_LAYER_PIPELINES_BY_FACING[context.facing]
-    for _layer_name, layer_fn in layer_pipeline:
+    for _layer_name, layer_fn in _CHARACTER_LAYER_PIPELINE:
         layer_fn(context)
 
 
@@ -202,7 +167,7 @@ def generate_character_pose_set(seed: int, size: int = 20) -> list[np.ndarray]:
 
 def generate_character_sprite(seed: int, size: int = 20) -> np.ndarray:
     """Backward-compatible wrapper returning front-standing pose."""
-    return generate_character_pose_set(seed, size)[0]
+    return generate_character(seed, size)
 
 
 def _generate_caricature_for_build(seed: int, size: int, build_idx: int) -> np.ndarray:
