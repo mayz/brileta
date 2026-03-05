@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from brileta.game.actors.boulder_sprites import (
+from brileta.sprites.boulders import (
     BoulderArchetype,
     archetype_for_position,
     generate_boulder_sprite,

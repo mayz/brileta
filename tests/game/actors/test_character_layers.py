@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from brileta.game.actors.container import Container, create_bookcase
 from brileta.game.actors.core import Actor, CharacterLayer
-from brileta.game.actors.tree_sprites import TreeArchetype
 from brileta.game.actors.trees import Tree, create_conifer_tree, create_deciduous_tree
+from brileta.sprites.trees import TreeArchetype
 
 # Re-export for easier test access
 

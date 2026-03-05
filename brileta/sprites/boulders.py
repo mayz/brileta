@@ -26,6 +26,7 @@ from enum import Enum
 import numpy as np
 
 from brileta import colors
+from brileta.sprites.common import sprite_visual_scale_for_shadow_height
 from brileta.sprites.primitives import (
     CanvasStamper,
     clamp,
@@ -37,8 +38,6 @@ from brileta.sprites.primitives import (
 )
 from brileta.types import MapDecorationSeed, SpatialSeed, WorldTileCoord
 from brileta.util import rng as brileta_rng
-
-from .tree_sprites import sprite_visual_scale_for_shadow_height
 
 # ---------------------------------------------------------------------------
 # Boulder archetype enum

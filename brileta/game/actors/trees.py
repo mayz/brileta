@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
 from brileta.sprites.primitives import clamp
+from brileta.sprites.trees import TreeArchetype
 from brileta.types import WorldTileCoord
 from brileta.util.rng import derive_spatial_seed
 
 from .core import Actor, CharacterLayer
-from .tree_sprites import TreeArchetype
 
 if TYPE_CHECKING:
     from brileta.game.game_world import GameWorld

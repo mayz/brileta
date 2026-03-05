@@ -5,20 +5,20 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from brileta.game.actors.tree_sprites import (
-    TreeArchetype,
-    generate_preview_sheet,
-    generate_tree_sprite,
-    generate_tree_sprite_for_position,
-    sprite_visual_scale_for_shadow_height,
-    tree_sprite_seed,
-)
 from brileta.sprites.primitives import (
     CanvasStamper,
     draw_tapered_trunk,
     fill_triangle,
     stamp_ellipse,
     stamp_fuzzy_circle,
+)
+from brileta.sprites.trees import (
+    TreeArchetype,
+    generate_preview_sheet,
+    generate_tree_sprite,
+    generate_tree_sprite_for_position,
+    sprite_visual_scale_for_shadow_height,
+    tree_sprite_seed,
 )
 
 

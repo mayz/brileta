@@ -24,10 +24,6 @@ from brileta.game.actors.npc_types import (
     RESIDENT_TYPE,
     TROG_TYPE,
 )
-from brileta.game.actors.tree_sprites import (
-    archetype_for_position,
-    create_species_noise,
-)
 from brileta.game.actors.trees import Tree
 from brileta.game.countables import CountableType
 from brileta.game.enums import GeneratorType
@@ -44,6 +40,10 @@ from brileta.game.items.item_types import (
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
+from brileta.sprites.trees import (
+    archetype_for_position,
+    create_species_noise,
+)
 from brileta.types import (
     ActorId,
     MapDecorationSeed,

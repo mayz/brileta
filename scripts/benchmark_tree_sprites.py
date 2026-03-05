@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from brileta.game.actors.tree_sprites import (
+from brileta.sprites.trees import (
     TreeArchetype,
     generate_tree_sprite,
 )

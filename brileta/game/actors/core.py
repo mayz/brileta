@@ -45,13 +45,13 @@ from brileta.game.actors import conditions
 from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
+from brileta.sprites.characters import (
+    CHARACTER_DIRECTIONAL_POSE_COUNT as _CHARACTER_DIRECTIONAL_POSE_COUNT,
+)
 from brileta.types import ActorId, Facing, SpriteUV, TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, disposition_label
-from .character_sprites import (
-    CHARACTER_DIRECTIONAL_POSE_COUNT as _CHARACTER_DIRECTIONAL_POSE_COUNT,
-)
 from .components import (
     CharacterInventory,
     ConditionsComponent,

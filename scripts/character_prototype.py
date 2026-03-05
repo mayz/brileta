@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from brileta.game.actors.character_sprites import (
+from brileta.sprites.characters import (
     CARICATURE_TEMPLATES,
     CLOTHING_PALETTES,
     CLOTHING_STYLE_NAMES,
@@ -221,7 +221,7 @@ def generate_mixed_sheet(
     base_seed: int = 42,
 ) -> np.ndarray:
     """Generate a grid with character rows and tree rows for comparison."""
-    from brileta.game.actors.tree_sprites import TreeArchetype, generate_tree_sprite
+    from brileta.sprites.trees import TreeArchetype, generate_tree_sprite
 
     cell = base_size + 8 + padding
     sheet_w = columns * cell + padding

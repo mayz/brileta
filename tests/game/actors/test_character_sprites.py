@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from brileta.game.actors.character_sprites import (
+from brileta.sprites.characters import (
     CHARACTER_DIRECTIONAL_POSE_COUNT,
     POSE_BACK_STAND,
     POSE_LEFT_STAND,

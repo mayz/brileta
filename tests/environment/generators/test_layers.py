@@ -1443,7 +1443,7 @@ class TestSpeciesNoiseClustering:
         close-pair vs far-pair positions. Noise should make close pairs
         agree more often.
         """
-        from brileta.game.actors.tree_sprites import (
+        from brileta.sprites.trees import (
             TreeArchetype,
             archetype_for_position,
             create_species_noise,
@@ -1496,7 +1496,7 @@ class TestSpeciesNoiseClustering:
 
     def test_species_noise_is_deterministic(self) -> None:
         """Same map seed produces identical archetype assignments."""
-        from brileta.game.actors.tree_sprites import (
+        from brileta.sprites.trees import (
             archetype_for_position,
             create_species_noise,
         )
@@ -1513,7 +1513,7 @@ class TestSpeciesNoiseClustering:
 
     def test_all_archetypes_still_appear(self) -> None:
         """All four archetypes should appear over a large enough sample."""
-        from brileta.game.actors.tree_sprites import (
+        from brileta.sprites.trees import (
             TreeArchetype,
             archetype_for_position,
             create_species_noise,

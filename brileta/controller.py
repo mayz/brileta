@@ -352,33 +352,33 @@ class Controller:
         """
         from brileta.backends.wgpu.sprite_atlas import compute_atlas_size
         from brileta.game.actors.boulder import Boulder
-        from brileta.game.actors.boulder_sprites import (
+        from brileta.game.actors.core import Character
+        from brileta.game.actors.trees import Tree
+        from brileta.sprites.boulders import (
             archetype_for_position as boulder_archetype_for_position,
         )
-        from brileta.game.actors.boulder_sprites import (
+        from brileta.sprites.boulders import (
             generate_boulder_sprite_for_position,
         )
-        from brileta.game.actors.boulder_sprites import (
+        from brileta.sprites.boulders import (
             shadow_height_for_archetype as boulder_shadow_height,
         )
-        from brileta.game.actors.boulder_sprites import (
+        from brileta.sprites.boulders import (
             visual_scale_with_height_jitter as boulder_visual_scale_with_height_jitter,
         )
-        from brileta.game.actors.character_sprites import (
+        from brileta.sprites.characters import (
             CHARACTER_DIRECTIONAL_POSE_COUNT,
             HUMANOID_GLYPHS,
             character_sprite_seed,
             generate_character_pose_set,
         )
-        from brileta.game.actors.core import Character
-        from brileta.game.actors.tree_sprites import (
+        from brileta.sprites.common import sprite_visual_scale_for_shadow_height
+        from brileta.sprites.trees import (
             generate_tree_sprite_for_position,
-            sprite_visual_scale_for_shadow_height,
         )
-        from brileta.game.actors.tree_sprites import (
+        from brileta.sprites.trees import (
             visual_scale_with_height_jitter as tree_visual_scale_with_height_jitter,
         )
-        from brileta.game.actors.trees import Tree
         from brileta.util.parallel import parallel_map
 
         trees: list[Tree] = []
