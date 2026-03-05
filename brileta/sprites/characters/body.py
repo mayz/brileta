@@ -147,16 +147,14 @@ class ArmLayerState:
 
     shoulder_y: float
     arm_end_y: float
+    shoulder_anchor: float
+    hand_inset: float
     arm_alpha: int
     hand_drop: float
     hand_alpha: int
     skin_mid: colors.Color
     arm_shadow_rgb: colors.Color
     arm_mid_rgb: colors.Color
-    is_broad: bool
-    is_belly: bool
-    is_thin: bool
-    is_child: bool
 
 
 def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
@@ -168,38 +166,24 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
 
     s_shadow, s_mid, _s_hi = appearance.skin_pal
     c_shadow, c_mid, _c_hi = appearance.cloth_pal
-    build = appearance.build_name
-    is_broad = build == "broad"
-    is_belly = build == "belly"
-    is_thin = build == "thin"
-    is_child = build == "child"
-
-    if is_child or is_belly:
-        shoulder_factor = 0.18
-    elif is_thin:
-        shoulder_factor = 0.26
-    else:
-        shoulder_factor = 0.28
-    shoulder_y = torso_cy - params.torso_ry * shoulder_factor
+    shoulder_y = torso_cy - params.torso_ry * params.arm_shoulder_factor
 
     if params.arm_end_from_belly and params.belly_ry > 0:
-        arm_end_y = belly_cy + params.belly_ry * 0.22
-    elif is_broad:
-        arm_end_y = torso_cy + params.torso_ry * 0.62
-    elif is_thin:
-        arm_end_y = torso_cy + params.torso_ry * 0.68
-    elif is_child:
-        arm_end_y = torso_cy + params.torso_ry * 0.64
+        arm_end_y = belly_cy + params.belly_ry * params.arm_end_belly_factor
     else:
-        arm_end_y = torso_cy + params.torso_ry * 0.66
+        arm_end_y = torso_cy + params.torso_ry * params.arm_end_torso_factor
 
     # Armor reads better when hands sit slightly lower on the torso silhouette.
     if appearance.clothing_fn is _draw_armor_torso:
         arm_end_y += 1.8
 
     arm_alpha = 220 if params.arm_thickness == 1 else 225
-    hand_drop = 0.3 if (is_thin or is_child) else 0.5
-    hand_alpha = 210 if (is_thin or is_child) else 215
+    hand_drop = params.arm_hand_drop
+    hand_alpha = params.arm_hand_alpha
+    shoulder_anchor = (
+        params.torso_rx * params.arm_shoulder_anchor_torso_factor
+        + params.shoulder_width * params.arm_shoulder_anchor_shoulder_width_factor
+    )
 
     if appearance.clothing_fn is _draw_bare_torso:
         arm_shadow_rgb = (
@@ -215,16 +199,14 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
     return ArmLayerState(
         shoulder_y=shoulder_y,
         arm_end_y=arm_end_y,
+        shoulder_anchor=shoulder_anchor,
+        hand_inset=params.arm_hand_inset,
         arm_alpha=arm_alpha,
         hand_drop=hand_drop,
         hand_alpha=hand_alpha,
         skin_mid=s_mid,
         arm_shadow_rgb=arm_shadow_rgb,
         arm_mid_rgb=arm_mid_rgb,
-        is_broad=is_broad,
-        is_belly=is_belly,
-        is_thin=is_thin,
-        is_child=is_child,
     )
 
 
@@ -238,27 +220,9 @@ def _draw_frontback_arm(
     appearance = context.appearance
     params = context.params
     arm_swing_scale = 0.5 if appearance.clothing_fn is _draw_armor_torso else 1.0
-    shoulder_base = params.shoulder_width if arm_state.is_broad else params.torso_rx
-    if arm_state.is_broad:
-        shoulder_anchor = (
-            params.torso_rx * 0.82 + (params.shoulder_width - params.torso_rx) * 0.12
-        )
-        hand_inset = 0.24
-    elif arm_state.is_belly:
-        shoulder_anchor = shoulder_base * 0.85
-        hand_inset = 0.2
-    elif arm_state.is_child:
-        shoulder_anchor = shoulder_base * 0.8
-        hand_inset = 0.12
-    elif arm_state.is_thin:
-        shoulder_anchor = shoulder_base * 0.82
-        hand_inset = 0.14
-    else:
-        shoulder_anchor = shoulder_base * 0.84
-        hand_inset = 0.18
 
-    arm_x = context.cx + side * shoulder_anchor
-    hand_x = arm_x - side * hand_inset
+    arm_x = context.cx + side * arm_state.shoulder_anchor
+    hand_x = arm_x - side * arm_state.hand_inset
     hand_y = arm_state.arm_end_y + arm_dy * arm_swing_scale
 
     stamp_fuzzy_circle(
@@ -381,17 +345,7 @@ def _layer_neck(context: CharacterDrawContext) -> None:
     params = context.params
     appearance = context.appearance
     if context.facing != Facing.NORTH and params.neck_rx > 0 and params.neck_ry > 0:
-        build = appearance.build_name
-        is_broad = build == "broad"
-        is_belly = build == "belly"
-        is_thin = build == "thin"
-        is_child = build == "child"
-        if is_belly or is_broad:
-            neck_y = context.head_cy + context.hr + 0.1
-        elif is_thin or is_child:
-            neck_y = context.head_cy + context.hr + 0.15
-        else:
-            neck_y = context.head_cy + context.hr + params.neck_gap * 0.5
+        neck_y = context.head_cy + context.hr + params.neck_y_offset
         stamp_ellipse(
             context.canvas,
             context.cx,

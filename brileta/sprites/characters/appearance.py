@@ -203,6 +203,15 @@ class BodyParams:
     neck_ry: float
     neck_gap: float
     hand_radius: float
+    arm_shoulder_factor: float
+    arm_end_torso_factor: float
+    arm_end_belly_factor: float
+    arm_shoulder_anchor_torso_factor: float
+    arm_shoulder_anchor_shoulder_width_factor: float
+    arm_hand_inset: float
+    arm_hand_drop: float
+    arm_hand_alpha: int
+    neck_y_offset: float
     arm_end_from_belly: bool = False
     leg_from_torso: bool = False
 
@@ -294,6 +303,7 @@ def _roll_palettes(
 
 def _roll_standard_body_params(rng: np.random.Generator, size: int) -> BodyParams:
     torso_ry = 2.0 + float(rng.uniform(0, 0.3))
+    neck_gap = 0.3 + torso_ry * 0.07
     return BodyParams(
         canvas_size=size,
         head_radius=4.0 + float(rng.uniform(0, 0.5)),
@@ -312,8 +322,17 @@ def _roll_standard_body_params(rng: np.random.Generator, size: int) -> BodyParam
         leg_w2=1.1,
         neck_rx=1.2,
         neck_ry=0.8,
-        neck_gap=0.3 + torso_ry * 0.07,
+        neck_gap=neck_gap,
         hand_radius=0.8,
+        arm_shoulder_factor=0.28,
+        arm_end_torso_factor=0.66,
+        arm_end_belly_factor=0.22,
+        arm_shoulder_anchor_torso_factor=0.84,
+        arm_shoulder_anchor_shoulder_width_factor=0.0,
+        arm_hand_inset=0.18,
+        arm_hand_drop=0.5,
+        arm_hand_alpha=215,
+        neck_y_offset=neck_gap * 0.5,
     )
 
 
@@ -340,6 +359,15 @@ def _roll_belly_body_params(rng: np.random.Generator, size: int) -> BodyParams:
         neck_ry=0.7,
         neck_gap=0.2,
         hand_radius=0.8,
+        arm_shoulder_factor=0.18,
+        arm_end_torso_factor=0.66,
+        arm_end_belly_factor=0.22,
+        arm_shoulder_anchor_torso_factor=0.85,
+        arm_shoulder_anchor_shoulder_width_factor=0.0,
+        arm_hand_inset=0.2,
+        arm_hand_drop=0.5,
+        arm_hand_alpha=215,
+        neck_y_offset=0.1,
         arm_end_from_belly=True,
     )
 
@@ -365,6 +393,15 @@ def _roll_broad_body_params(rng: np.random.Generator, size: int) -> BodyParams:
         neck_ry=0.9,
         neck_gap=0.2,
         hand_radius=1.0,
+        arm_shoulder_factor=0.28,
+        arm_end_torso_factor=0.62,
+        arm_end_belly_factor=0.22,
+        arm_shoulder_anchor_torso_factor=0.7,
+        arm_shoulder_anchor_shoulder_width_factor=0.12,
+        arm_hand_inset=0.24,
+        arm_hand_drop=0.5,
+        arm_hand_alpha=215,
+        neck_y_offset=0.1,
     )
 
 
@@ -389,6 +426,15 @@ def _roll_thin_body_params(rng: np.random.Generator, size: int) -> BodyParams:
         neck_ry=0.9,
         neck_gap=0.3,
         hand_radius=0.6,
+        arm_shoulder_factor=0.26,
+        arm_end_torso_factor=0.68,
+        arm_end_belly_factor=0.22,
+        arm_shoulder_anchor_torso_factor=0.82,
+        arm_shoulder_anchor_shoulder_width_factor=0.0,
+        arm_hand_inset=0.14,
+        arm_hand_drop=0.3,
+        arm_hand_alpha=210,
+        neck_y_offset=0.15,
     )
 
 
@@ -413,6 +459,15 @@ def _roll_child_body_params(rng: np.random.Generator, size: int) -> BodyParams:
         neck_ry=0.55,
         neck_gap=0.2,
         hand_radius=0.45,
+        arm_shoulder_factor=0.18,
+        arm_end_torso_factor=0.64,
+        arm_end_belly_factor=0.22,
+        arm_shoulder_anchor_torso_factor=0.8,
+        arm_shoulder_anchor_shoulder_width_factor=0.0,
+        arm_hand_inset=0.12,
+        arm_hand_drop=0.3,
+        arm_hand_alpha=210,
+        neck_y_offset=0.15,
         leg_from_torso=True,
     )
 
