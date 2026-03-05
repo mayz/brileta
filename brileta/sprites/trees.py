@@ -21,7 +21,7 @@ import numpy as np
 from brileta import colors, config
 from brileta.sprites.common import sprite_visual_scale_for_shadow_height
 from brileta.sprites.primitives import (
-    CanvasStamper,
+    PaletteBrush,
     clamp,
     darken_rim,
     draw_line,
@@ -516,26 +516,20 @@ def _generate_sapling(canvas: np.ndarray, size: int, rng: np.random.Generator) -
     canopy_base[2] = clamp(canopy_base[2] + int(rng.integers(-8, 9)), 20, 65)
 
     trunk_rgba: colors.ColorRGBA = (*trunk_base, 255)
-    # Shadow tone.
-    shadow_rgba: colors.ColorRGBA = (
-        max(0, canopy_base[0] - 40),
-        max(0, canopy_base[1] - 35),
-        max(0, canopy_base[2] - 20),
-        210,
-    )
-    # Mid-tone: base color.
-    mid_rgba: colors.ColorRGBA = (
-        canopy_base[0],
-        canopy_base[1],
-        canopy_base[2],
-        200,
-    )
-    # Highlight tone shifted yellow.
-    highlight_rgba: colors.ColorRGBA = (
-        min(255, canopy_base[0] + 40),
-        min(255, canopy_base[1] + 30),
-        min(255, canopy_base[2] + 15),
-        190,
+
+    # Three-tone canopy palette: (shadow, mid, highlight).
+    canopy_pal = (
+        (
+            max(0, canopy_base[0] - 40),
+            max(0, canopy_base[1] - 35),
+            max(0, canopy_base[2] - 20),
+        ),
+        (canopy_base[0], canopy_base[1], canopy_base[2]),
+        (
+            min(255, canopy_base[0] + 40),
+            min(255, canopy_base[1] + 30),
+            min(255, canopy_base[2] + 15),
+        ),
     )
 
     lean = float(rng.uniform(-1.0, 1.0))
@@ -569,7 +563,7 @@ def _generate_sapling(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         ly = canopy_cy + math.sin(angle) * dist * vertical_scale
         lobe_centers.append((lx, ly))
 
-    stamper = CanvasStamper(canvas)
+    brush = PaletteBrush(canvas, canopy_pal)
     central_fills: list[tuple[float, float, float]] = []
     shadows: list[tuple[float, float, float]] = []
     mids: list[tuple[float, float, float]] = []
@@ -599,30 +593,10 @@ def _generate_sapling(canvas: np.ndarray, size: int, rng: np.random.Generator) -
             highlights.append((hx, hy, r))
 
     # Apply grouped passes for consistent shading and lower call overhead.
-    stamper.batch_stamp_circles(
-        central_fills,
-        shadow_rgba,
-        falloff=1.4,
-        hardness=0.5,
-    )
-    stamper.batch_stamp_circles(
-        shadows,
-        shadow_rgba,
-        falloff=1.5,
-        hardness=0.5,
-    )
-    stamper.batch_stamp_circles(
-        mids,
-        mid_rgba,
-        falloff=1.3,
-        hardness=0.5,
-    )
-    stamper.batch_stamp_circles(
-        highlights,
-        highlight_rgba,
-        falloff=1.2,
-        hardness=0.4,
-    )
+    brush.batch_circles(central_fills, tone=0, alpha=210, falloff=1.4, hardness=0.5)
+    brush.batch_circles(shadows, tone=0, alpha=210, falloff=1.5, hardness=0.5)
+    brush.batch_circles(mids, alpha=200, falloff=1.3, hardness=0.5)
+    brush.batch_circles(highlights, tone=2, alpha=190, falloff=1.2, hardness=0.4)
 
     nibble_canopy(
         canvas,

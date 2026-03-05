@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from brileta import colors
+from brileta.sprites.primitives import Palette3
 from brileta.types import Facing, MapDecorationSeed, SpatialSeed
 from brileta.util import rng as brileta_rng
 
@@ -56,12 +57,6 @@ def character_sprite_seed(
         salt=_CHARACTER_SPRITE_SEED_SALT,
     )
 
-
-# ---------------------------------------------------------------------------
-# Three-tone shading palettes: (shadow, mid, highlight)
-# ---------------------------------------------------------------------------
-
-Palette3 = tuple[colors.Color, colors.Color, colors.Color]
 
 SKIN_PALETTES: list[Palette3] = [
     ((150, 105, 75), (200, 160, 125), (230, 200, 170)),

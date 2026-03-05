@@ -28,7 +28,8 @@ import numpy as np
 from brileta import colors
 from brileta.sprites.common import sprite_visual_scale_for_shadow_height
 from brileta.sprites.primitives import (
-    CanvasStamper,
+    Palette3,
+    PaletteBrush,
     clamp,
     darken_rim,
     draw_line,
@@ -103,15 +104,15 @@ _Ellipse = tuple[float, float, float, float]
 
 def _pick_stone_colors(
     rng: np.random.Generator,
-) -> tuple[colors.ColorRGBA, colors.ColorRGBA, colors.ColorRGBA]:
-    """Pick shadow, body, and highlight RGBA from the stone palette with jitter.
+) -> Palette3:
+    """Pick shadow, body, and highlight palette from the stone palette with jitter.
 
     Uses wide per-channel jitter (brightness +-18, temperature +-8) so that
     even boulders from the same palette family look distinct.  The shadow and
     highlight deltas are aggressive (+-36) so the three-tone shading reads
     clearly at small rendered sizes.
 
-    Returns ``(shadow_rgba, body_rgba, highlight_rgba)``.
+    Returns a ``Palette3`` of ``(shadow, body, highlight)`` RGB tuples.
     """
     base_rgb = list(
         _BOULDER_BASE_PALETTES[int(rng.integers(len(_BOULDER_BASE_PALETTES)))]
@@ -123,26 +124,18 @@ def _pick_stone_colors(
     base_rgb[1] = clamp(base_rgb[1] + brightness_offset, 70, 190)
     base_rgb[2] = clamp(base_rgb[2] + brightness_offset + temp_offset, 70, 195)
 
-    # Aggressive shading deltas so depth reads at game zoom.
-    shadow_rgba: colors.ColorRGBA = (
+    shadow: colors.Color = (
         clamp(base_rgb[0] - 36),
         clamp(base_rgb[1] - 36),
         clamp(base_rgb[2] - 34),
-        220,
     )
-    body_rgba: colors.ColorRGBA = (
-        int(base_rgb[0]),
-        int(base_rgb[1]),
-        int(base_rgb[2]),
-        250,
-    )
-    highlight_rgba: colors.ColorRGBA = (
+    body: colors.Color = (int(base_rgb[0]), int(base_rgb[1]), int(base_rgb[2]))
+    highlight: colors.Color = (
         clamp(base_rgb[0] + 36),
         clamp(base_rgb[1] + 36),
         clamp(base_rgb[2] + 38),
-        210,
     )
-    return shadow_rgba, body_rgba, highlight_rgba
+    return shadow, body, highlight
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +159,7 @@ def _add_surface_cracks(
     cy: float,
     base_rx: float,
     base_ry: float,
-    shadow_rgba: colors.ColorRGBA,
+    shadow_rgb: colors.Color,
 ) -> None:
     """Draw thin dark lines across the boulder to suggest fracture planes.
 
@@ -178,9 +171,9 @@ def _add_surface_cracks(
         return
 
     crack_rgba: colors.ColorRGBA = (
-        clamp(shadow_rgba[0] - 20),
-        clamp(shadow_rgba[1] - 20),
-        clamp(shadow_rgba[2] - 18),
+        clamp(shadow_rgb[0] - 20),
+        clamp(shadow_rgb[1] - 20),
+        clamp(shadow_rgb[2] - 18),
         190,
     )
 
@@ -239,15 +232,41 @@ def _add_surface_detail(
     cy: float,
     base_rx: float,
     base_ry: float,
-    shadow_rgba: colors.ColorRGBA,
+    shadow_rgb: colors.Color,
 ) -> None:
     """Apply surface cracks and lichen in one call.
 
     Called after ellipse stamping but before nibble/rim so that cracks get
     properly edge-treated and lichen blends with the stone underneath.
     """
-    _add_surface_cracks(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
+    _add_surface_cracks(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgb)
     _add_lichen_spots(canvas, rng, cx, cy, base_rx, base_ry)
+
+
+def _stamp_stone_layers(
+    canvas: np.ndarray,
+    pal: Palette3,
+    shadow_ellipses: list[tuple[float, float, float, float]],
+    body_ellipses: list[tuple[float, float, float, float]],
+    highlight_ellipses: list[tuple[float, float, float, float]],
+    *,
+    falloff: tuple[float, float, float] = (2.2, 2.0, 1.9),
+    hardness: tuple[float, float, float] = (0.88, 0.86, 0.80),
+) -> None:
+    """Batch-stamp three-tone stone layers (shadow, body, highlight).
+
+    All four boulder archetypes follow the same compositing order with the
+    same tone/alpha values.  Only falloff and hardness vary (blocky uses
+    crisper edges than the other three).
+    """
+    for ellipses, tone, alpha, fo, hard in (
+        (shadow_ellipses, 0, 220, falloff[0], hardness[0]),
+        (body_ellipses, 1, 250, falloff[1], hardness[1]),
+        (highlight_ellipses, 2, 210, falloff[2], hardness[2]),
+    ):
+        PaletteBrush(canvas, pal, falloff=fo, hardness=hard).batch_ellipses(
+            ellipses, tone=tone, alpha=alpha
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -263,8 +282,7 @@ def _generate_rounded(canvas: np.ndarray, size: int, rng: np.random.Generator) -
     oval silhouette into something more angular and rock-like.
     shadow_height=2 (medium presence).
     """
-    shadow_rgba, body_rgba, highlight_rgba = _pick_stone_colors(rng)
-    stamper = CanvasStamper(canvas)
+    pal = _pick_stone_colors(rng)
 
     cx = size * 0.5 + float(rng.uniform(-0.3, 0.3))
     # Shifted down so that the lowest visible pixels reach near the canvas
@@ -323,14 +341,8 @@ def _generate_rounded(canvas: np.ndarray, size: int, rng: np.random.Generator) -
             )
         )
 
-    stamper.batch_stamp_ellipses(
-        shadow_ellipses, shadow_rgba, falloff=2.2, hardness=0.88
-    )
-    stamper.batch_stamp_ellipses(body_ellipses, body_rgba, falloff=2.0, hardness=0.86)
-    stamper.batch_stamp_ellipses(
-        highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
-    )
-    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
+    _stamp_stone_layers(canvas, pal, shadow_ellipses, body_ellipses, highlight_ellipses)
+    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, pal[0])
     nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)))
     darken_rim(canvas, darken=(18, 18, 15))
 
@@ -343,8 +355,7 @@ def _generate_tall(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
     tapers the top.  shadow_height=3 so it renders visibly taller than
     other boulders.
     """
-    shadow_rgba, body_rgba, highlight_rgba = _pick_stone_colors(rng)
-    stamper = CanvasStamper(canvas)
+    pal = _pick_stone_colors(rng)
 
     cx = size * 0.5 + float(rng.uniform(-0.3, 0.3))
     # Pushed down so the wide base and shadow ellipses reach the canvas
@@ -407,14 +418,8 @@ def _generate_tall(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
             )
         )
 
-    stamper.batch_stamp_ellipses(
-        shadow_ellipses, shadow_rgba, falloff=2.2, hardness=0.88
-    )
-    stamper.batch_stamp_ellipses(body_ellipses, body_rgba, falloff=2.0, hardness=0.86)
-    stamper.batch_stamp_ellipses(
-        highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
-    )
-    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
+    _stamp_stone_layers(canvas, pal, shadow_ellipses, body_ellipses, highlight_ellipses)
+    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, pal[0])
     nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)))
     darken_rim(canvas, darken=(18, 18, 15))
 
@@ -426,8 +431,7 @@ def _generate_flat(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
     shadow_height=2 but render naturally with shadow_height=1, producing a
     rock that's genuinely wider than tall in the game world.
     """
-    shadow_rgba, body_rgba, highlight_rgba = _pick_stone_colors(rng)
-    stamper = CanvasStamper(canvas)
+    pal = _pick_stone_colors(rng)
 
     cx = size * 0.5 + float(rng.uniform(-0.4, 0.4))
     # Sits low in the canvas - pushed further down so the shadow ellipse
@@ -486,14 +490,8 @@ def _generate_flat(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
             )
         )
 
-    stamper.batch_stamp_ellipses(
-        shadow_ellipses, shadow_rgba, falloff=2.2, hardness=0.88
-    )
-    stamper.batch_stamp_ellipses(body_ellipses, body_rgba, falloff=2.0, hardness=0.86)
-    stamper.batch_stamp_ellipses(
-        highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
-    )
-    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
+    _stamp_stone_layers(canvas, pal, shadow_ellipses, body_ellipses, highlight_ellipses)
+    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, pal[0])
     nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)), nibble_probability=0.08)
     darken_rim(canvas, darken=(18, 18, 15))
 
@@ -506,8 +504,7 @@ def _generate_blocky(canvas: np.ndarray, size: int, rng: np.random.Generator) ->
     the crispest edges, suggesting angular faces and fracture planes.
     shadow_height=2 (medium presence).
     """
-    shadow_rgba, body_rgba, highlight_rgba = _pick_stone_colors(rng)
-    stamper = CanvasStamper(canvas)
+    pal = _pick_stone_colors(rng)
 
     # Offset center from canvas middle for asymmetry.
     cx = size * 0.5 + float(rng.uniform(-0.6, 0.6))
@@ -566,14 +563,16 @@ def _generate_blocky(canvas: np.ndarray, size: int, rng: np.random.Generator) ->
         )
 
     # Highest hardness for the crispest, most angular edges.
-    stamper.batch_stamp_ellipses(
-        shadow_ellipses, shadow_rgba, falloff=2.4, hardness=0.92
+    _stamp_stone_layers(
+        canvas,
+        pal,
+        shadow_ellipses,
+        body_ellipses,
+        highlight_ellipses,
+        falloff=(2.4, 2.2, 2.0),
+        hardness=(0.92, 0.90, 0.84),
     )
-    stamper.batch_stamp_ellipses(body_ellipses, body_rgba, falloff=2.2, hardness=0.90)
-    stamper.batch_stamp_ellipses(
-        highlight_ellipses, highlight_rgba, falloff=2.0, hardness=0.84
-    )
-    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
+    _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, pal[0])
     nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)), nibble_probability=0.14)
     darken_rim(canvas, darken=(18, 18, 15))
 

@@ -60,6 +60,9 @@ from brileta.util._native import (
 
 __all__ = [
     "CanvasStamper",
+    "HeadBrush",
+    "Palette3",
+    "PaletteBrush",
     "alpha_blend",
     "clamp",
     "composite_over",
@@ -75,6 +78,9 @@ __all__ = [
     "stamp_ellipse",
     "stamp_fuzzy_circle",
 ]
+
+# Three-tone palette type: (shadow, mid, highlight).
+Palette3 = tuple[colors.Color, colors.Color, colors.Color]
 
 
 def clamp(value: int, lo: int = 0, hi: int = 255) -> int:
@@ -298,6 +304,195 @@ class CanvasStamper:
     ) -> None:
         """Alpha-composite a soft circle (ellipse with rx = ry = radius)."""
         self.stamp_ellipse(cx, cy, radius, radius, rgba, falloff, hardness)
+
+
+class PaletteBrush:
+    """Ergonomic stamping with a three-tone palette and preset style.
+
+    Binds canvas, palette, and default falloff/hardness so call sites only
+    need to specify geometry, tone index, and alpha.  Eliminates the
+    repetitive ``(*palette[idx], alpha)`` unpacking at every stamp call.
+    """
+
+    __slots__ = ("_canvas", "_falloff", "_hardness", "_pal")
+
+    def __init__(
+        self,
+        canvas: np.ndarray,
+        palette: Palette3,
+        *,
+        falloff: float = 2.0,
+        hardness: float = 0.88,
+    ) -> None:
+        self._canvas = canvas
+        self._pal = palette
+        self._falloff = falloff
+        self._hardness = hardness
+
+    def ellipse(
+        self,
+        cx: float,
+        cy: float,
+        rx: float,
+        ry: float,
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Stamp a palette-toned ellipse."""
+        _c_stamp_ellipse(
+            self._canvas,
+            cx,
+            cy,
+            rx,
+            ry,
+            self._pal[tone][0],
+            self._pal[tone][1],
+            self._pal[tone][2],
+            alpha,
+            falloff if falloff is not None else self._falloff,
+            hardness if hardness is not None else self._hardness,
+        )
+
+    def circle(
+        self,
+        cx: float,
+        cy: float,
+        radius: float,
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Stamp a palette-toned fuzzy circle."""
+        _c_stamp_fuzzy_circle(
+            self._canvas,
+            cx,
+            cy,
+            radius,
+            self._pal[tone][0],
+            self._pal[tone][1],
+            self._pal[tone][2],
+            alpha,
+            falloff if falloff is not None else self._falloff,
+            hardness if hardness is not None else self._hardness,
+        )
+
+    def batch_ellipses(
+        self,
+        ellipses: list[tuple[float, float, float, float]],
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Batch-stamp same-tone ellipses in one composite pass."""
+        if not ellipses:
+            return
+        _c_batch_stamp_ellipses(
+            self._canvas,
+            ellipses,
+            self._pal[tone][0],
+            self._pal[tone][1],
+            self._pal[tone][2],
+            alpha,
+            falloff if falloff is not None else self._falloff,
+            hardness if hardness is not None else self._hardness,
+        )
+
+    def batch_circles(
+        self,
+        circles: list[tuple[float, float, float]],
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Batch-stamp same-tone circles in one composite pass."""
+        if not circles:
+            return
+        _c_batch_stamp_circles(
+            self._canvas,
+            circles,
+            self._pal[tone][0],
+            self._pal[tone][1],
+            self._pal[tone][2],
+            alpha,
+            falloff if falloff is not None else self._falloff,
+            hardness if hardness is not None else self._hardness,
+        )
+
+
+class HeadBrush(PaletteBrush):
+    """PaletteBrush with head-relative coordinate helpers.
+
+    Positions are expressed as factors of the head radius *hr*, offset
+    from the head center *(hx, hy)*.  This eliminates the repetitive
+    ``hx + hr * factor`` arithmetic at every hair/face stamp call.
+    """
+
+    __slots__ = ("hr", "hx", "hy")
+
+    def __init__(
+        self,
+        canvas: np.ndarray,
+        palette: Palette3,
+        hx: float,
+        hy: float,
+        hr: float,
+        *,
+        falloff: float = 2.0,
+        hardness: float = 0.88,
+    ) -> None:
+        super().__init__(canvas, palette, falloff=falloff, hardness=hardness)
+        self.hx = hx
+        self.hy = hy
+        self.hr = hr
+
+    def rel_ellipse(
+        self,
+        cx_f: float,
+        cy_f: float,
+        rx_f: float,
+        ry_f: float,
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Stamp ellipse at head-relative position with factor-based radii."""
+        self.ellipse(
+            self.hx + self.hr * cx_f,
+            self.hy + self.hr * cy_f,
+            self.hr * rx_f,
+            self.hr * ry_f,
+            tone,
+            alpha,
+            falloff,
+            hardness,
+        )
+
+    def rel_circle(
+        self,
+        cx_f: float,
+        cy_f: float,
+        r_f: float,
+        tone: int = 1,
+        alpha: int = 235,
+        falloff: float | None = None,
+        hardness: float | None = None,
+    ) -> None:
+        """Stamp fuzzy circle at head-relative position with factor-based radius."""
+        self.circle(
+            self.hx + self.hr * cx_f,
+            self.hy + self.hr * cy_f,
+            self.hr * r_f,
+            tone,
+            alpha,
+            falloff,
+            hardness,
+        )
 
 
 def fill_triangle(

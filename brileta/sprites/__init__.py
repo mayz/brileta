@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from brileta.sprites.primitives import (
     CanvasStamper,
+    HeadBrush,
+    Palette3,
+    PaletteBrush,
     alpha_blend,
     clamp,
     composite_over,
@@ -16,6 +19,9 @@ from brileta.sprites.primitives import (
 
 __all__ = [
     "CanvasStamper",
+    "HeadBrush",
+    "Palette3",
+    "PaletteBrush",
     "alpha_blend",
     "clamp",
     "composite_over",

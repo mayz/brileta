@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from brileta import colors
 from brileta.sprites.primitives import (
+    HeadBrush,
     draw_tapered_trunk,
     draw_thick_line,
     stamp_ellipse,
@@ -365,108 +366,32 @@ def _layer_head(context: CharacterDrawContext) -> None:
     hx = context.cx
     hy = context.head_cy
     hr = context.hr
-    canvas = context.canvas
 
-    def stamp_head_circle(
-        cx: float,
-        cy: float,
-        radius: float,
-        tone_idx: int,
-        alpha: int,
-        falloff: float,
-        hardness: float,
-    ) -> None:
-        stamp_fuzzy_circle(
-            canvas,
-            cx,
-            cy,
-            radius,
-            (*appearance.skin_pal[tone_idx], alpha),
-            falloff,
-            hardness,
-        )
-
-    def stamp_head_ellipse(
-        cx: float,
-        cy: float,
-        rx: float,
-        ry: float,
-        tone_idx: int,
-        alpha: int,
-        falloff: float,
-        hardness: float,
-    ) -> None:
-        stamp_ellipse(
-            canvas,
-            cx,
-            cy,
-            rx,
-            ry,
-            (*appearance.skin_pal[tone_idx], alpha),
-            falloff,
-            hardness,
-        )
+    b = HeadBrush(context.canvas, appearance.skin_pal, hx, hy, hr)
 
     if facing == Facing.NORTH:
-        for cy, radius, tone_idx, alpha, falloff, hardness in (
-            (hy + 0.2, hr + 0.2, 0, 240, 2.0, 0.88),
-            (hy, hr, 1, 235, 2.0, 0.88),
-        ):
-            stamp_head_circle(hx, cy, radius, tone_idx, alpha, falloff, hardness)
+        b.circle(hx, hy + 0.2, hr + 0.2, tone=0, alpha=240)
+        b.circle(hx, hy, hr)
+
     elif facing in {Facing.EAST, Facing.WEST}:
-        for (
-            cx,
-            cy,
-            rx,
-            ry,
-            tone_idx,
-            alpha,
-            falloff,
-            hardness,
-        ) in (
-            (hx, hy + 0.2, hr * 0.85, hr + 0.2, 0, 240, 2.0, 0.88),
-            (hx, hy, hr * 0.8, hr, 1, 235, 2.0, 0.88),
-            (
-                hx + hr * -0.14,
-                hy + hr * -0.2,
-                hr * 0.45,
-                hr * 0.55,
-                2,
-                210,
-                1.6,
-                0.75,
-            ),
-            (
-                hx + hr * -0.26,
-                hy + hr * -0.12,
-                hr * 0.34,
-                hr * 0.48,
-                2,
-                205,
-                1.5,
-                0.72,
-            ),
-        ):
-            stamp_head_ellipse(cx, cy, rx, ry, tone_idx, alpha, falloff, hardness)
+        b.ellipse(hx, hy + 0.2, hr * 0.85, hr + 0.2, tone=0, alpha=240)
+        b.ellipse(hx, hy, hr * 0.8, hr)
+        b.rel_ellipse(
+            -0.14, -0.2, 0.45, 0.55, tone=2, alpha=210, falloff=1.6, hardness=0.75
+        )
+        b.rel_ellipse(
+            -0.26, -0.12, 0.34, 0.48, tone=2, alpha=205, falloff=1.5, hardness=0.72
+        )
         if appearance.hair_style_idx != HAIR_IDX_TALL:
-            stamp_head_ellipse(
-                hx + hr * 0.28,
-                hy + hr * 0.03,
-                hr * 0.3,
-                hr * 0.46,
-                0,
-                195,
-                1.5,
-                0.72,
+            b.rel_ellipse(
+                0.28, 0.03, 0.3, 0.46, tone=0, alpha=195, falloff=1.5, hardness=0.72
             )
-        stamp_head_circle(hx + hr * -0.63, hy + hr * -0.02, hr * 0.12, 2, 190, 1.4, 0.7)
+        b.rel_circle(-0.63, -0.02, 0.12, tone=2, alpha=190, falloff=1.4, hardness=0.7)
+
     else:
-        for cy, radius, tone_idx, alpha, falloff, hardness in (
-            (hy + 0.2, hr + 0.2, 0, 240, 2.0, 0.88),
-            (hy, hr, 1, 235, 2.0, 0.88),
-            (hy + hr * -0.22, hr * 0.6, 2, 210, 1.6, 0.75),
-        ):
-            stamp_head_circle(hx, cy, radius, tone_idx, alpha, falloff, hardness)
+        b.circle(hx, hy + 0.2, hr + 0.2, tone=0, alpha=240)
+        b.circle(hx, hy, hr)
+        b.rel_circle(0.0, -0.22, 0.6, tone=2, alpha=210, falloff=1.6, hardness=0.75)
 
 
 def _layer_face_final(context: CharacterDrawContext) -> None:
