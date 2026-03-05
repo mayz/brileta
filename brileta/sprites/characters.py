@@ -1666,6 +1666,7 @@ class CharacterDrawContext:
 
 
 CharacterLayerFn = Callable[[CharacterDrawContext], None]
+CharacterLayerStep = tuple[str, CharacterLayerFn]
 
 
 def _build_character_draw_context(
@@ -1822,8 +1823,8 @@ def _layer_legs(context: CharacterDrawContext) -> None:
             )
 
 
-def _layer_torso(context: CharacterDrawContext) -> None:
-    """Draw torso-adjacent body masses below clothing."""
+def _layer_belly(context: CharacterDrawContext) -> None:
+    """Draw belly/body mass that sits behind torso clothing."""
     if context.params.belly_ry > 0 and not context.appearance.covers_legs:
         _draw_belly_mass(
             context.canvas,
@@ -1835,7 +1836,7 @@ def _layer_torso(context: CharacterDrawContext) -> None:
         )
 
 
-def _layer_clothing(context: CharacterDrawContext) -> None:
+def _layer_torso(context: CharacterDrawContext) -> None:
     """Draw torso clothing and robe/boot coverage."""
     canvas = context.canvas
     appearance = context.appearance
@@ -1910,19 +1911,33 @@ def _layer_clothing(context: CharacterDrawContext) -> None:
                 )
 
 
-def _layer_arms(context: CharacterDrawContext) -> None:
-    """Draw arm strokes and hand blobs."""
-    canvas = context.canvas
+@dataclass(frozen=True)
+class ArmLayerState:
+    """Shared arm geometry/colors reused by back/front arm layers."""
+
+    shoulder_y: float
+    arm_end_y: float
+    arm_alpha: int
+    hand_drop: float
+    hand_alpha: int
+    skin_mid: colors.Color
+    arm_shadow_rgb: colors.Color
+    arm_mid_rgb: colors.Color
+    is_broad: bool
+    is_belly: bool
+    is_thin: bool
+    is_child: bool
+
+
+def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
+    """Resolve arm shading and anchor values for arm layer passes."""
     appearance = context.appearance
-    pose = context.pose
     params = context.params
-    facing = context.facing
-    cx = context.cx
     torso_cy = context.torso_cy
     belly_cy = context.belly_cy
 
-    _s_shadow, s_mid, _s_hi = appearance.skin_pal
-    _c_shadow, _c_mid, _c_hi = appearance.cloth_pal
+    s_shadow, s_mid, _s_hi = appearance.skin_pal
+    c_shadow, c_mid, _c_hi = appearance.cloth_pal
     is_broad = params.shoulder_width > params.torso_rx
     is_belly = params.belly_ry > 0
     is_thin = (
@@ -1959,138 +1974,177 @@ def _layer_arms(context: CharacterDrawContext) -> None:
 
     if appearance.clothing_fn is _draw_bare_torso:
         arm_shadow_rgb = (
-            (_s_shadow[0] + s_mid[0]) // 2,
-            (_s_shadow[1] + s_mid[1]) // 2,
-            (_s_shadow[2] + s_mid[2]) // 2,
+            (s_shadow[0] + s_mid[0]) // 2,
+            (s_shadow[1] + s_mid[1]) // 2,
+            (s_shadow[2] + s_mid[2]) // 2,
         )
         arm_mid_rgb = s_mid
     else:
-        arm_shadow_rgb = _c_shadow
-        arm_mid_rgb = _c_mid
+        arm_shadow_rgb = c_shadow
+        arm_mid_rgb = c_mid
 
-    if facing in {Facing.EAST, Facing.WEST}:
+    return ArmLayerState(
+        shoulder_y=shoulder_y,
+        arm_end_y=arm_end_y,
+        arm_alpha=arm_alpha,
+        hand_drop=hand_drop,
+        hand_alpha=hand_alpha,
+        skin_mid=s_mid,
+        arm_shadow_rgb=arm_shadow_rgb,
+        arm_mid_rgb=arm_mid_rgb,
+        is_broad=is_broad,
+        is_belly=is_belly,
+        is_thin=is_thin,
+        is_child=is_child,
+    )
+
+
+def _draw_frontback_arm(
+    context: CharacterDrawContext,
+    arm_state: ArmLayerState,
+    side: int,
+    arm_dy: float,
+) -> None:
+    """Draw one arm for NORTH/SOUTH facings, preserving prior per-side order."""
+    appearance = context.appearance
+    params = context.params
+    arm_swing_scale = 0.5 if appearance.clothing_fn is _draw_armor_torso else 1.0
+    shoulder_base = params.shoulder_width if arm_state.is_broad else params.torso_rx
+    if arm_state.is_broad:
+        shoulder_anchor = (
+            params.torso_rx * 0.82 + (params.shoulder_width - params.torso_rx) * 0.12
+        )
+        hand_inset = 0.24
+    elif arm_state.is_belly:
+        shoulder_anchor = shoulder_base * 0.85
+        hand_inset = 0.2
+    elif arm_state.is_child:
+        shoulder_anchor = shoulder_base * 0.8
+        hand_inset = 0.12
+    elif arm_state.is_thin:
+        shoulder_anchor = shoulder_base * 0.82
+        hand_inset = 0.14
+    else:
+        shoulder_anchor = shoulder_base * 0.84
+        hand_inset = 0.18
+
+    arm_x = context.cx + side * shoulder_anchor
+    hand_x = arm_x - side * hand_inset
+    hand_y = arm_state.arm_end_y + arm_dy * arm_swing_scale
+
+    stamp_fuzzy_circle(
+        context.canvas,
+        arm_x,
+        arm_state.shoulder_y,
+        max(0.45, params.arm_thickness * 0.38),
+        (*arm_state.arm_shadow_rgb, 175),
+        1.45,
+        0.72,
+    )
+
+    # Two-pass arm stroke gives a readable limb edge without looking detached.
+    draw_thick_line(
+        context.canvas,
+        arm_x + side * 0.08,
+        arm_state.shoulder_y + 0.05,
+        hand_x + side * 0.08,
+        hand_y + 0.05,
+        (*arm_state.arm_shadow_rgb, max(165, arm_state.arm_alpha - 30)),
+        params.arm_thickness,
+    )
+    draw_thick_line(
+        context.canvas,
+        arm_x,
+        arm_state.shoulder_y,
+        hand_x,
+        hand_y,
+        (*arm_state.arm_mid_rgb, arm_state.arm_alpha),
+        params.arm_thickness,
+    )
+    if params.hand_radius > 0:
+        stamp_fuzzy_circle(
+            context.canvas,
+            hand_x,
+            hand_y + arm_state.hand_drop,
+            params.hand_radius,
+            (*arm_state.skin_mid, arm_state.hand_alpha),
+            2.0,
+            0.85,
+        )
+
+
+def _layer_back_arm(context: CharacterDrawContext) -> None:
+    """Draw the farther arm layer for the current facing."""
+    arm_state = _build_arm_layer_state(context)
+    if context.facing in {Facing.EAST, Facing.WEST}:
         # Side profile uses a clear foreground arm plus a faint background arm.
-        front_sign = -1.0
         back_sign = 1.0
-        front_arm_x = cx + front_sign * params.torso_rx * 0.62
-        front_hand_x = front_arm_x + front_sign * 0.18
-        far_arm_x = cx + back_sign * params.torso_rx * 0.34
-        hand_radius = min(0.9, params.hand_radius) if params.hand_radius > 0 else 0.0
-
+        far_arm_x = context.cx + back_sign * context.params.torso_rx * 0.34
         draw_thick_line(
-            canvas,
+            context.canvas,
             far_arm_x,
-            shoulder_y + 0.05,
+            arm_state.shoulder_y + 0.05,
             far_arm_x + back_sign * 0.1,
-            arm_end_y + pose.right_arm_dy + 0.05,
-            (*arm_shadow_rgb, max(145, arm_alpha - 55)),
-            max(1, params.arm_thickness - 1),
+            arm_state.arm_end_y + context.pose.right_arm_dy + 0.05,
+            (*arm_state.arm_shadow_rgb, max(145, arm_state.arm_alpha - 55)),
+            max(1, context.params.arm_thickness - 1),
+        )
+        return
+    _draw_frontback_arm(context, arm_state, side=-1, arm_dy=context.pose.left_arm_dy)
+
+
+def _layer_front_arm(context: CharacterDrawContext) -> None:
+    """Draw the nearer arm layer for the current facing."""
+    arm_state = _build_arm_layer_state(context)
+    if context.facing in {Facing.EAST, Facing.WEST}:
+        front_sign = -1.0
+        front_arm_x = context.cx + front_sign * context.params.torso_rx * 0.62
+        front_hand_x = front_arm_x + front_sign * 0.18
+        hand_radius = (
+            min(0.9, context.params.hand_radius)
+            if context.params.hand_radius > 0
+            else 0.0
         )
 
         stamp_fuzzy_circle(
-            canvas,
+            context.canvas,
             front_arm_x,
-            shoulder_y,
-            max(0.45, params.arm_thickness * 0.38),
-            (*arm_shadow_rgb, 185),
+            arm_state.shoulder_y,
+            max(0.45, context.params.arm_thickness * 0.38),
+            (*arm_state.arm_shadow_rgb, 185),
             1.45,
             0.72,
         )
-
         draw_thick_line(
-            canvas,
+            context.canvas,
             front_arm_x + front_sign * 0.08,
-            shoulder_y,
+            arm_state.shoulder_y,
             front_hand_x + front_sign * 0.08,
-            arm_end_y + pose.left_arm_dy,
-            (*arm_shadow_rgb, max(165, arm_alpha - 30)),
-            params.arm_thickness,
+            arm_state.arm_end_y + context.pose.left_arm_dy,
+            (*arm_state.arm_shadow_rgb, max(165, arm_state.arm_alpha - 30)),
+            context.params.arm_thickness,
         )
         draw_thick_line(
-            canvas,
+            context.canvas,
             front_arm_x,
-            shoulder_y,
+            arm_state.shoulder_y,
             front_hand_x,
-            arm_end_y + pose.left_arm_dy,
-            (*arm_mid_rgb, arm_alpha),
-            params.arm_thickness,
+            arm_state.arm_end_y + context.pose.left_arm_dy,
+            (*arm_state.arm_mid_rgb, arm_state.arm_alpha),
+            context.params.arm_thickness,
         )
         if hand_radius > 0:
             stamp_fuzzy_circle(
-                canvas,
+                context.canvas,
                 front_hand_x,
-                arm_end_y + pose.left_arm_dy + hand_drop,
+                arm_state.arm_end_y + context.pose.left_arm_dy + arm_state.hand_drop,
                 hand_radius,
-                (*s_mid, hand_alpha),
+                (*arm_state.skin_mid, arm_state.hand_alpha),
                 2.0,
                 0.85,
             )
-    else:
-        # Keep arms attached at the shoulder edge and bias to mostly vertical fall.
-        arm_swing_scale = 0.5 if appearance.clothing_fn is _draw_armor_torso else 1.0
-        shoulder_base = params.shoulder_width if is_broad else params.torso_rx
-        if is_broad:
-            shoulder_anchor = (
-                params.torso_rx * 0.82
-                + (params.shoulder_width - params.torso_rx) * 0.12
-            )
-            hand_inset = 0.24
-        elif is_belly:
-            shoulder_anchor = shoulder_base * 0.85
-            hand_inset = 0.2
-        elif is_child:
-            shoulder_anchor = shoulder_base * 0.8
-            hand_inset = 0.12
-        elif is_thin:
-            shoulder_anchor = shoulder_base * 0.82
-            hand_inset = 0.14
-        else:
-            shoulder_anchor = shoulder_base * 0.84
-            hand_inset = 0.18
-        for side, arm_dy in [(-1, pose.left_arm_dy), (1, pose.right_arm_dy)]:
-            arm_x = cx + side * shoulder_anchor
-            hand_x = arm_x - side * hand_inset
-            hand_y = arm_end_y + arm_dy * arm_swing_scale
-
-            stamp_fuzzy_circle(
-                canvas,
-                arm_x,
-                shoulder_y,
-                max(0.45, params.arm_thickness * 0.38),
-                (*arm_shadow_rgb, 175),
-                1.45,
-                0.72,
-            )
-
-            # Two-pass arm stroke gives a readable limb edge without looking detached.
-            draw_thick_line(
-                canvas,
-                arm_x + side * 0.08,
-                shoulder_y + 0.05,
-                hand_x + side * 0.08,
-                hand_y + 0.05,
-                (*arm_shadow_rgb, max(165, arm_alpha - 30)),
-                params.arm_thickness,
-            )
-            draw_thick_line(
-                canvas,
-                arm_x,
-                shoulder_y,
-                hand_x,
-                hand_y,
-                (*arm_mid_rgb, arm_alpha),
-                params.arm_thickness,
-            )
-            if params.hand_radius > 0:
-                stamp_fuzzy_circle(
-                    canvas,
-                    hand_x,
-                    hand_y + hand_drop,
-                    params.hand_radius,
-                    (*s_mid, hand_alpha),
-                    2.0,
-                    0.85,
-                )
+        return
+    _draw_frontback_arm(context, arm_state, side=1, arm_dy=context.pose.right_arm_dy)
 
 
 def _layer_neck(context: CharacterDrawContext) -> None:
@@ -2518,16 +2572,51 @@ def _layer_face_final(context: CharacterDrawContext) -> None:
         )
 
 
-_CHARACTER_LAYER_PIPELINE: tuple[tuple[str, CharacterLayerFn], ...] = (
+_CHARACTER_LAYER_PIPELINE_SOUTH: tuple[CharacterLayerStep, ...] = (
+    # SOUTH-facing keeps torso mass below both arm passes.
     ("legs", _layer_legs),
+    ("belly", _layer_belly),
     ("torso", _layer_torso),
-    ("clothing", _layer_clothing),
-    ("arms", _layer_arms),
+    ("back_arm", _layer_back_arm),
+    ("front_arm", _layer_front_arm),
     ("neck", _layer_neck),
     ("head", _layer_head),
     ("hair", _layer_hair),
     ("face", _layer_face_final),
 )
+
+_CHARACTER_LAYER_PIPELINE_NORTH: tuple[CharacterLayerStep, ...] = (
+    # NORTH-facing shares the same z-stack but has different per-layer internals.
+    ("legs", _layer_legs),
+    ("belly", _layer_belly),
+    ("torso", _layer_torso),
+    ("back_arm", _layer_back_arm),
+    ("front_arm", _layer_front_arm),
+    ("neck", _layer_neck),
+    ("head", _layer_head),
+    ("hair", _layer_hair),
+    ("face", _layer_face_final),
+)
+
+_CHARACTER_LAYER_PIPELINE_SIDE: tuple[CharacterLayerStep, ...] = (
+    # Side profile has explicit arm depth: back arm then front arm.
+    ("legs", _layer_legs),
+    ("belly", _layer_belly),
+    ("torso", _layer_torso),
+    ("back_arm", _layer_back_arm),
+    ("front_arm", _layer_front_arm),
+    ("neck", _layer_neck),
+    ("head", _layer_head),
+    ("hair", _layer_hair),
+    ("face", _layer_face_final),
+)
+
+_CHARACTER_LAYER_PIPELINES_BY_FACING: dict[Facing, tuple[CharacterLayerStep, ...]] = {
+    Facing.SOUTH: _CHARACTER_LAYER_PIPELINE_SOUTH,
+    Facing.NORTH: _CHARACTER_LAYER_PIPELINE_NORTH,
+    Facing.WEST: _CHARACTER_LAYER_PIPELINE_SIDE,
+    Facing.EAST: _CHARACTER_LAYER_PIPELINE_SIDE,
+}
 
 
 def _draw_character(
@@ -2537,7 +2626,8 @@ def _draw_character(
 ) -> None:
     """Draw one character via an explicit ordered layer pipeline."""
     context = _build_character_draw_context(canvas, appearance, pose)
-    for _layer_name, layer_fn in _CHARACTER_LAYER_PIPELINE:
+    layer_pipeline = _CHARACTER_LAYER_PIPELINES_BY_FACING[context.facing]
+    for _layer_name, layer_fn in layer_pipeline:
         layer_fn(context)
 
 
