@@ -7,12 +7,13 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from brileta.environment.map import GameMap
 from brileta.environment.tile_types import TileTypeAppearance
 from brileta.game.actors import Actor
 from brileta.game.game_world import GameWorld
-from brileta.types import InterpolationAlpha, Opacity
+from brileta.types import Facing, InterpolationAlpha, Opacity
 from brileta.view.render.actor_renderer import ActorRenderer
 from brileta.view.render.shadow_renderer import ShadowRenderer
 from brileta.view.render.viewport import ViewportSystem
@@ -46,6 +47,9 @@ class DummyActor:
         self.render_y = float(y)
         self.shadow_height = 1
         self.sprite_uv = None
+        self.character_sprite_uvs = None
+        self.facing = Facing.SOUTH
+        self.walk_frame = 0
         self.sprite_ground_anchor_y = 1.0
 
 
@@ -380,6 +384,27 @@ class TestRenderActorOutline:
         assert graphics.draw_actor_outline.call_args[0][1] == 20.0
         assert graphics.draw_actor_outline.call_args[0][2] == 40.0
 
+    def test_sprite_actor_uses_sprite_outline_path(self) -> None:
+        """Sprite actors should use sprite-contour outlines, not glyph outlines."""
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(6, 5, ch="@")
+        actor.sprite_uv = SimpleNamespace(u1=0.0, v1=0.0, u2=1.0, v2=1.0)
+        game_map = DummyGameMap(20, 20)
+
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actor_outline(
+            cast(Actor, actor),
+            (255, 0, 0),
+            Opacity(0.8),
+            game_map=cast(GameMap, game_map),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+        )
+
+        graphics.draw_sprite_outline.assert_called_once()
+        graphics.draw_actor_outline.assert_not_called()
+
 
 class TestTileBgForwarding:
     """Tile background should be forwarded only for single-glyph actors."""
@@ -487,3 +512,86 @@ class TestViewportZoomScaling:
         # backend's centering math lands on the zoomed world tile, not between tiles.
         assert float(call_args.kwargs["screen_x"][0]) == 72.0
         assert float(call_args.kwargs["screen_y"][0]) == 80.0
+
+    def test_pose_set_actor_still_renders_using_sprite_uv(self) -> None:
+        """Renderer should ignore pose metadata and read current sprite_uv only."""
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(5, 5)
+        actor.sprite_uv = SimpleNamespace(u1=0.1, v1=0.2, u2=0.3, v2=0.4)
+        actor.character_sprite_uvs = tuple(
+            SimpleNamespace(
+                u1=float(i) / 100.0,
+                v1=float(i) / 100.0,
+                u2=float(i + 1) / 100.0,
+                v2=float(i + 1) / 100.0,
+            )
+            for i in range(4)
+        )
+        gw = DummyGameWorld([actor], actor)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+        )
+
+        call_args = graphics.draw_sprite_smooth_batch.call_args
+        assert call_args is not None
+        sprite_uvs = call_args.kwargs["sprite_uvs"]
+        assert float(sprite_uvs[0][0]) == pytest.approx(0.1)
+        assert float(sprite_uvs[0][1]) == pytest.approx(0.2)
+        assert float(sprite_uvs[0][2]) == pytest.approx(0.3)
+        assert float(sprite_uvs[0][3]) == pytest.approx(0.4)
+
+
+class TestRoofOccludedRendering:
+    """Roof-occluded actors should use the correct outline path."""
+
+    def test_roof_occluded_sprite_actor_uses_sprite_outline(self) -> None:
+        """Sprite actors render sprite-contour outlines, not tile or glyph fallback."""
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(5, 5, ch="@")
+        actor.sprite_uv = SimpleNamespace(u1=0.0, v1=0.0, u2=1.0, v2=1.0)
+        gw = DummyGameWorld([actor], actor)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+            roof_occluded_actors=frozenset({cast(Actor, actor)}),
+        )
+
+        graphics.draw_sprite_outline.assert_called_once()
+        graphics.draw_rect_outline.assert_not_called()
+        graphics.draw_actor_outline.assert_not_called()
+        graphics.draw_sprite_smooth_batch.assert_not_called()
+        graphics.draw_actor.assert_not_called()
+
+    def test_roof_occluded_glyph_actor_uses_glyph_outline(self) -> None:
+        """Non-sprite actors keep the glyph-based roof-occluded outline."""
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(5, 5, ch="g")
+        gw = DummyGameWorld([actor], actor)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+            roof_occluded_actors=frozenset({cast(Actor, actor)}),
+        )
+
+        graphics.draw_actor_outline.assert_called_once()
+        graphics.draw_rect_outline.assert_not_called()
+        graphics.draw_actor.assert_not_called()

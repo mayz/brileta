@@ -278,6 +278,21 @@ class GraphicsContext:
         """Create a dynamic sprite atlas if supported by the backend."""
         return None
 
+    def draw_sprite_outline(
+        self,
+        sprite_uv: SpriteUV,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
+    ) -> None:
+        """Draw a 1px outline extracted from a sprite's alpha silhouette."""
+        return
+
     def set_sprite_atlas_texture(self, texture: Any | None) -> None:
         """Bind the sprite atlas texture for rendering, if supported."""
         return

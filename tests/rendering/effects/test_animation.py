@@ -19,6 +19,9 @@ class DummyActor:
         self._animation_controlled = False
         self.health: Any = None  # Optional health component for death tests
 
+    def _update_active_sprite_uv(self, moving: bool) -> None:
+        """No-op stub for animation tests."""
+
 
 class TestAnimation:
     """Test Animation base class behavior."""

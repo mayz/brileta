@@ -114,6 +114,15 @@ class SpriteUV(NamedTuple):
 # and used as keys in registries, disposition maps, and goal tracking.
 ActorId = NewType("ActorId", int)
 
+
+# Facing direction for humanoid sprite pose selection.
+class Facing(Enum):
+    SOUTH = "south"
+    NORTH = "north"
+    EAST = "east"
+    WEST = "west"
+
+
 # Unique identifier for sound definitions (e.g., "fire_ambient", "waterfall_ambient")
 type SoundId = str
 

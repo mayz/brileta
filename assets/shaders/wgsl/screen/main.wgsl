@@ -83,6 +83,10 @@ fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
 
 const ACTOR_LIGHTING_FLAG: u32 = 1u;
 const SPRITE_ATLAS_FLAG: u32 = 2u;
+const SPRITE_OUTLINE_FLAG: u32 = 4u;
+const SPRITE_OUTLINE_ALPHA_ON: f32 = 0.10;
+const SPRITE_OUTLINE_ALPHA_NEIGHBOR_ON: f32 = 0.20;
+const SPRITE_OUTLINE_BORDER_EPS: f32 = 0.01;
 const CONTRAST_TILE_BG_SENTINEL_EPS: f32 = 0.001;
 const CONTRAST_LIT_DIST_MIN: f32 = 0.15;
 const CONTRAST_LIT_DIST_MAX: f32 = 0.21;
@@ -190,43 +194,95 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Sample from the sprite atlas when flagged, otherwise from the CP437 atlas.
     var sampled_color: vec4<f32>;
     if ((input.v_flags & SPRITE_ATLAS_FLAG) != 0u) {
-        sampled_color = textureSample(u_sprite_atlas, u_sampler, input.v_uv) * tint;
-        let sun_dir = uniforms.u_sun_direction.xy;
-        let sun_len = length(sun_dir);
-        if (sun_len > 0.01) {
-            let sun_norm = sun_dir / sun_len;
-            // Billboard lighting model:
-            // - Sun X shifts light left/right across the sprite.
-            // - Sun Y is treated as front/back lighting for upright sprites:
-            //   south-facing (+Y) lights the visible canopy face, north-facing
-            //   (-Y) darkens it because the lit side is mostly hidden.
-            let centered = (input.v_uv_local - vec2f(0.5, 0.5)) * 2.0;
-            let lateral = centered.x * sun_norm.x;
-            let front = sun_norm.y;
-            // Add a soft directional lobe so highlights track azimuth across
-            // canopy pixels instead of reading as all-or-nothing exposure.
-            let pseudo_axis_raw = vec2f(sun_norm.x, -sun_norm.y * 0.45);
-            let pseudo_axis_len = length(pseudo_axis_raw);
-            let pseudo_axis = select(
-                vec2f(0.0, 0.0),
-                pseudo_axis_raw / pseudo_axis_len,
-                pseudo_axis_len > 0.01,
-            );
-            let canopy_weight = 1.0 - smoothstep(0.2, 1.15, length(centered));
-            let directional_lobe = dot(centered, pseudo_axis) * canopy_weight;
+        let sprite_sample = textureSample(u_sprite_atlas, u_sampler, input.v_uv);
+        if ((input.v_flags & SPRITE_OUTLINE_FLAG) != 0u) {
+            // Sprite contour extraction from alpha silhouette. Produces a
+            // 1px edge marker in texture space rather than a full-tile box.
+            let atlas_dims = textureDimensions(u_sprite_atlas);
+            let texel = vec2f(1.0 / f32(atlas_dims.x), 1.0 / f32(atlas_dims.y));
+            let a = sprite_sample.a;
+            let a_l = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(-texel.x, 0.0)
+            ).a;
+            let a_r = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(texel.x, 0.0)
+            ).a;
+            let a_u = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(0.0, -texel.y)
+            ).a;
+            let a_d = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(0.0, texel.y)
+            ).a;
+            let a_ul = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(-texel.x, -texel.y)
+            ).a;
+            let a_ur = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(texel.x, -texel.y)
+            ).a;
+            let a_dl = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(-texel.x, texel.y)
+            ).a;
+            let a_dr = textureSample(
+                u_sprite_atlas, u_sampler, input.v_uv + vec2f(texel.x, texel.y)
+            ).a;
 
-            let lit = (
-                max(lateral, 0.0) * 0.22
-                + max(front, 0.0) * 0.36
-                + max(directional_lobe, 0.0) * 0.38
+            let center_on = a > SPRITE_OUTLINE_ALPHA_ON;
+            let neighbors_on = min(
+                min(min(a_l, a_r), min(a_u, a_d)),
+                min(min(a_ul, a_ur), min(a_dl, a_dr)),
+            ) > SPRITE_OUTLINE_ALPHA_NEIGHBOR_ON;
+            let uv = input.v_uv_local;
+            let at_sprite_border = (
+                uv.x <= SPRITE_OUTLINE_BORDER_EPS
+                || uv.x >= (1.0 - SPRITE_OUTLINE_BORDER_EPS)
+                || uv.y <= SPRITE_OUTLINE_BORDER_EPS
+                || uv.y >= (1.0 - SPRITE_OUTLINE_BORDER_EPS)
             );
-            let shaded = (
-                max(-lateral, 0.0) * 0.28
-                + max(-front, 0.0) * 0.50
-                + max(-directional_lobe, 0.0) * 0.42
+            let edge_alpha = select(
+                0.0,
+                1.0,
+                center_on && (!neighbors_on || at_sprite_border),
             );
-            let modifier = clamp(1.0 + lit - shaded, 0.28, 1.22);
-            sampled_color = vec4f(sampled_color.rgb * modifier, sampled_color.a);
+            sampled_color = vec4f(tint.rgb, tint.a * edge_alpha);
+        } else {
+            sampled_color = sprite_sample * tint;
+            let sun_dir = uniforms.u_sun_direction.xy;
+            let sun_len = length(sun_dir);
+            if (sun_len > 0.01) {
+                let sun_norm = sun_dir / sun_len;
+                // Billboard lighting model:
+                // - Sun X shifts light left/right across the sprite.
+                // - Sun Y is treated as front/back lighting for upright sprites:
+                //   south-facing (+Y) lights the visible canopy face, north-facing
+                //   (-Y) darkens it because the lit side is mostly hidden.
+                let centered = (input.v_uv_local - vec2f(0.5, 0.5)) * 2.0;
+                let lateral = centered.x * sun_norm.x;
+                let front = sun_norm.y;
+                // Add a soft directional lobe so highlights track azimuth across
+                // canopy pixels instead of reading as all-or-nothing exposure.
+                let pseudo_axis_raw = vec2f(sun_norm.x, -sun_norm.y * 0.45);
+                let pseudo_axis_len = length(pseudo_axis_raw);
+                let pseudo_axis = select(
+                    vec2f(0.0, 0.0),
+                    pseudo_axis_raw / pseudo_axis_len,
+                    pseudo_axis_len > 0.01,
+                );
+                let canopy_weight = 1.0 - smoothstep(0.2, 1.15, length(centered));
+                let directional_lobe = dot(centered, pseudo_axis) * canopy_weight;
+
+                let lit = (
+                    max(lateral, 0.0) * 0.22
+                    + max(front, 0.0) * 0.36
+                    + max(directional_lobe, 0.0) * 0.38
+                );
+                let shaded = (
+                    max(-lateral, 0.0) * 0.28
+                    + max(-front, 0.0) * 0.50
+                    + max(-directional_lobe, 0.0) * 0.42
+                );
+                let modifier = clamp(1.0 + lit - shaded, 0.28, 1.22);
+                sampled_color = vec4f(sampled_color.rgb * modifier, sampled_color.a);
+            }
         }
     } else {
         sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * tint;

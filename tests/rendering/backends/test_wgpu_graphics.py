@@ -920,6 +920,45 @@ class TestDrawSpriteSmoothBatch:
 
 
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
+class TestDrawSpriteOutline:
+    """Tests for sprite silhouette outline rendering."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create a graphics context with a mock screen renderer."""
+        from brileta.backends.glfw.window import GlfwWindow
+
+        mock_glfw_window_handle = Mock()
+        mock_window = GlfwWindow(mock_glfw_window_handle)
+        mock_window.get_size = Mock(return_value=(800, 600))
+        mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
+        mock_window.flip = Mock()
+
+        self.ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
+        self.mock_screen_renderer = Mock()
+        self.ctx.screen_renderer = self.mock_screen_renderer
+
+        with patch("glfw.get_window_content_scale", return_value=(1.0, 1.0)):
+            yield
+
+    def test_sets_sprite_outline_flag(self) -> None:
+        """Sprite outline path should set sprite-atlas and outline flags."""
+        sprite_uv = Mock(u1=0.1, v1=0.2, u2=0.3, v2=0.4)
+        self.ctx.draw_sprite_outline(
+            sprite_uv=sprite_uv,
+            screen_x=100.0,
+            screen_y=200.0,
+            color=colors.WHITE,
+            alpha=Opacity(0.5),
+        )
+
+        self.mock_screen_renderer.add_quad_batch.assert_called_once()
+        kwargs = self.mock_screen_renderer.add_quad_batch.call_args.kwargs
+        flags = kwargs["flags"]
+        assert int(flags[0]) == 6  # sprite (2) + outline (4)
+
+
+@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_window_parameters():
     """Test WGPUGraphicsContext window parameter handling."""
     from brileta.backends.glfw.window import GlfwWindow

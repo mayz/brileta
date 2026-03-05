@@ -377,10 +377,11 @@ class ActorRenderer:
         camera_frac_offset: ViewOffset,
         view_origin: ViewOffset,
     ) -> None:
-        """Render a glyph-shaped outline for an actor at its current position.
+        """Render an actor-shaped outline at the actor's current position.
 
-        Used for combat targeting to show a shimmering outline around the
-        enemy's glyph shape. The actor must be visible.
+        Used for combat targeting to show a shimmering outline around an
+        enemy. Sprite actors use sprite-contour outlines; glyph actors use
+        CP437 glyph outlines. The actor must be visible.
 
         Args:
             actor: The actor to render an outline for.
@@ -415,13 +416,46 @@ class ActorRenderer:
 
         root_x = view_origin[0] + vp_x
         root_y = view_origin[1] + vp_y
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
+
+        sprite_uv = actor.sprite_uv
+        if sprite_uv is not None:
+            sprite_ground_anchor_y = float(actor.sprite_ground_anchor_y)
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
+                root_x,
+                root_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            screen_x, screen_y = self.graphics.console_to_screen_coords(
+                draw_root_x,
+                draw_root_y,
+            )
+            self.graphics.draw_sprite_outline(
+                sprite_uv,
+                screen_x,
+                screen_y,
+                color,
+                alpha,
+                scale_x=actor.visual_scale * viewport_scale_x,
+                scale_y=actor.visual_scale * viewport_scale_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            return
+
+        if actor.character_layers or actor.has_complex_visuals:
+            self._render_layered_tile_outline(
+                actor,
+                color,
+                alpha,
+                camera_frac_offset=camera_frac_offset,
+                view_origin=view_origin,
+            )
+            return
+
         draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
         screen_x, screen_y = self.graphics.console_to_screen_coords(
             draw_root_x, draw_root_y
         )
-
-        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
-
         self.graphics.draw_actor_outline(
             actor.ch,
             screen_x,
@@ -643,6 +677,47 @@ class ActorRenderer:
             draw_root_x, draw_root_y
         )
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
+
+        sprite_uv = actor.sprite_uv
+        if sprite_uv is not None:
+            sprite_ground_anchor_y = float(actor.sprite_ground_anchor_y)
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
+                root_x,
+                root_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            screen_x, screen_y = self.graphics.console_to_screen_coords(
+                draw_root_x,
+                draw_root_y,
+            )
+            self.graphics.draw_sprite_outline(
+                sprite_uv,
+                screen_x,
+                screen_y,
+                colors.WHITE,
+                _ROOF_OCCLUDED_OUTLINE_ALPHA,
+                scale_x=actor.visual_scale * viewport_scale_x,
+                scale_y=actor.visual_scale * viewport_scale_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            return
+
+        if actor.character_layers or actor.has_complex_visuals:
+            # Non-sprite complex actors fall back to a tile outline marker.
+            screen_rect_x, screen_rect_y = self.graphics.console_to_screen_coords(
+                root_x,
+                root_y,
+            )
+            tile_w, tile_h = self.graphics.tile_dimensions
+            self.graphics.draw_rect_outline(
+                int(screen_rect_x),
+                int(screen_rect_y),
+                max(1, round(tile_w * viewport_scale_x)),
+                max(1, round(tile_h * viewport_scale_y)),
+                colors.WHITE,
+                _ROOF_OCCLUDED_OUTLINE_ALPHA,
+            )
+            return
 
         self.graphics.draw_actor_outline(
             actor.ch,

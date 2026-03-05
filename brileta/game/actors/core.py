@@ -45,10 +45,13 @@ from brileta.game.actors import conditions
 from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
-from brileta.types import ActorId, SpriteUV, TileCoord, WorldTileCoord
+from brileta.types import ActorId, Facing, SpriteUV, TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, disposition_label
+from .character_sprites import (
+    CHARACTER_DIRECTIONAL_POSE_COUNT as _CHARACTER_DIRECTIONAL_POSE_COUNT,
+)
 from .components import (
     CharacterInventory,
     ConditionsComponent,
@@ -73,6 +76,13 @@ if TYPE_CHECKING:
     from brileta.game.actions.discovery import ActionOption
     from brileta.game.actors.ai.goals import Goal
     from brileta.game.game_world import GameWorld
+
+_CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
+    Facing.SOUTH: 0,
+    Facing.NORTH: 1,
+    Facing.WEST: 2,
+    Facing.EAST: 3,
+}
 
 
 @dataclass
@@ -209,6 +219,13 @@ class Actor:
         # UV coordinates into the dynamic sprite atlas.  When set, the actor
         # renders from the sprite atlas instead of the CP437 glyph atlas.
         self.sprite_uv = sprite_uv
+        # Optional directional sprite set used for facing-aware rendering.
+        self.character_sprite_uvs: tuple[SpriteUV, ...] | None = None
+        # Last movement direction. Persists while standing still.
+        self.facing: Facing = Facing.SOUTH
+        # Walk cycle frame (0/1) toggled on each move.
+        # Reserved for future multi-frame pose sets.
+        self.walk_frame: int = 0
         # Sprite ground-anchor within the tile in [0, 1], measured from top.
         # 1.0 = tile bottom, 0.5 = tile center.
         self.sprite_ground_anchor_y = sprite_ground_anchor_y
@@ -285,6 +302,16 @@ class Actor:
         self.x += dx
         self.y += dy
 
+        # Persist the actor's movement facing and step animation phase.
+        moving = dx != 0 or dy != 0
+        if moving:
+            if dy != 0:
+                self.facing = Facing.SOUTH if dy > 0 else Facing.NORTH
+            else:
+                self.facing = Facing.EAST if dx > 0 else Facing.WEST
+            self.walk_frame = 1 - self.walk_frame
+        self._update_active_sprite_uv(moving=moving)
+
         if self.gw:
             self.gw.actor_spatial_index.update(self)
             self.gw.on_actor_moved(self)
@@ -295,6 +322,21 @@ class Actor:
             end_pos = (float(self.x), float(self.y))
             animation = MoveAnimation(self, start_pos, end_pos, duration=duration)
             controller.animation_manager.add(animation)
+
+    def _update_active_sprite_uv(self, moving: bool) -> None:
+        """Resolve and set the active sprite UV for the current pose state.
+
+        Pose order:
+            0: front_stand, 1: back_stand, 2: left_stand, 3: right_stand
+        """
+        pose_uvs = self.character_sprite_uvs
+        if pose_uvs is None or len(pose_uvs) < _CHARACTER_DIRECTIONAL_POSE_COUNT:
+            return
+
+        # Reserved for future walk-cycle reintroduction.
+        _ = moving
+        pose_idx = _CHARACTER_DIRECTIONAL_POSE_INDEX[self.facing]
+        self.sprite_uv = pose_uvs[pose_idx]
 
     def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
         """Instantly move the actor's logical and visual position."""

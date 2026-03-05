@@ -97,6 +97,7 @@ class MoveAnimation(Animation):
             self.actor.render_x = self.end_x
             self.actor.render_y = self.end_y
             self.actor._animation_controlled = False
+            self.actor._update_active_sprite_uv(moving=False)
             return True
 
         # Ease-out interpolation starts promptly and eases into the stop,
@@ -173,6 +174,7 @@ class AnimationManager:
                 animation.actor.render_x = animation.end_x
                 animation.actor.render_y = animation.end_y
                 animation.actor._animation_controlled = False
+                animation.actor._update_active_sprite_uv(moving=False)
 
         self._queue.clear()
 
@@ -190,6 +192,7 @@ class AnimationManager:
                 animation.actor.render_x = animation.end_x
                 animation.actor.render_y = animation.end_y
                 animation.actor._animation_controlled = False
+                animation.actor._update_active_sprite_uv(moving=False)
             else:
                 remaining_animations.append(animation)
 

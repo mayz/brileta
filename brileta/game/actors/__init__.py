@@ -6,10 +6,13 @@ and state of game actors.
 # Export the submodules themselves for access to concrete implementations.
 # Expose the core actor classes and base classes directly.
 # These form the main, stable API of the package.
+from brileta.types import Facing
+
 from . import (
     ai,
     boulder,
     boulder_sprites,
+    character_sprites,
     components,
     conditions,
     container,
@@ -20,6 +23,14 @@ from . import (
 from .ai import AIComponent
 from .boulder import Boulder
 from .boulder_sprites import BoulderArchetype
+from .character_sprites import (
+    HUMANOID_GLYPHS,
+    CharacterAppearance,
+    character_sprite_seed,
+    generate_character_pose_set,
+    generate_character_sprite,
+    roll_character_appearance,
+)
 from .conditions import Condition
 from .container import (
     Container,
@@ -53,7 +64,14 @@ __all__ = [
     "BoulderArchetype",
     "Tree",
     # Sprite Generation
+    "HUMANOID_GLYPHS",
+    "Facing",
+    "CharacterAppearance",
     "TreeArchetype",
+    "character_sprite_seed",
+    "generate_character_pose_set",
+    "generate_character_sprite",
+    "roll_character_appearance",
     "generate_tree_sprite",
     "generate_tree_sprite_for_position",
     "sprite_visual_scale_for_shadow_height",
@@ -71,6 +89,7 @@ __all__ = [
     "ai",
     "boulder",
     "boulder_sprites",
+    "character_sprites",
     "components",
     "conditions",
     "container",

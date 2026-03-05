@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 # Blend weights for CPU actor lighting: 70% multiplicative + 30% additive.
 _LIGHT_MUL = 0.7
 _LIGHT_ADD = 0.3
+_SPRITE_ATLAS_FLAG = 2
+_SPRITE_OUTLINE_FLAG = 4
 
 
 def _apply_light_tint(
@@ -679,6 +681,63 @@ class WGPUGraphicsContext(GraphicsContext):
             actor_light_scale=light_scale,
             flags=flags_arr,
             tile_bg=norm_tile_bg,
+        )
+
+    def draw_sprite_outline(
+        self,
+        sprite_uv: SpriteUV,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
+    ) -> None:
+        """Draw a white contour extracted from a sprite's alpha silhouette."""
+        if self.screen_renderer is None:
+            return
+
+        tile_w, tile_h = self.tile_dimensions
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
+        offset_x = (tile_w - scaled_w) / 2
+        anchor_y = saturate(float(ground_anchor_y))
+        offset_y = tile_h * anchor_y - scaled_h
+
+        quad_x = np.array([screen_x + offset_x], dtype=np.float32)
+        quad_y = np.array([screen_y + offset_y], dtype=np.float32)
+        quad_w = np.array([scaled_w], dtype=np.float32)
+        quad_h = np.array([scaled_h], dtype=np.float32)
+        quad_uv = np.array(
+            [(sprite_uv.u1, sprite_uv.v1, sprite_uv.u2, sprite_uv.v2)],
+            dtype=np.float32,
+        )
+        quad_color = np.array(
+            [
+                (
+                    color[0] / 255.0,
+                    color[1] / 255.0,
+                    color[2] / 255.0,
+                    saturate(alpha),
+                )
+            ],
+            dtype=np.float32,
+        )
+        quad_flags = np.array(
+            [_SPRITE_ATLAS_FLAG | _SPRITE_OUTLINE_FLAG],
+            dtype=np.uint32,
+        )
+
+        self.screen_renderer.add_quad_batch(
+            quad_x,
+            quad_y,
+            quad_w,
+            quad_h,
+            quad_uv,
+            quad_color,
+            flags=quad_flags,
         )
 
     def set_actor_lighting_gpu_context(

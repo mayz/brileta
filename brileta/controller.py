@@ -46,6 +46,7 @@ from .types import (
     MapDecorationSeed,
     RandomSeed,
     SoundId,
+    SpriteUV,
     saturate,
 )
 from .util import rng
@@ -340,14 +341,14 @@ class Controller:
             self._reset_for_new_world()
 
     def _generate_environmental_sprites(self) -> None:
-        """Generate procedural sprites for static environmental actors.
+        """Generate procedural sprites for environmental and character actors.
 
-        Pre-generates all tree and boulder sprites into CPU memory, computes
-        the smallest power-of-two atlas that can hold them (clamped to the
-        GPU's hardware limit), then packs and uploads in one pass.  This
-        means the atlas is right-sized per map - a small map gets a small
-        atlas, a large map gets a larger one, and map transitions simply
-        drop the old atlas and create a fresh one.
+        Pre-generates all tree, boulder, and humanoid character sprites into
+        CPU memory, computes the smallest power-of-two atlas that can hold
+        them (clamped to the GPU's hardware limit), then packs and uploads
+        in one pass.  This means the atlas is right-sized per map - a small
+        map gets a small atlas, a large map gets a larger one, and map
+        transitions simply drop the old atlas and create a fresh one.
         """
         from brileta.backends.wgpu.sprite_atlas import compute_atlas_size
         from brileta.game.actors.boulder import Boulder
@@ -363,8 +364,16 @@ class Controller:
         from brileta.game.actors.boulder_sprites import (
             visual_scale_with_height_jitter as boulder_visual_scale_with_height_jitter,
         )
+        from brileta.game.actors.character_sprites import (
+            CHARACTER_DIRECTIONAL_POSE_COUNT,
+            HUMANOID_GLYPHS,
+            character_sprite_seed,
+            generate_character_pose_set,
+        )
+        from brileta.game.actors.core import Character
         from brileta.game.actors.tree_sprites import (
             generate_tree_sprite_for_position,
+            sprite_visual_scale_for_shadow_height,
         )
         from brileta.game.actors.tree_sprites import (
             visual_scale_with_height_jitter as tree_visual_scale_with_height_jitter,
@@ -374,11 +383,17 @@ class Controller:
 
         trees: list[Tree] = []
         boulders: list[Boulder] = []
+        characters: list[Character] = []
         for a in self.gw.actors:
             if isinstance(a, Tree):
                 trees.append(a)
             elif isinstance(a, Boulder):
                 boulders.append(a)
+            elif isinstance(a, Character) and a.ch in HUMANOID_GLYPHS:
+                characters.append(a)
+        # Need at least one environmental sprite to justify atlas creation.
+        # Character sprites piggyback on the atlas - when no environmental
+        # sprites exist, characters fall back to their text glyphs.
         if not trees and not boulders:
             return
 
@@ -412,8 +427,18 @@ class Controller:
                     boulder_archetypes,
                 )
 
+                # Character sprites: four directional poses per humanoid actor,
+                # seeded from actor_id so the appearance is stable across movement.
+                char_seeds = [
+                    character_sprite_seed(c.actor_id, map_seed) for c in characters
+                ]
+                char_pose_sprites = [generate_character_pose_set(s) for s in char_seeds]
+
             # Phase 2: Compute the atlas size and create it.
-            all_sprites = tree_sprites + boulder_sprites
+            flat_char_sprites = [
+                sprite for pose_set in char_pose_sprites for sprite in pose_set
+            ]
+            all_sprites = tree_sprites + boulder_sprites + flat_char_sprites
             gpu_max = self.graphics.gpu_max_texture_dimension_2d
             atlas_side = compute_atlas_size(all_sprites, gpu_max)
 
@@ -431,7 +456,7 @@ class Controller:
                 uvs = atlas.pack_all(all_sprites)
 
                 # Assign UVs and visual scales back to the actors.
-                # The UV list is ordered [tree_sprites..., boulder_sprites...].
+                # UV list order: [trees..., boulders..., characters...].
                 n_trees = len(trees)
                 for i, tree in enumerate(trees):
                     uv = uvs[i]
@@ -457,17 +482,43 @@ class Controller:
                             map_seed,
                         )
 
+                n_boulders = len(boulders)
+                pose_count = CHARACTER_DIRECTIONAL_POSE_COUNT
+                for k, character in enumerate(characters):
+                    uv_offset = n_trees + n_boulders + (k * pose_count)
+                    resolved_pose_uvs: list[SpriteUV] = []
+                    for pose_i in range(pose_count):
+                        uv = uvs[uv_offset + pose_i]
+                        if uv is None:
+                            resolved_pose_uvs = []
+                            break
+                        resolved_pose_uvs.append(uv)
+
+                    if len(resolved_pose_uvs) == pose_count:
+                        pose_uvs = tuple(resolved_pose_uvs)
+                        character.character_sprite_uvs = pose_uvs
+                        character.sprite_uv = pose_uvs[0]
+                        character.visual_scale = sprite_visual_scale_for_shadow_height(
+                            char_pose_sprites[k][0],
+                            character.shadow_height,
+                        )
+
                 atlas.flush()
 
         if atlas.texture is not None:
             self.graphics.set_sprite_atlas_texture(atlas.texture)
 
         logger.info(
-            "Sprite atlas: %dx%d (%d tree + %d boulder sprites, %d allocations)",
+            "Sprite atlas: %dx%d (%d tree + %d boulder + %d directional character"
+            " pose sprites"
+            " across %d characters,"
+            " %d allocations)",
             atlas_side,
             atlas_side,
             len(trees),
             len(boulders),
+            len(characters) * CHARACTER_DIRECTIONAL_POSE_COUNT,
+            len(characters),
             atlas.allocated_count,
         )
 
