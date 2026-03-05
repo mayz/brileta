@@ -356,13 +356,19 @@ _HAIR_TALL_SIDE: tuple[ToneStampSpec, ...] = (
         0.02, -1.24, 0.52, 0.94, tone_idx=1, alpha=220, falloff=1.5, hardness=0.78
     ),
     _head_ellipse(
+        0.46, -0.22, 0.52, 0.72, tone_idx=0, alpha=224, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        0.4, -0.28, 0.38, 0.54, tone_idx=1, alpha=214, falloff=1.38, hardness=0.74
+    ),
+    _head_ellipse(
         0.22, -0.24, 0.34, 0.48, tone_idx=0, alpha=220, falloff=1.45, hardness=0.74
     ),
     _head_ellipse(
         0.18, -0.28, 0.25, 0.36, tone_idx=1, alpha=210, falloff=1.35, hardness=0.7
     ),
     _head_ellipse(
-        0.58, -0.02, 0.3, 0.44, tone_idx=0, alpha=214, falloff=1.4, hardness=0.74
+        0.64, -0.04, 0.34, 0.5, tone_idx=0, alpha=216, falloff=1.42, hardness=0.75
     ),
     _head_ellipse(
         -0.22, -0.34, 0.2, 0.26, tone_idx=2, alpha=198, falloff=1.3, hardness=0.7
@@ -512,58 +518,6 @@ HAIR_STYLES: tuple[HairDrawFn, ...] = (
 )
 
 
-def _apply_tall_side_hair_mask(
-    canvas: np.ndarray,
-    hx: float,
-    hy: float,
-    hr: float,
-    h_shadow: colors.Color,
-    h_mid: colors.Color,
-) -> None:
-    """Hard-mask side tall-hair back-head region to prevent bald-spot leaks."""
-    back_sign = 1.0
-    mask_cx = hx + back_sign * hr * 0.58
-    mask_cy = hy + hr * 0.02
-    mask_rx = hr * 0.52
-    mask_ry = hr * 0.84
-    x_min = max(0, int(np.floor(mask_cx - mask_rx - 1.0)))
-    x_max = min(canvas.shape[1] - 1, int(np.ceil(mask_cx + mask_rx + 1.0)))
-    y_min = max(0, int(np.floor(mask_cy - mask_ry - 1.0)))
-    y_max = min(canvas.shape[0] - 1, int(np.ceil(mask_cy + mask_ry + 1.0)))
-    for py in range(y_min, y_max + 1):
-        for px in range(x_min, x_max + 1):
-            if canvas[py, px, 3] == 0:
-                continue
-            dx = (px + 0.5 - mask_cx) / max(0.001, mask_rx)
-            dy = (py + 0.5 - mask_cy) / max(0.001, mask_ry)
-            if dx * dx + dy * dy > 1.0:
-                continue
-            tone = h_shadow if dx >= 0.0 else h_mid
-            canvas[py, px, 0] = tone[0]
-            canvas[py, px, 1] = tone[1]
-            canvas[py, px, 2] = tone[2]
-            canvas[py, px, 3] = max(canvas[py, px, 3], 232)
-
-    # Safety pass: force the back half of the side head ellipse to hair.
-    head_rx = max(0.001, hr * 0.95)
-    head_ry = max(0.001, hr * 1.08)
-    for py in range(y_min, y_max + 1):
-        for px in range(x_min, x_max + 1):
-            if canvas[py, px, 3] == 0:
-                continue
-            head_dx = (px + 0.5 - hx) / head_rx
-            head_dy = (py + 0.5 - (hy + hr * 0.03)) / head_ry
-            if head_dx * head_dx + head_dy * head_dy > 1.5:
-                continue
-            if px + 0.5 < hx + back_sign * hr * 0.24:
-                continue
-            tone = h_shadow if px + 0.5 >= hx + back_sign * hr * 0.56 else h_mid
-            canvas[py, px, 0] = tone[0]
-            canvas[py, px, 1] = tone[1]
-            canvas[py, px, 2] = tone[2]
-            canvas[py, px, 3] = max(canvas[py, px, 3], 232)
-
-
 def _layer_head(context: CharacterDrawContext) -> None:
     """Draw base head mass before hair."""
     appearance = context.appearance
@@ -704,7 +658,6 @@ def _layer_hair(context: CharacterDrawContext) -> None:
     hx = context.cx
     hy = context.head_cy
     hr = context.hr
-    h_shadow, h_mid, _h_highlight = appearance.hair_pal
 
     hair_fn = HAIR_STYLES[appearance.hair_style_idx]
     hair_rng = np.random.default_rng(appearance.hair_seed)
@@ -777,40 +730,40 @@ def _layer_hair(context: CharacterDrawContext) -> None:
         if appearance.hair_style_idx == 4:
             tall_specs: tuple[ToneStampSpec, ...] = (
                 EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.42),
-                    cy=_expr("hy", "hr", -0.08),
-                    rx=_expr("hr", None, factor=0.32),
-                    ry=_expr("hr", None, factor=0.46),
+                    cx=_expr("hx", "hr", 0.5),
+                    cy=_expr("hy", "hr", -0.18),
+                    rx=_expr("hr", None, factor=0.38),
+                    ry=_expr("hr", None, factor=0.54),
                     tone_idx=0,
-                    alpha=224,
-                    falloff=1.4,
+                    alpha=228,
+                    falloff=1.45,
                     hardness=0.76,
                 ),
                 EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.36),
-                    cy=_expr("hy", "hr", -0.12),
-                    rx=_expr("hr", None, factor=0.24),
-                    ry=_expr("hr", None, factor=0.34),
+                    cx=_expr("hx", "hr", 0.44),
+                    cy=_expr("hy", "hr", -0.22),
+                    rx=_expr("hr", None, factor=0.28),
+                    ry=_expr("hr", None, factor=0.4),
                     tone_idx=1,
-                    alpha=214,
+                    alpha=216,
                     falloff=1.3,
                     hardness=0.72,
                 ),
                 EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.52),
-                    cy=_expr("hy", "hr", 0.02),
+                    cx=_expr("hx", "hr", 0.64),
+                    cy=_expr("hy", "hr", -0.02),
                     rx=_expr("hr", None, factor=0.34),
                     ry=_expr("hr", None, factor=0.5),
                     tone_idx=0,
-                    alpha=232,
+                    alpha=230,
                     falloff=1.5,
                     hardness=0.82,
                 ),
                 EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.44),
-                    cy=_expr("hy", "hr", -0.02),
-                    rx=_expr("hr", None, factor=0.24),
-                    ry=_expr("hr", None, factor=0.36),
+                    cx=_expr("hx", "hr", 0.56),
+                    cy=_expr("hy", "hr", -0.08),
+                    rx=_expr("hr", None, factor=0.25),
+                    ry=_expr("hr", None, factor=0.38),
                     tone_idx=1,
                     alpha=220,
                     falloff=1.35,
@@ -820,7 +773,6 @@ def _layer_hair(context: CharacterDrawContext) -> None:
             _stamp_tone_specs(
                 canvas, appearance.hair_pal, tall_specs, ShapeContext(values)
             )
-            _apply_tall_side_hair_mask(canvas, hx, hy, hr, h_shadow, h_mid)
 
         face_specs_list: list[ToneStampSpec] = [
             EllipseStampSpec(

@@ -312,6 +312,41 @@ def test_side_tall_hair_reads_as_profile_and_mirror_swaps_back_side() -> None:
     assert leaked_skin_like == 0
 
 
+def test_side_tall_hair_back_patch_stays_hair_colored_across_seeds() -> None:
+    """Side tall-hair back-head patch should stay hair-like for varied palettes."""
+    for seed in range(40):
+        appearance = replace(
+            CharacterAppearance.from_seed(seed, 20),
+            hair_style_idx=4,  # tall
+        )
+        sprite = draw_character_pose(
+            appearance, POSE_LEFT_STAND
+        )  # side stand (authored side)
+        params = appearance.body_params
+
+        center_x = round(params.canvas_size / 2.0)
+        patch_x1 = min(
+            params.canvas_size - 2, round(center_x + params.head_radius * 0.26)
+        )
+        patch_x2 = min(params.canvas_size, patch_x1 + 2)
+        patch_y1 = max(0, round(params.head_top_pad + params.head_radius * 0.78))
+        patch_y2 = min(params.canvas_size, patch_y1 + 2)
+        patch = sprite[patch_y1:patch_y2, patch_x1:patch_x2, :]
+        alpha_mask = patch[:, :, 3] > 0
+        assert bool(alpha_mask.any())
+
+        patch_rgb = patch[:, :, :3][alpha_mask].astype(np.float64)
+        mean_rgb = patch_rgb.mean(axis=0)
+
+        hair_mid = np.array(appearance.hair_pal[1], dtype=np.float64)
+        skin_mid = np.array(appearance.skin_pal[1], dtype=np.float64)
+
+        hair_distance = float(np.linalg.norm(mean_rgb - hair_mid))
+        skin_distance = float(np.linalg.norm(mean_rgb - skin_mid))
+
+        assert hair_distance < skin_distance
+
+
 def test_side_armor_profile_is_narrower_than_front_profile() -> None:
     """Armor side profile should not keep full front-facing shoulder width."""
     appearance = CharacterAppearance.from_seed(1341, 20)
