@@ -1,4 +1,4 @@
-"""Hair style specs and hair layer rendering."""
+"""Hair style rendering and hair layer composition."""
 
 from __future__ import annotations
 
@@ -7,18 +7,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from brileta.sprites.primitives import stamp_ellipse, stamp_fuzzy_circle
 from brileta.types import Facing
 
 from .appearance import Palette3, _luma
-from .specs import (
-    CircleStampSpec,
-    EllipseStampSpec,
-    ShapeContext,
-    ToneStampSpec,
-    _expr,
-    _head_ellipse,
-    _stamp_tone_specs,
-)
 
 if TYPE_CHECKING:
     from .renderer import CharacterDrawContext
@@ -29,6 +21,9 @@ HairDrawFn = Callable[
     None,
 ]
 
+HeadEllipseSpec = tuple[float, float, float, float, int, int, float, float]
+HeadCircleSpec = tuple[float, float, float, int, int, float, float]
+
 # Named indices into HAIR_STYLES for readability checks elsewhere.
 HAIR_IDX_BALD = 0
 HAIR_IDX_SHORT = 1
@@ -37,302 +32,562 @@ HAIR_IDX_LONG = 3
 HAIR_IDX_TALL = 4
 
 
-_HAIR_SHORT_NORTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -0.15, 1.15, 0.95, tone_idx=1, alpha=235, falloff=1.8, hardness=0.85
-    ),
-    _head_ellipse(
-        -0.0, -0.3, 0.8, 0.6, tone_idx=2, alpha=200, falloff=1.5, hardness=0.75
-    ),
-)
-_HAIR_SHORT_SIDE: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        0.04,
-        -0.12,
-        0.9,
-        0.62,
-        tone_idx=1,
-        alpha=235,
-        falloff=1.9,
-        hardness=0.86,
-        cy_base="cap_cy",
-    ),
-    _head_ellipse(
-        0.52, -0.02, 0.25, 0.34, tone_idx=1, alpha=220, falloff=1.45, hardness=0.76
-    ),
-    _head_ellipse(
-        -0.22,
-        -0.34,
-        0.36,
-        0.24,
-        tone_idx=2,
-        alpha=198,
-        falloff=1.35,
-        hardness=0.72,
-        cy_base="cap_cy",
-    ),
-)
-_HAIR_SHORT_SOUTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0,
-        -0.12,
-        1.08,
-        0.54,
-        tone_idx=1,
-        alpha=235,
-        falloff=1.9,
-        hardness=0.86,
-        cy_base="cap_cy",
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx"),
-        cy=_expr("cap_cy", None, offset=-0.7),
-        rx=_expr(None, "hr", 0.62),
-        ry=_expr(None, "hr", 0.36),
-        tone_idx=2,
-        alpha=200,
-        falloff=1.5,
-        hardness=0.75,
-    ),
-)
+def _tone_rgba(
+    palette: Palette3, tone_idx: int, alpha: int
+) -> tuple[int, int, int, int]:
+    """Pack one palette tone with alpha for primitive stamp calls."""
+    return (*palette[tone_idx], alpha)
 
-_HAIR_MEDIUM_NORTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -0.1, 1.25, 1.1, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -0.2, 1.15, 1.0, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    _head_ellipse(
-        -0.85, 0.3, 0.45, 0.7, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        0.85, 0.3, 0.45, 0.7, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        -0.0, -0.4, 0.7, 0.5, tone_idx=2, alpha=195, falloff=1.3, hardness=0.7
-    ),
-)
-_HAIR_MEDIUM_SIDE: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        0.06, -0.48, 1.12, 0.7, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        0.05, -0.56, 1.0, 0.6, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    _head_ellipse(
-        0.78, 0.3, 0.4, 0.76, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        -0.54, 0.02, 0.12, 0.24, tone_idx=1, alpha=214, falloff=1.35, hardness=0.74
-    ),
-    _head_ellipse(
-        -0.3, -0.76, 0.48, 0.32, tone_idx=2, alpha=195, falloff=1.3, hardness=0.7
-    ),
-)
-_HAIR_MEDIUM_SOUTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -0.46, 1.18, 0.74, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -0.56, 1.06, 0.64, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", -0.85),
-        cy=_expr("hy", "hr", 0.12),
-        rx=_expr(None, "hr_side_scale", 0.4),
-        ry=_expr(None, "hr_side_scale", 0.55),
-        tone_idx=0,
-        alpha=220,
-        falloff=1.5,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", 0.85),
-        cy=_expr("hy", "hr", 0.12),
-        rx=_expr(None, "hr_side_scale", 0.4),
-        ry=_expr(None, "hr_side_scale", 0.55),
-        tone_idx=0,
-        alpha=220,
-        falloff=1.5,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "highlight_jitter", 1.0),
-        cy=_expr("hy", "hr", -0.75),
-        rx=_expr(None, "hr", 0.58),
-        ry=_expr(None, "hr", 0.38),
-        tone_idx=2,
-        alpha=195,
-        falloff=1.3,
-        hardness=0.7,
-    ),
-)
 
-_HAIR_LONG_NORTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, 0.0, 1.3, 1.1, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -0.1, 1.2, 1.0, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx"),
-        cy=_expr("hy", "drape_main", 0.3),
-        rx=_expr(None, "hr", 0.9),
-        ry=_expr(None, "drape_main", 0.45),
-        tone_idx=0,
-        alpha=220,
-        falloff=1.7,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx"),
-        cy=_expr("hy", "drape_main", 0.25),
-        rx=_expr(None, "hr", 0.75),
-        ry=_expr(None, "drape_main", 0.38),
-        tone_idx=1,
-        alpha=215,
-        falloff=1.5,
-        hardness=0.75,
-    ),
-    _head_ellipse(
-        -0.0, -0.3, 0.7, 0.6, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
-    ),
-)
-_HAIR_LONG_SIDE: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        0.1, -0.38, 1.15, 0.8, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        0.08, -0.46, 1.02, 0.7, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", 0.62),
-        cy=_expr("hy", "back_drape", 0.2),
-        rx=_expr(None, "hr", 0.32),
-        ry=_expr(None, "back_drape", 0.3),
-        tone_idx=0,
-        alpha=215,
-        falloff=1.8,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", 0.58),
-        cy=_expr("hy", "back_drape", 0.15),
-        rx=_expr(None, "hr", 0.24),
-        ry=_expr(None, "back_drape", 0.24),
-        tone_idx=1,
-        alpha=210,
-        falloff=1.6,
-        hardness=0.75,
-    ),
-    _head_ellipse(
-        -0.52, 0.12, 0.1, 0.28, tone_idx=1, alpha=208, falloff=1.35, hardness=0.72
-    ),
-    _head_ellipse(
-        -0.26, -0.7, 0.56, 0.4, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
-    ),
-)
-_HAIR_LONG_SOUTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -0.48, 1.14, 0.72, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -0.58, 1.02, 0.62, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", -0.78),
-        cy=_expr("hy", "drape_left", 0.28),
-        rx=_expr(None, "hr_side_scale", 0.3),
-        ry=_expr(None, "drape_left_scaled", 0.22),
-        tone_idx=0,
-        alpha=215,
-        falloff=1.8,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", -0.78),
-        cy=_expr("hy", "drape_left", 0.24),
-        rx=_expr(None, "hr_side_scale", 0.21),
-        ry=_expr(None, "drape_left_scaled", 0.18),
-        tone_idx=1,
-        alpha=210,
-        falloff=1.6,
-        hardness=0.75,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", 0.78),
-        cy=_expr("hy", "drape_right", 0.28),
-        rx=_expr(None, "hr_side_scale", 0.3),
-        ry=_expr(None, "drape_right_scaled", 0.22),
-        tone_idx=0,
-        alpha=215,
-        falloff=1.8,
-        hardness=0.78,
-    ),
-    EllipseStampSpec(
-        cx=_expr("hx", "hr", 0.78),
-        cy=_expr("hy", "drape_right", 0.24),
-        rx=_expr(None, "hr_side_scale", 0.21),
-        ry=_expr(None, "drape_right_scaled", 0.18),
-        tone_idx=1,
-        alpha=210,
-        falloff=1.6,
-        hardness=0.75,
-    ),
-    _head_ellipse(
-        -0.0, -0.74, 0.66, 0.42, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
-    ),
-)
-_HAIR_TALL_NORTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -0.1, 1.1, 1.0, tone_idx=0, alpha=230, falloff=1.7, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -1.0, 0.65, 1.1, tone_idx=1, alpha=225, falloff=1.6, hardness=0.8
-    ),
-    _head_ellipse(
-        -0.0, -1.2, 0.45, 0.8, tone_idx=2, alpha=200, falloff=1.3, hardness=0.7
-    ),
-)
-_HAIR_TALL_SIDE: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        0.04, -1.12, 0.66, 1.12, tone_idx=0, alpha=230, falloff=1.8, hardness=0.82
-    ),
-    _head_ellipse(
-        0.02, -1.24, 0.52, 0.94, tone_idx=1, alpha=220, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        0.46, -0.22, 0.52, 0.72, tone_idx=0, alpha=224, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        0.4, -0.28, 0.38, 0.54, tone_idx=1, alpha=214, falloff=1.38, hardness=0.74
-    ),
-    _head_ellipse(
-        0.22, -0.24, 0.34, 0.48, tone_idx=0, alpha=220, falloff=1.45, hardness=0.74
-    ),
-    _head_ellipse(
-        0.18, -0.28, 0.25, 0.36, tone_idx=1, alpha=210, falloff=1.35, hardness=0.7
-    ),
-    _head_ellipse(
-        0.64, -0.04, 0.34, 0.5, tone_idx=0, alpha=216, falloff=1.42, hardness=0.75
-    ),
-    _head_ellipse(
-        -0.22, -0.34, 0.2, 0.26, tone_idx=2, alpha=198, falloff=1.3, hardness=0.7
-    ),
-)
-_HAIR_TALL_SOUTH: tuple[ToneStampSpec, ...] = (
-    _head_ellipse(
-        -0.0, -1.2, 0.7, 1.2, tone_idx=0, alpha=230, falloff=1.8, hardness=0.82
-    ),
-    _head_ellipse(
-        -0.0, -1.3, 0.55, 1.0, tone_idx=1, alpha=220, falloff=1.5, hardness=0.78
-    ),
-    _head_ellipse(
-        -0.0, -1.5, 0.35, 0.7, tone_idx=2, alpha=200, falloff=1.3, hardness=0.7
-    ),
-)
+def _stamp_head_ellipse(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    cx_factor: float,
+    cy_factor: float,
+    rx_factor: float,
+    ry_factor: float,
+    *,
+    tone_idx: int,
+    alpha: int,
+    falloff: float,
+    hardness: float,
+    cx_base: float | None = None,
+    cy_base: float | None = None,
+    cx_scale: float | None = None,
+    cy_scale: float | None = None,
+    cy_offset: float = 0.0,
+) -> None:
+    """Stamp one head-relative ellipse from factor-based inputs."""
+    resolved_cx_base = hx if cx_base is None else cx_base
+    resolved_cy_base = hy if cy_base is None else cy_base
+    resolved_cx_scale = hr if cx_scale is None else cx_scale
+    resolved_cy_scale = hr if cy_scale is None else cy_scale
+    stamp_ellipse(
+        canvas,
+        resolved_cx_base + resolved_cx_scale * cx_factor,
+        resolved_cy_base + resolved_cy_scale * cy_factor + cy_offset,
+        hr * rx_factor,
+        hr * ry_factor,
+        _tone_rgba(pal, tone_idx, alpha),
+        falloff,
+        hardness,
+    )
+
+
+def _stamp_head_ellipse_specs(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    specs: tuple[HeadEllipseSpec, ...],
+    *,
+    cx_base: float | None = None,
+    cy_base: float | None = None,
+    cx_scale: float | None = None,
+    cy_scale: float | None = None,
+    cy_offset: float = 0.0,
+) -> None:
+    """Stamp a sequence of head-relative ellipse specs in-order."""
+    for (
+        cx_factor,
+        cy_factor,
+        rx_factor,
+        ry_factor,
+        tone_idx,
+        alpha,
+        falloff,
+        hardness,
+    ) in specs:
+        _stamp_head_ellipse(
+            canvas,
+            hx,
+            hy,
+            hr,
+            pal,
+            cx_factor,
+            cy_factor,
+            rx_factor,
+            ry_factor,
+            tone_idx=tone_idx,
+            alpha=alpha,
+            falloff=falloff,
+            hardness=hardness,
+            cx_base=cx_base,
+            cy_base=cy_base,
+            cx_scale=cx_scale,
+            cy_scale=cy_scale,
+            cy_offset=cy_offset,
+        )
+
+
+def _stamp_head_circle(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    cx_factor: float,
+    cy_factor: float,
+    radius_factor: float,
+    *,
+    tone_idx: int,
+    alpha: int,
+    falloff: float,
+    hardness: float,
+    cx_offset: float = 0.0,
+    cy_offset: float = 0.0,
+) -> None:
+    """Stamp one head-relative fuzzy circle."""
+    stamp_fuzzy_circle(
+        canvas,
+        hx + hr * cx_factor + cx_offset,
+        hy + hr * cy_factor + cy_offset,
+        hr * radius_factor,
+        _tone_rgba(pal, tone_idx, alpha),
+        falloff,
+        hardness,
+    )
+
+
+def _stamp_head_circle_specs(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    specs: tuple[HeadCircleSpec, ...],
+) -> None:
+    """Stamp a sequence of head-relative circle specs in-order."""
+    for (
+        cx_factor,
+        cy_factor,
+        radius_factor,
+        tone_idx,
+        alpha,
+        falloff,
+        hardness,
+    ) in specs:
+        _stamp_head_circle(
+            canvas,
+            hx,
+            hy,
+            hr,
+            pal,
+            cx_factor,
+            cy_factor,
+            radius_factor,
+            tone_idx=tone_idx,
+            alpha=alpha,
+            falloff=falloff,
+            hardness=hardness,
+        )
+
+
+def _draw_hair_short_north(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -0.15, 1.15, 0.95, 1, 235, 1.8, 0.85),
+            (-0.0, -0.3, 0.8, 0.6, 2, 200, 1.5, 0.75),
+        ),
+    )
+
+
+def _draw_hair_short_side(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    cap_cy = hy - hr * 0.45
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((0.04, -0.12, 0.9, 0.62, 1, 235, 1.9, 0.86),),
+        cy_base=cap_cy,
+    )
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((0.52, -0.02, 0.25, 0.34, 1, 220, 1.45, 0.76),),
+    )
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((-0.22, -0.34, 0.36, 0.24, 2, 198, 1.35, 0.72),),
+        cy_base=cap_cy,
+    )
+
+
+def _draw_hair_short_south(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    cap_cy = hy - hr * 0.45
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((-0.0, -0.12, 1.08, 0.54, 1, 235, 1.9, 0.86),),
+        cy_base=cap_cy,
+    )
+    stamp_ellipse(
+        canvas,
+        hx,
+        cap_cy - 0.7,
+        hr * 0.62,
+        hr * 0.36,
+        _tone_rgba(pal, 2, 200),
+        1.5,
+        0.75,
+    )
+
+
+def _draw_hair_medium_north(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -0.1, 1.25, 1.1, 0, 235, 1.6, 0.82),
+            (-0.0, -0.2, 1.15, 1.0, 1, 225, 1.5, 0.8),
+            (-0.85, 0.3, 0.45, 0.7, 0, 220, 1.5, 0.78),
+            (0.85, 0.3, 0.45, 0.7, 0, 220, 1.5, 0.78),
+            (-0.0, -0.4, 0.7, 0.5, 2, 195, 1.3, 0.7),
+        ),
+    )
+
+
+def _draw_hair_medium_side(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (0.06, -0.48, 1.12, 0.7, 0, 235, 1.6, 0.82),
+            (0.05, -0.56, 1.0, 0.6, 1, 225, 1.5, 0.8),
+            (0.78, 0.3, 0.4, 0.76, 0, 220, 1.5, 0.78),
+            (-0.54, 0.02, 0.12, 0.24, 1, 214, 1.35, 0.74),
+            (-0.3, -0.76, 0.48, 0.32, 2, 195, 1.3, 0.7),
+        ),
+    )
+
+
+def _draw_hair_medium_south(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    hr_side_scale: float,
+    highlight_jitter: float,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -0.46, 1.18, 0.74, 0, 235, 1.6, 0.82),
+            (-0.0, -0.56, 1.06, 0.64, 1, 225, 1.5, 0.8),
+        ),
+    )
+    for side in (-1.0, 1.0):
+        stamp_ellipse(
+            canvas,
+            hx + hr * 0.85 * side,
+            hy + hr * 0.12,
+            hr_side_scale * 0.4,
+            hr_side_scale * 0.55,
+            _tone_rgba(pal, 0, 220),
+            1.5,
+            0.78,
+        )
+    stamp_ellipse(
+        canvas,
+        hx + highlight_jitter,
+        hy + hr * -0.75,
+        hr * 0.58,
+        hr * 0.38,
+        _tone_rgba(pal, 2, 195),
+        1.3,
+        0.7,
+    )
+
+
+def _draw_hair_long_north(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    drape_main: float,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, 0.0, 1.3, 1.1, 0, 235, 1.6, 0.82),
+            (-0.0, -0.1, 1.2, 1.0, 1, 225, 1.5, 0.8),
+        ),
+    )
+    stamp_ellipse(
+        canvas,
+        hx,
+        hy + drape_main * 0.3,
+        hr * 0.9,
+        drape_main * 0.45,
+        _tone_rgba(pal, 0, 220),
+        1.7,
+        0.78,
+    )
+    stamp_ellipse(
+        canvas,
+        hx,
+        hy + drape_main * 0.25,
+        hr * 0.75,
+        drape_main * 0.38,
+        _tone_rgba(pal, 1, 215),
+        1.5,
+        0.75,
+    )
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((-0.0, -0.3, 0.7, 0.6, 2, 190, 1.3, 0.68),),
+    )
+
+
+def _draw_hair_long_side(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    back_drape: float,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (0.1, -0.38, 1.15, 0.8, 0, 235, 1.6, 0.82),
+            (0.08, -0.46, 1.02, 0.7, 1, 225, 1.5, 0.8),
+        ),
+    )
+    stamp_ellipse(
+        canvas,
+        hx + hr * 0.62,
+        hy + back_drape * 0.2,
+        hr * 0.32,
+        back_drape * 0.3,
+        _tone_rgba(pal, 0, 215),
+        1.8,
+        0.78,
+    )
+    stamp_ellipse(
+        canvas,
+        hx + hr * 0.58,
+        hy + back_drape * 0.15,
+        hr * 0.24,
+        back_drape * 0.24,
+        _tone_rgba(pal, 1, 210),
+        1.6,
+        0.75,
+    )
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.52, 0.12, 0.1, 0.28, 1, 208, 1.35, 0.72),
+            (-0.26, -0.7, 0.56, 0.4, 2, 190, 1.3, 0.68),
+        ),
+    )
+
+
+def _draw_hair_long_south(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+    hr_side_scale: float,
+    drape_left: float,
+    drape_right: float,
+    drape_left_scaled: float,
+    drape_right_scaled: float,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -0.48, 1.14, 0.72, 0, 235, 1.6, 0.82),
+            (-0.0, -0.58, 1.02, 0.62, 1, 225, 1.5, 0.8),
+        ),
+    )
+    for (
+        side,
+        drape,
+        drape_scaled,
+        cy_factor,
+        rx_factor,
+        ry_factor,
+        tone_idx,
+        alpha,
+        falloff,
+        hardness,
+    ) in (
+        (-1.0, drape_left, drape_left_scaled, 0.28, 0.3, 0.22, 0, 215, 1.8, 0.78),
+        (-1.0, drape_left, drape_left_scaled, 0.24, 0.21, 0.18, 1, 210, 1.6, 0.75),
+        (1.0, drape_right, drape_right_scaled, 0.28, 0.3, 0.22, 0, 215, 1.8, 0.78),
+        (1.0, drape_right, drape_right_scaled, 0.24, 0.21, 0.18, 1, 210, 1.6, 0.75),
+    ):
+        stamp_ellipse(
+            canvas,
+            hx + hr * 0.78 * side,
+            hy + drape * cy_factor,
+            hr_side_scale * rx_factor,
+            drape_scaled * ry_factor,
+            _tone_rgba(pal, tone_idx, alpha),
+            falloff,
+            hardness,
+        )
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        ((-0.0, -0.74, 0.66, 0.42, 2, 190, 1.3, 0.68),),
+    )
+
+
+def _draw_hair_tall_north(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -0.1, 1.1, 1.0, 0, 230, 1.7, 0.82),
+            (-0.0, -1.0, 0.65, 1.1, 1, 225, 1.6, 0.8),
+            (-0.0, -1.2, 0.45, 0.8, 2, 200, 1.3, 0.7),
+        ),
+    )
+
+
+def _draw_hair_tall_side(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (0.04, -1.12, 0.66, 1.12, 0, 230, 1.8, 0.82),
+            (0.02, -1.24, 0.52, 0.94, 1, 220, 1.5, 0.78),
+            (0.46, -0.22, 0.52, 0.72, 0, 224, 1.5, 0.78),
+            (0.4, -0.28, 0.38, 0.54, 1, 214, 1.38, 0.74),
+            (0.22, -0.24, 0.34, 0.48, 0, 220, 1.45, 0.74),
+            (0.18, -0.28, 0.25, 0.36, 1, 210, 1.35, 0.7),
+            (0.64, -0.04, 0.34, 0.5, 0, 216, 1.42, 0.75),
+            (-0.22, -0.34, 0.2, 0.26, 2, 198, 1.3, 0.7),
+        ),
+    )
+
+
+def _draw_hair_tall_south(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    pal: Palette3,
+) -> None:
+    _stamp_head_ellipse_specs(
+        canvas,
+        hx,
+        hy,
+        hr,
+        pal,
+        (
+            (-0.0, -1.2, 0.7, 1.2, 0, 230, 1.8, 0.82),
+            (-0.0, -1.3, 0.55, 1.0, 1, 220, 1.5, 0.78),
+            (-0.0, -1.5, 0.35, 0.7, 2, 200, 1.3, 0.7),
+        ),
+    )
 
 
 def _hair_bald(
@@ -356,16 +611,13 @@ def _hair_short(
     _rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Short crop hairstyle rendered from declarative specs."""
-    cap_cy = hy - hr * 0.45
-    context = ShapeContext({"hx": hx, "hy": hy, "hr": hr, "cap_cy": cap_cy})
+    """Short crop hairstyle."""
     if facing == Facing.NORTH:
-        specs = _HAIR_SHORT_NORTH
+        _draw_hair_short_north(canvas, hx, hy, hr, pal)
     elif facing in {Facing.EAST, Facing.WEST}:
-        specs = _HAIR_SHORT_SIDE
+        _draw_hair_short_side(canvas, hx, hy, hr, pal)
     else:
-        specs = _HAIR_SHORT_SOUTH
-    _stamp_tone_specs(canvas, pal, specs, context)
+        _draw_hair_short_south(canvas, hx, hy, hr, pal)
 
 
 def _hair_medium(
@@ -377,18 +629,22 @@ def _hair_medium(
     rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Medium hair with side drape rendered from declarative specs."""
-    context_values: dict[str, float] = {"hx": hx, "hy": hy, "hr": hr}
+    """Medium hair with side drape."""
     if facing == Facing.NORTH:
-        specs = _HAIR_MEDIUM_NORTH
+        _draw_hair_medium_north(canvas, hx, hy, hr, pal)
     elif facing in {Facing.EAST, Facing.WEST}:
-        specs = _HAIR_MEDIUM_SIDE
+        _draw_hair_medium_side(canvas, hx, hy, hr, pal)
     else:
         side_scale = 0.72 if _luma(pal[1]) > 155.0 else 1.0
-        context_values["hr_side_scale"] = hr * side_scale
-        context_values["highlight_jitter"] = float(rng.uniform(-0.4, 0.4))
-        specs = _HAIR_MEDIUM_SOUTH
-    _stamp_tone_specs(canvas, pal, specs, ShapeContext(context_values))
+        _draw_hair_medium_south(
+            canvas,
+            hx,
+            hy,
+            hr,
+            pal,
+            hr * side_scale,
+            float(rng.uniform(-0.4, 0.4)),
+        )
 
 
 def _hair_long(
@@ -400,25 +656,29 @@ def _hair_long(
     rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Long hair rendered from declarative specs."""
-    context_values: dict[str, float] = {"hx": hx, "hy": hy, "hr": hr}
+    """Long hair with back/side drape."""
     if facing == Facing.NORTH:
-        context_values["drape_main"] = hr * float(rng.uniform(2.2, 3.0))
-        specs = _HAIR_LONG_NORTH
+        _draw_hair_long_north(
+            canvas, hx, hy, hr, pal, hr * float(rng.uniform(2.2, 3.0))
+        )
     elif facing in {Facing.EAST, Facing.WEST}:
-        context_values["back_drape"] = hr * float(rng.uniform(2.1, 3.0))
-        specs = _HAIR_LONG_SIDE
+        _draw_hair_long_side(canvas, hx, hy, hr, pal, hr * float(rng.uniform(2.1, 3.0)))
     else:
         side_scale = 0.74 if _luma(pal[1]) > 155.0 else 1.0
-        context_values["hr_side_scale"] = hr * side_scale
-        context_values["drape_left"] = hr * float(rng.uniform(2.0, 3.0))
-        context_values["drape_right"] = hr * float(rng.uniform(2.0, 3.0))
-        context_values["drape_left_scaled"] = context_values["drape_left"] * side_scale
-        context_values["drape_right_scaled"] = (
-            context_values["drape_right"] * side_scale
+        drape_left = hr * float(rng.uniform(2.0, 3.0))
+        drape_right = hr * float(rng.uniform(2.0, 3.0))
+        _draw_hair_long_south(
+            canvas,
+            hx,
+            hy,
+            hr,
+            pal,
+            hr * side_scale,
+            drape_left,
+            drape_right,
+            drape_left * side_scale,
+            drape_right * side_scale,
         )
-        specs = _HAIR_LONG_SOUTH
-    _stamp_tone_specs(canvas, pal, specs, ShapeContext(context_values))
 
 
 def _hair_tall(
@@ -430,14 +690,13 @@ def _hair_tall(
     _rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Tall upward hair rendered from declarative specs."""
+    """Tall upward hair."""
     if facing == Facing.NORTH:
-        specs = _HAIR_TALL_NORTH
+        _draw_hair_tall_north(canvas, hx, hy, hr, pal)
     elif facing in {Facing.EAST, Facing.WEST}:
-        specs = _HAIR_TALL_SIDE
+        _draw_hair_tall_side(canvas, hx, hy, hr, pal)
     else:
-        specs = _HAIR_TALL_SOUTH
-    _stamp_tone_specs(canvas, pal, specs, ShapeContext({"hx": hx, "hy": hy, "hr": hr}))
+        _draw_hair_tall_south(canvas, hx, hy, hr, pal)
 
 
 HAIR_STYLE_NAMES: tuple[str, ...] = (
@@ -472,169 +731,104 @@ def _layer_hair(context: CharacterDrawContext) -> None:
     if facing == Facing.SOUTH:
         is_long_front_hair = appearance.hair_style_idx == HAIR_IDX_LONG
         is_medium_front_hair = appearance.hair_style_idx == HAIR_IDX_MEDIUM
-        values = {"hx": hx, "hy": hy, "hr": hr}
         if is_long_front_hair or is_medium_front_hair:
-            specs_list: list[ToneStampSpec] = [
-                EllipseStampSpec(
-                    cx=_expr("hx"),
-                    cy=_expr("hy", "hr", -(0.26 if is_long_front_hair else 0.22)),
-                    rx=_expr("hr", None, factor=(0.24 if is_long_front_hair else 0.2)),
-                    ry=_expr("hr", None, factor=(0.13 if is_long_front_hair else 0.11)),
-                    tone_idx=1,
-                    alpha=210,
-                    falloff=1.35,
-                    hardness=0.7,
-                )
-            ]
-            if is_long_front_hair:
-                specs_list.append(
-                    EllipseStampSpec(
-                        cx=_expr("hx"),
-                        cy=_expr("hy", "hr", -0.36),
-                        rx=_expr("hr", None, factor=0.23),
-                        ry=_expr("hr", None, factor=0.12),
-                        tone_idx=1,
-                        alpha=205,
-                        falloff=1.25,
-                        hardness=0.68,
-                    )
-                )
-            _stamp_tone_specs(
+            _stamp_head_ellipse_specs(
                 canvas,
+                hx,
+                hy,
+                hr,
                 appearance.hair_pal,
-                tuple(specs_list),
-                ShapeContext(values),
+                (
+                    (
+                        0.0,
+                        -(0.26 if is_long_front_hair else 0.22),
+                        (0.24 if is_long_front_hair else 0.2),
+                        (0.13 if is_long_front_hair else 0.11),
+                        1,
+                        210,
+                        1.35,
+                        0.7,
+                    ),
+                ),
             )
+            if is_long_front_hair:
+                _stamp_head_ellipse_specs(
+                    canvas,
+                    hx,
+                    hy,
+                    hr,
+                    appearance.hair_pal,
+                    ((0.0, -0.36, 0.23, 0.12, 1, 205, 1.25, 0.68),),
+                )
         else:
-            face_specs: tuple[ToneStampSpec, ...] = (
-                EllipseStampSpec(
-                    cx=_expr("hx"),
-                    cy=_expr("hy", "hr", -0.05),
-                    rx=_expr("hr", None, factor=0.44),
-                    ry=_expr("hr", None, factor=0.36),
-                    tone_idx=1,
-                    alpha=205,
-                    falloff=1.35,
-                    hardness=0.72,
+            _stamp_head_ellipse_specs(
+                canvas,
+                hx,
+                hy,
+                hr,
+                appearance.skin_pal,
+                (
+                    (0.0, -0.05, 0.44, 0.36, 1, 205, 1.35, 0.72),
+                    (0.0, -0.22, 0.28, 0.2, 2, 190, 1.2, 0.65),
                 ),
-                EllipseStampSpec(
-                    cx=_expr("hx"),
-                    cy=_expr("hy", "hr", -0.22),
-                    rx=_expr("hr", None, factor=0.28),
-                    ry=_expr("hr", None, factor=0.2),
-                    tone_idx=2,
-                    alpha=190,
-                    falloff=1.2,
-                    hardness=0.65,
-                ),
-            )
-            _stamp_tone_specs(
-                canvas, appearance.skin_pal, face_specs, ShapeContext(values)
             )
     elif facing in {Facing.EAST, Facing.WEST}:
-        values = {"hx": hx, "hy": hy, "hr": hr}
         if appearance.hair_style_idx == HAIR_IDX_TALL:
-            tall_specs: tuple[ToneStampSpec, ...] = (
-                EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.5),
-                    cy=_expr("hy", "hr", -0.18),
-                    rx=_expr("hr", None, factor=0.38),
-                    ry=_expr("hr", None, factor=0.54),
-                    tone_idx=0,
-                    alpha=228,
-                    falloff=1.45,
-                    hardness=0.76,
+            _stamp_head_ellipse_specs(
+                canvas,
+                hx,
+                hy,
+                hr,
+                appearance.hair_pal,
+                (
+                    (0.5, -0.18, 0.38, 0.54, 0, 228, 1.45, 0.76),
+                    (0.44, -0.22, 0.28, 0.4, 1, 216, 1.3, 0.72),
+                    (0.64, -0.02, 0.34, 0.5, 0, 230, 1.5, 0.82),
+                    (0.56, -0.08, 0.25, 0.38, 1, 220, 1.35, 0.76),
                 ),
-                EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.44),
-                    cy=_expr("hy", "hr", -0.22),
-                    rx=_expr("hr", None, factor=0.28),
-                    ry=_expr("hr", None, factor=0.4),
-                    tone_idx=1,
-                    alpha=216,
-                    falloff=1.3,
-                    hardness=0.72,
-                ),
-                EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.64),
-                    cy=_expr("hy", "hr", -0.02),
-                    rx=_expr("hr", None, factor=0.34),
-                    ry=_expr("hr", None, factor=0.5),
-                    tone_idx=0,
-                    alpha=230,
-                    falloff=1.5,
-                    hardness=0.82,
-                ),
-                EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.56),
-                    cy=_expr("hy", "hr", -0.08),
-                    rx=_expr("hr", None, factor=0.25),
-                    ry=_expr("hr", None, factor=0.38),
-                    tone_idx=1,
-                    alpha=220,
-                    falloff=1.35,
-                    hardness=0.76,
-                ),
-            )
-            _stamp_tone_specs(
-                canvas, appearance.hair_pal, tall_specs, ShapeContext(values)
             )
 
-        face_specs_list: list[ToneStampSpec] = [
-            EllipseStampSpec(
-                cx=_expr("hx", "hr", -0.56),
-                cy=_expr("hy", "hr", -0.06),
-                rx=_expr("hr", None, factor=0.2),
-                ry=_expr("hr", None, factor=0.3),
-                tone_idx=1,
-                alpha=210,
-                falloff=1.3,
-                hardness=0.68,
-            ),
-            CircleStampSpec(
-                cx=_expr("hx", "hr", -0.72),
-                cy=_expr("hy", "hr", -0.03),
-                radius=_expr("hr", None, factor=0.12),
-                tone_idx=2,
-                alpha=195,
-                falloff=1.25,
-                hardness=0.66,
-            ),
-            EllipseStampSpec(
-                cx=_expr("hx", "hr", -0.9),
-                cy=_expr("hy", "hr", 0.01),
-                rx=_expr("hr", None, factor=0.08),
-                ry=_expr("hr", None, factor=0.06),
-                tone_idx=0,
-                alpha=200,
-                falloff=1.0,
-                hardness=0.62,
-            ),
-            CircleStampSpec(
-                cx=_expr("hx", "hr", -0.9, offset=-0.18),
-                cy=_expr("hy", "hr", 0.01, offset=0.02),
-                radius=_expr("hr", None, factor=0.06),
-                tone_idx=0,
-                alpha=192,
-                falloff=1.0,
-                hardness=0.6,
-            ),
-        ]
-        if appearance.hair_style_idx != HAIR_IDX_TALL:
-            face_specs_list.append(
-                CircleStampSpec(
-                    cx=_expr("hx", "hr", 0.42),
-                    cy=_expr("hy", "hr", 0.02),
-                    radius=_expr("hr", None, factor=0.1),
-                    tone_idx=0,
-                    alpha=175,
-                    falloff=1.25,
-                    hardness=0.66,
-                )
-            )
-        _stamp_tone_specs(
+        _stamp_head_ellipse_specs(
             canvas,
+            hx,
+            hy,
+            hr,
             appearance.skin_pal,
-            tuple(face_specs_list),
-            ShapeContext(values),
+            (
+                (-0.56, -0.06, 0.2, 0.3, 1, 210, 1.3, 0.68),
+                (-0.9, 0.01, 0.08, 0.06, 0, 200, 1.0, 0.62),
+            ),
         )
+        _stamp_head_circle_specs(
+            canvas,
+            hx,
+            hy,
+            hr,
+            appearance.skin_pal,
+            ((-0.72, -0.03, 0.12, 2, 195, 1.25, 0.66),),
+        )
+        _stamp_head_circle(
+            canvas,
+            hx,
+            hy,
+            hr,
+            appearance.skin_pal,
+            -0.9,
+            0.01,
+            0.06,
+            tone_idx=0,
+            alpha=192,
+            falloff=1.0,
+            hardness=0.6,
+            cx_offset=-0.18,
+            cy_offset=0.02,
+        )
+        if appearance.hair_style_idx != HAIR_IDX_TALL:
+            _stamp_head_circle_specs(
+                canvas,
+                hx,
+                hy,
+                hr,
+                appearance.skin_pal,
+                ((0.42, 0.02, 0.1, 0, 175, 1.25, 0.66),),
+            )

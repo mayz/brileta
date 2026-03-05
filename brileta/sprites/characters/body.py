@@ -16,14 +16,6 @@ from brileta.types import Facing
 
 from .clothing import _draw_armor_torso, _draw_bare_torso, _draw_belly_mass
 from .hair import HAIR_IDX_TALL
-from .specs import (
-    CircleStampSpec,
-    EllipseStampSpec,
-    ShapeContext,
-    ToneStampSpec,
-    _expr,
-    _stamp_tone_specs,
-)
 
 if TYPE_CHECKING:
     from .renderer import CharacterDrawContext
@@ -419,129 +411,108 @@ def _layer_head(context: CharacterDrawContext) -> None:
     hx = context.cx
     hy = context.head_cy
     hr = context.hr
-    values = {"hx": hx, "hy": hy, "hr": hr}
+    canvas = context.canvas
+
+    def stamp_head_circle(
+        cx: float,
+        cy: float,
+        radius: float,
+        tone_idx: int,
+        alpha: int,
+        falloff: float,
+        hardness: float,
+    ) -> None:
+        stamp_fuzzy_circle(
+            canvas,
+            cx,
+            cy,
+            radius,
+            (*appearance.skin_pal[tone_idx], alpha),
+            falloff,
+            hardness,
+        )
+
+    def stamp_head_ellipse(
+        cx: float,
+        cy: float,
+        rx: float,
+        ry: float,
+        tone_idx: int,
+        alpha: int,
+        falloff: float,
+        hardness: float,
+    ) -> None:
+        stamp_ellipse(
+            canvas,
+            cx,
+            cy,
+            rx,
+            ry,
+            (*appearance.skin_pal[tone_idx], alpha),
+            falloff,
+            hardness,
+        )
 
     if facing == Facing.NORTH:
-        specs: tuple[ToneStampSpec, ...] = (
-            CircleStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy", None, offset=0.2),
-                radius=_expr("hr", None, offset=0.2),
-                tone_idx=0,
-                alpha=240,
-                falloff=2.0,
-                hardness=0.88,
-            ),
-            CircleStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy"),
-                radius=_expr("hr"),
-                tone_idx=1,
-                alpha=235,
-                falloff=2.0,
-                hardness=0.88,
-            ),
-        )
+        for cy, radius, tone_idx, alpha, falloff, hardness in (
+            (hy + 0.2, hr + 0.2, 0, 240, 2.0, 0.88),
+            (hy, hr, 1, 235, 2.0, 0.88),
+        ):
+            stamp_head_circle(hx, cy, radius, tone_idx, alpha, falloff, hardness)
     elif facing in {Facing.EAST, Facing.WEST}:
-        specs_list: list[ToneStampSpec] = [
-            EllipseStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy", None, offset=0.2),
-                rx=_expr("hr", None, factor=0.85),
-                ry=_expr("hr", None, offset=0.2),
-                tone_idx=0,
-                alpha=240,
-                falloff=2.0,
-                hardness=0.88,
+        for (
+            cx,
+            cy,
+            rx,
+            ry,
+            tone_idx,
+            alpha,
+            falloff,
+            hardness,
+        ) in (
+            (hx, hy + 0.2, hr * 0.85, hr + 0.2, 0, 240, 2.0, 0.88),
+            (hx, hy, hr * 0.8, hr, 1, 235, 2.0, 0.88),
+            (
+                hx + hr * -0.14,
+                hy + hr * -0.2,
+                hr * 0.45,
+                hr * 0.55,
+                2,
+                210,
+                1.6,
+                0.75,
             ),
-            EllipseStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy"),
-                rx=_expr("hr", None, factor=0.8),
-                ry=_expr("hr"),
-                tone_idx=1,
-                alpha=235,
-                falloff=2.0,
-                hardness=0.88,
+            (
+                hx + hr * -0.26,
+                hy + hr * -0.12,
+                hr * 0.34,
+                hr * 0.48,
+                2,
+                205,
+                1.5,
+                0.72,
             ),
-            EllipseStampSpec(
-                cx=_expr("hx", "hr", -0.14),
-                cy=_expr("hy", "hr", -0.2),
-                rx=_expr("hr", None, factor=0.45),
-                ry=_expr("hr", None, factor=0.55),
-                tone_idx=2,
-                alpha=210,
-                falloff=1.6,
-                hardness=0.75,
-            ),
-            EllipseStampSpec(
-                cx=_expr("hx", "hr", -0.26),
-                cy=_expr("hy", "hr", -0.12),
-                rx=_expr("hr", None, factor=0.34),
-                ry=_expr("hr", None, factor=0.48),
-                tone_idx=2,
-                alpha=205,
-                falloff=1.5,
-                hardness=0.72,
-            ),
-        ]
+        ):
+            stamp_head_ellipse(cx, cy, rx, ry, tone_idx, alpha, falloff, hardness)
         if appearance.hair_style_idx != HAIR_IDX_TALL:
-            specs_list.append(
-                EllipseStampSpec(
-                    cx=_expr("hx", "hr", 0.28),
-                    cy=_expr("hy", "hr", 0.03),
-                    rx=_expr("hr", None, factor=0.3),
-                    ry=_expr("hr", None, factor=0.46),
-                    tone_idx=0,
-                    alpha=195,
-                    falloff=1.5,
-                    hardness=0.72,
-                )
+            stamp_head_ellipse(
+                hx + hr * 0.28,
+                hy + hr * 0.03,
+                hr * 0.3,
+                hr * 0.46,
+                0,
+                195,
+                1.5,
+                0.72,
             )
-        specs_list.append(
-            CircleStampSpec(
-                cx=_expr("hx", "hr", -0.63),
-                cy=_expr("hy", "hr", -0.02),
-                radius=_expr("hr", None, factor=0.12),
-                tone_idx=2,
-                alpha=190,
-                falloff=1.4,
-                hardness=0.7,
-            )
-        )
-        specs = tuple(specs_list)
+        stamp_head_circle(hx + hr * -0.63, hy + hr * -0.02, hr * 0.12, 2, 190, 1.4, 0.7)
     else:
-        specs = (
-            CircleStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy", None, offset=0.2),
-                radius=_expr("hr", None, offset=0.2),
-                tone_idx=0,
-                alpha=240,
-                falloff=2.0,
-                hardness=0.88,
-            ),
-            CircleStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy"),
-                radius=_expr("hr"),
-                tone_idx=1,
-                alpha=235,
-                falloff=2.0,
-                hardness=0.88,
-            ),
-            CircleStampSpec(
-                cx=_expr("hx"),
-                cy=_expr("hy", "hr", -0.22),
-                radius=_expr("hr", None, factor=0.6),
-                tone_idx=2,
-                alpha=210,
-                falloff=1.6,
-                hardness=0.75,
-            ),
-        )
-
-    _stamp_tone_specs(context.canvas, appearance.skin_pal, specs, ShapeContext(values))
+        for cy, radius, tone_idx, alpha, falloff, hardness in (
+            (hy + 0.2, hr + 0.2, 0, 240, 2.0, 0.88),
+            (hy, hr, 1, 235, 2.0, 0.88),
+            (hy + hr * -0.22, hr * 0.6, 2, 210, 1.6, 0.75),
+        ):
+            stamp_head_circle(hx, cy, radius, tone_idx, alpha, falloff, hardness)
 
 
 def _layer_face_final(context: CharacterDrawContext) -> None:
