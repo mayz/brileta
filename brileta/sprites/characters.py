@@ -14,6 +14,7 @@ import numpy as np
 
 from brileta import colors
 from brileta.sprites.primitives import (
+    CanvasStamper,
     darken_rim,
     draw_tapered_trunk,
     draw_thick_line,
@@ -274,13 +275,582 @@ class CharacterAppearance:
 
 
 # ---------------------------------------------------------------------------
-# Hair drawing
+# Data-driven stamp specs
 # ---------------------------------------------------------------------------
 
 HairDrawFn = Callable[
     [np.ndarray, float, float, float, Palette3, np.random.Generator, Facing],
     None,
 ]
+
+
+@dataclass(frozen=True)
+class LinearExpr:
+    """Linear expression against a named draw value."""
+
+    base_key: str | None = None
+    scale_key: str | None = None
+    factor: float = 1.0
+    offset: float = 0.0
+
+
+@dataclass(frozen=True)
+class EllipseStampSpec:
+    """One ellipse stamp resolved from draw context values."""
+
+    cx: LinearExpr
+    cy: LinearExpr
+    rx: LinearExpr
+    ry: LinearExpr
+    tone_idx: int
+    alpha: int
+    falloff: float
+    hardness: float
+
+
+@dataclass(frozen=True)
+class CircleStampSpec:
+    """One circle stamp resolved from draw context values."""
+
+    cx: LinearExpr
+    cy: LinearExpr
+    radius: LinearExpr
+    tone_idx: int
+    alpha: int
+    falloff: float
+    hardness: float
+
+
+ToneStampSpec = EllipseStampSpec | CircleStampSpec
+
+
+@dataclass(frozen=True)
+class ShapeContext:
+    """Shared scalar values for resolving stamp expressions."""
+
+    values: dict[str, float]
+
+
+def _expr(
+    base_key: str | None = None,
+    scale_key: str | None = None,
+    factor: float = 1.0,
+    offset: float = 0.0,
+) -> LinearExpr:
+    """Convenience constructor for ``LinearExpr``."""
+    return LinearExpr(
+        base_key=base_key, scale_key=scale_key, factor=factor, offset=offset
+    )
+
+
+def _resolve_expr(expr: LinearExpr, context: ShapeContext) -> float:
+    """Resolve a linear expression to a concrete scalar."""
+    value = expr.offset
+    if expr.base_key is not None:
+        if expr.scale_key is None:
+            value += context.values[expr.base_key] * expr.factor
+        else:
+            value += context.values[expr.base_key]
+    if expr.scale_key is not None:
+        value += context.values[expr.scale_key] * expr.factor
+    return value
+
+
+def _ellipses_are_disjoint(ellipses: list[tuple[float, float, float, float]]) -> bool:
+    """Return True when ellipses are safely non-overlapping.
+
+    The +4.0 margin is intentionally conservative to preserve byte-identical
+    output compared to sequential stamping on tiny sprites.
+    """
+    for i, (cx_a, cy_a, rx_a, ry_a) in enumerate(ellipses):
+        for cx_b, cy_b, rx_b, ry_b in ellipses[i + 1 :]:
+            if abs(cx_a - cx_b) <= (rx_a + rx_b + 4.0) and abs(cy_a - cy_b) <= (
+                ry_a + ry_b + 4.0
+            ):
+                return False
+    return True
+
+
+def _circles_are_disjoint(circles: list[tuple[float, float, float]]) -> bool:
+    """Return True when circles are safely non-overlapping."""
+    for i, (cx_a, cy_a, r_a) in enumerate(circles):
+        for cx_b, cy_b, r_b in circles[i + 1 :]:
+            dx = cx_a - cx_b
+            dy = cy_a - cy_b
+            max_r = r_a + r_b + 2.0
+            if dx * dx + dy * dy <= max_r * max_r:
+                return False
+    return True
+
+
+def _stamp_tone_specs(
+    canvas: np.ndarray,
+    palette: Palette3,
+    specs: tuple[ToneStampSpec, ...],
+    context: ShapeContext,
+) -> None:
+    """Render data-driven specs in-order with safe opportunistic batching."""
+    stamper = CanvasStamper(canvas)
+
+    run_kind: str | None = None
+    run_rgba: colors.ColorRGBA | None = None
+    run_falloff = 0.0
+    run_hardness = 0.0
+    ellipse_run: list[tuple[float, float, float, float]] = []
+    circle_run: list[tuple[float, float, float]] = []
+
+    def flush() -> None:
+        nonlocal run_kind
+        if run_kind == "ellipse" and run_rgba is not None:
+            if len(ellipse_run) > 1 and _ellipses_are_disjoint(ellipse_run):
+                stamper.batch_stamp_ellipses(
+                    ellipse_run,
+                    run_rgba,
+                    falloff=run_falloff,
+                    hardness=run_hardness,
+                )
+            else:
+                for cx, cy, rx, ry in ellipse_run:
+                    stamper.stamp_ellipse(
+                        cx,
+                        cy,
+                        rx,
+                        ry,
+                        run_rgba,
+                        falloff=run_falloff,
+                        hardness=run_hardness,
+                    )
+        if run_kind == "circle" and run_rgba is not None:
+            for cx, cy, radius in circle_run:
+                # Keep circles on the historical fuzzy-circle path for
+                # byte-identical output with pre-refactor sprites.
+                stamp_fuzzy_circle(
+                    canvas,
+                    cx,
+                    cy,
+                    radius,
+                    run_rgba,
+                    falloff=run_falloff,
+                    hardness=run_hardness,
+                )
+        run_kind = None
+        ellipse_run.clear()
+        circle_run.clear()
+
+    for spec in specs:
+        if isinstance(spec, EllipseStampSpec):
+            kind = "ellipse"
+            rgba: colors.ColorRGBA = (*palette[spec.tone_idx], spec.alpha)
+            falloff = spec.falloff
+            hardness = spec.hardness
+            shape = (
+                _resolve_expr(spec.cx, context),
+                _resolve_expr(spec.cy, context),
+                _resolve_expr(spec.rx, context),
+                _resolve_expr(spec.ry, context),
+            )
+        else:
+            kind = "circle"
+            rgba = (*palette[spec.tone_idx], spec.alpha)
+            falloff = spec.falloff
+            hardness = spec.hardness
+            shape = (
+                _resolve_expr(spec.cx, context),
+                _resolve_expr(spec.cy, context),
+                _resolve_expr(spec.radius, context),
+            )
+
+        if (
+            run_kind != kind
+            or run_rgba != rgba
+            or run_falloff != falloff
+            or run_hardness != hardness
+        ):
+            flush()
+            run_kind = kind
+            run_rgba = rgba
+            run_falloff = falloff
+            run_hardness = hardness
+
+        if kind == "ellipse":
+            ellipse_run.append(shape)  # type: ignore[arg-type]
+        else:
+            circle_run.append(shape)  # type: ignore[arg-type]
+
+    flush()
+
+
+def _head_ellipse(
+    cx_factor: float,
+    cy_factor: float,
+    rx_factor: float,
+    ry_factor: float,
+    *,
+    tone_idx: int,
+    alpha: int,
+    falloff: float,
+    hardness: float,
+    cx_base: str = "hx",
+    cy_base: str = "hy",
+    cx_scale: str = "hr",
+    cy_scale: str = "hr",
+    cy_offset: float = 0.0,
+) -> EllipseStampSpec:
+    """Build a head-relative ellipse spec using factor inputs."""
+    return EllipseStampSpec(
+        cx=_expr(cx_base, cx_scale, cx_factor),
+        cy=_expr(cy_base, cy_scale, cy_factor, offset=cy_offset),
+        rx=_expr(None, "hr", rx_factor),
+        ry=_expr(None, "hr", ry_factor),
+        tone_idx=tone_idx,
+        alpha=alpha,
+        falloff=falloff,
+        hardness=hardness,
+    )
+
+
+_HAIR_SHORT_NORTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.15, 1.15, 0.95, tone_idx=1, alpha=235, falloff=1.8, hardness=0.85
+    ),
+    _head_ellipse(
+        -0.0, -0.3, 0.8, 0.6, tone_idx=2, alpha=200, falloff=1.5, hardness=0.75
+    ),
+)
+_HAIR_SHORT_SIDE: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        0.04,
+        -0.12,
+        0.9,
+        0.62,
+        tone_idx=1,
+        alpha=235,
+        falloff=1.9,
+        hardness=0.86,
+        cy_base="cap_cy",
+    ),
+    _head_ellipse(
+        0.52, -0.02, 0.25, 0.34, tone_idx=1, alpha=220, falloff=1.45, hardness=0.76
+    ),
+    _head_ellipse(
+        -0.22,
+        -0.34,
+        0.36,
+        0.24,
+        tone_idx=2,
+        alpha=198,
+        falloff=1.35,
+        hardness=0.72,
+        cy_base="cap_cy",
+    ),
+)
+_HAIR_SHORT_SOUTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0,
+        -0.12,
+        1.08,
+        0.54,
+        tone_idx=1,
+        alpha=235,
+        falloff=1.9,
+        hardness=0.86,
+        cy_base="cap_cy",
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx"),
+        cy=_expr("cap_cy", None, offset=-0.7),
+        rx=_expr(None, "hr", 0.62),
+        ry=_expr(None, "hr", 0.36),
+        tone_idx=2,
+        alpha=200,
+        falloff=1.5,
+        hardness=0.75,
+    ),
+)
+
+_HAIR_MEDIUM_NORTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.1, 1.25, 1.1, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -0.2, 1.15, 1.0, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    _head_ellipse(
+        -0.85, 0.3, 0.45, 0.7, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        0.85, 0.3, 0.45, 0.7, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        -0.0, -0.4, 0.7, 0.5, tone_idx=2, alpha=195, falloff=1.3, hardness=0.7
+    ),
+)
+_HAIR_MEDIUM_SIDE: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        0.06, -0.48, 1.12, 0.7, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        0.05, -0.56, 1.0, 0.6, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    _head_ellipse(
+        0.78, 0.3, 0.4, 0.76, tone_idx=0, alpha=220, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        -0.54, 0.02, 0.12, 0.24, tone_idx=1, alpha=214, falloff=1.35, hardness=0.74
+    ),
+    _head_ellipse(
+        -0.3, -0.76, 0.48, 0.32, tone_idx=2, alpha=195, falloff=1.3, hardness=0.7
+    ),
+)
+_HAIR_MEDIUM_SOUTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.46, 1.18, 0.74, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -0.56, 1.06, 0.64, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", -0.85),
+        cy=_expr("hy", "hr", 0.12),
+        rx=_expr(None, "hr_side_scale", 0.4),
+        ry=_expr(None, "hr_side_scale", 0.55),
+        tone_idx=0,
+        alpha=220,
+        falloff=1.5,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.85),
+        cy=_expr("hy", "hr", 0.12),
+        rx=_expr(None, "hr_side_scale", 0.4),
+        ry=_expr(None, "hr_side_scale", 0.55),
+        tone_idx=0,
+        alpha=220,
+        falloff=1.5,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "highlight_jitter", 1.0),
+        cy=_expr("hy", "hr", -0.75),
+        rx=_expr(None, "hr", 0.58),
+        ry=_expr(None, "hr", 0.38),
+        tone_idx=2,
+        alpha=195,
+        falloff=1.3,
+        hardness=0.7,
+    ),
+)
+
+_HAIR_LONG_NORTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, 0.0, 1.3, 1.1, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -0.1, 1.2, 1.0, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx"),
+        cy=_expr("hy", "drape_main", 0.3),
+        rx=_expr(None, "hr", 0.9),
+        ry=_expr(None, "drape_main", 0.45),
+        tone_idx=0,
+        alpha=220,
+        falloff=1.7,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx"),
+        cy=_expr("hy", "drape_main", 0.25),
+        rx=_expr(None, "hr", 0.75),
+        ry=_expr(None, "drape_main", 0.38),
+        tone_idx=1,
+        alpha=215,
+        falloff=1.5,
+        hardness=0.75,
+    ),
+    _head_ellipse(
+        -0.0, -0.3, 0.7, 0.6, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
+    ),
+)
+_HAIR_LONG_SIDE: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        0.1, -0.38, 1.15, 0.8, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        0.08, -0.46, 1.02, 0.7, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.62),
+        cy=_expr("hy", "back_drape", 0.2),
+        rx=_expr(None, "hr", 0.32),
+        ry=_expr(None, "back_drape", 0.3),
+        tone_idx=0,
+        alpha=215,
+        falloff=1.8,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.58),
+        cy=_expr("hy", "back_drape", 0.15),
+        rx=_expr(None, "hr", 0.24),
+        ry=_expr(None, "back_drape", 0.24),
+        tone_idx=1,
+        alpha=210,
+        falloff=1.6,
+        hardness=0.75,
+    ),
+    _head_ellipse(
+        -0.52, 0.12, 0.1, 0.28, tone_idx=1, alpha=208, falloff=1.35, hardness=0.72
+    ),
+    _head_ellipse(
+        -0.26, -0.7, 0.56, 0.4, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
+    ),
+)
+_HAIR_LONG_SOUTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.48, 1.14, 0.72, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -0.58, 1.02, 0.62, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", -0.78),
+        cy=_expr("hy", "drape_left", 0.28),
+        rx=_expr(None, "hr_side_scale", 0.3),
+        ry=_expr(None, "drape_left_scaled", 0.22),
+        tone_idx=0,
+        alpha=215,
+        falloff=1.8,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", -0.78),
+        cy=_expr("hy", "drape_left", 0.24),
+        rx=_expr(None, "hr_side_scale", 0.21),
+        ry=_expr(None, "drape_left_scaled", 0.18),
+        tone_idx=1,
+        alpha=210,
+        falloff=1.6,
+        hardness=0.75,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.78),
+        cy=_expr("hy", "drape_right", 0.28),
+        rx=_expr(None, "hr_side_scale", 0.3),
+        ry=_expr(None, "drape_right_scaled", 0.22),
+        tone_idx=0,
+        alpha=215,
+        falloff=1.8,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.78),
+        cy=_expr("hy", "drape_right", 0.24),
+        rx=_expr(None, "hr_side_scale", 0.21),
+        ry=_expr(None, "drape_right_scaled", 0.18),
+        tone_idx=1,
+        alpha=210,
+        falloff=1.6,
+        hardness=0.75,
+    ),
+    _head_ellipse(
+        -0.0, -0.74, 0.66, 0.42, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
+    ),
+)
+_HAIR_LONG_FALLBACK: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.35, 1.18, 0.82, tone_idx=0, alpha=235, falloff=1.6, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -0.45, 1.08, 0.72, tone_idx=1, alpha=225, falloff=1.5, hardness=0.8
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", -0.7),
+        cy=_expr("hy", "drape_left", 0.22),
+        rx=_expr(None, "hr_side_scale", 0.36),
+        ry=_expr(None, "drape_left_scaled", 0.28),
+        tone_idx=0,
+        alpha=215,
+        falloff=1.8,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", -0.7),
+        cy=_expr("hy", "drape_left", 0.18),
+        rx=_expr(None, "hr_side_scale", 0.24),
+        ry=_expr(None, "drape_left_scaled", 0.22),
+        tone_idx=1,
+        alpha=210,
+        falloff=1.6,
+        hardness=0.75,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.7),
+        cy=_expr("hy", "drape_right", 0.22),
+        rx=_expr(None, "hr_side_scale", 0.36),
+        ry=_expr(None, "drape_right_scaled", 0.28),
+        tone_idx=0,
+        alpha=215,
+        falloff=1.8,
+        hardness=0.78,
+    ),
+    EllipseStampSpec(
+        cx=_expr("hx", "hr", 0.7),
+        cy=_expr("hy", "drape_right", 0.18),
+        rx=_expr(None, "hr_side_scale", 0.24),
+        ry=_expr(None, "drape_right_scaled", 0.22),
+        tone_idx=1,
+        alpha=210,
+        falloff=1.6,
+        hardness=0.75,
+    ),
+    _head_ellipse(
+        -0.0, -0.68, 0.68, 0.44, tone_idx=2, alpha=190, falloff=1.3, hardness=0.68
+    ),
+)
+
+_HAIR_TALL_NORTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -0.1, 1.1, 1.0, tone_idx=0, alpha=230, falloff=1.7, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -1.0, 0.65, 1.1, tone_idx=1, alpha=225, falloff=1.6, hardness=0.8
+    ),
+    _head_ellipse(
+        -0.0, -1.2, 0.45, 0.8, tone_idx=2, alpha=200, falloff=1.3, hardness=0.7
+    ),
+)
+_HAIR_TALL_SIDE: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        0.04, -1.12, 0.66, 1.12, tone_idx=0, alpha=230, falloff=1.8, hardness=0.82
+    ),
+    _head_ellipse(
+        0.02, -1.24, 0.52, 0.94, tone_idx=1, alpha=220, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        0.22, -0.24, 0.34, 0.48, tone_idx=0, alpha=220, falloff=1.45, hardness=0.74
+    ),
+    _head_ellipse(
+        0.18, -0.28, 0.25, 0.36, tone_idx=1, alpha=210, falloff=1.35, hardness=0.7
+    ),
+    _head_ellipse(
+        0.58, -0.02, 0.3, 0.44, tone_idx=0, alpha=214, falloff=1.4, hardness=0.74
+    ),
+    _head_ellipse(
+        -0.22, -0.34, 0.2, 0.26, tone_idx=2, alpha=198, falloff=1.3, hardness=0.7
+    ),
+)
+_HAIR_TALL_SOUTH: tuple[ToneStampSpec, ...] = (
+    _head_ellipse(
+        -0.0, -1.2, 0.7, 1.2, tone_idx=0, alpha=230, falloff=1.8, hardness=0.82
+    ),
+    _head_ellipse(
+        -0.0, -1.3, 0.55, 1.0, tone_idx=1, alpha=220, falloff=1.5, hardness=0.78
+    ),
+    _head_ellipse(
+        -0.0, -1.5, 0.35, 0.7, tone_idx=2, alpha=200, falloff=1.3, hardness=0.7
+    ),
+)
 
 
 def _hair_bald(
@@ -304,86 +874,16 @@ def _hair_short(
     _rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Short crop hairstyle."""
-    _shadow, mid, highlight = pal
+    """Short crop hairstyle rendered from declarative specs."""
     cap_cy = hy - hr * 0.45
+    context = ShapeContext({"hx": hx, "hy": hy, "hr": hr, "cap_cy": cap_cy})
     if facing == Facing.NORTH:
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.15,
-            hr * 1.15,
-            hr * 0.95,
-            (*mid, 235),
-            1.8,
-            0.85,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.3,
-            hr * 0.8,
-            hr * 0.6,
-            (*highlight, 200),
-            1.5,
-            0.75,
-        )
+        specs = _HAIR_SHORT_NORTH
     elif facing in {Facing.EAST, Facing.WEST}:
-        # Side profile is authored as left-facing; right-facing is mirrored during pose rendering.
-        front_sign = -1.0
-        back_sign = 1.0
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.04,
-            cap_cy - hr * 0.12,
-            hr * 0.9,
-            hr * 0.62,
-            (*mid, 235),
-            1.9,
-            0.86,
-        )
-        # Back-side volume and small front fringe avoid "chef-hat" silhouette.
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.52,
-            hy - hr * 0.02,
-            hr * 0.25,
-            hr * 0.34,
-            (*mid, 220),
-            1.45,
-            0.76,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.22,
-            cap_cy - hr * 0.34,
-            hr * 0.36,
-            hr * 0.24,
-            (*highlight, 198),
-            1.35,
-            0.72,
-        )
+        specs = _HAIR_SHORT_SIDE
     else:
-        stamp_ellipse(
-            canvas,
-            hx,
-            cap_cy - hr * 0.12,
-            hr * 1.08,
-            hr * 0.54,
-            (*mid, 235),
-            1.9,
-            0.86,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            cap_cy - 0.7,
-            hr * 0.62,
-            hr * 0.36,
-            (*highlight, 200),
-            1.5,
-            0.75,
-        )
+        specs = _HAIR_SHORT_SOUTH
+    _stamp_tone_specs(canvas, pal, specs, context)
 
 
 def _hair_medium(
@@ -395,154 +895,18 @@ def _hair_medium(
     rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Medium hair with side drape."""
-    shadow, mid, highlight = pal
-
+    """Medium hair with side drape rendered from declarative specs."""
+    context_values: dict[str, float] = {"hx": hx, "hy": hy, "hr": hr}
     if facing == Facing.NORTH:
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.1,
-            hr * 1.25,
-            hr * 1.1,
-            (*shadow, 235),
-            1.6,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.2,
-            hr * 1.15,
-            hr * 1.0,
-            (*mid, 225),
-            1.5,
-            0.8,
-        )
-        for side in (-1, 1):
-            sx = hx + side * hr * 0.85
-            stamp_ellipse(
-                canvas,
-                sx,
-                hy + hr * 0.3,
-                hr * 0.45,
-                hr * 0.7,
-                (*shadow, 220),
-                1.5,
-                0.78,
-            )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.4,
-            hr * 0.7,
-            hr * 0.5,
-            (*highlight, 195),
-            1.3,
-            0.7,
-        )
-        return
-
-    if facing in {Facing.EAST, Facing.WEST}:
-        # Side profile is authored as left-facing; right-facing is mirrored during pose rendering.
-        front_sign = -1.0
-        back_sign = 1.0
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.06,
-            hy - hr * 0.48,
-            hr * 1.12,
-            hr * 0.7,
-            (*shadow, 235),
-            1.6,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.05,
-            hy - hr * 0.56,
-            hr * 1.0,
-            hr * 0.6,
-            (*mid, 225),
-            1.5,
-            0.8,
-        )
-        # Back side carries more volume than the front fringe in profile.
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.78,
-            hy + hr * 0.3,
-            hr * 0.4,
-            hr * 0.76,
-            (*shadow, 220),
-            1.5,
-            0.78,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.54,
-            hy + hr * 0.02,
-            hr * 0.12,
-            hr * 0.24,
-            (*mid, 214),
-            1.35,
-            0.74,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.3,
-            hy - hr * 0.76,
-            hr * 0.48,
-            hr * 0.32,
-            (*highlight, 195),
-            1.3,
-            0.7,
-        )
-        return
-
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 0.46,
-        hr * 1.18,
-        hr * 0.74,
-        (*shadow, 235),
-        1.6,
-        0.82,
-    )
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 0.56,
-        hr * 1.06,
-        hr * 0.64,
-        (*mid, 225),
-        1.5,
-        0.8,
-    )
-    side_scale = 0.72 if _luma(mid) > 155.0 else 1.0
-    for side in (-1, 1):
-        sx = hx + side * hr * 0.85
-        stamp_ellipse(
-            canvas,
-            sx,
-            hy + hr * 0.12,
-            hr * 0.4 * side_scale,
-            hr * 0.55 * side_scale,
-            (*shadow, 220),
-            1.5,
-            0.78,
-        )
-    stamp_ellipse(
-        canvas,
-        hx + float(rng.uniform(-0.4, 0.4)),
-        hy - hr * 0.75,
-        hr * 0.58,
-        hr * 0.38,
-        (*highlight, 195),
-        1.3,
-        0.7,
-    )
+        specs = _HAIR_MEDIUM_NORTH
+    elif facing in {Facing.EAST, Facing.WEST}:
+        specs = _HAIR_MEDIUM_SIDE
+    else:
+        side_scale = 0.72 if _luma(pal[1]) > 155.0 else 1.0
+        context_values["hr_side_scale"] = hr * side_scale
+        context_values["highlight_jitter"] = float(rng.uniform(-0.4, 0.4))
+        specs = _HAIR_MEDIUM_SOUTH
+    _stamp_tone_specs(canvas, pal, specs, ShapeContext(context_values))
 
 
 def _hair_long(
@@ -554,234 +918,35 @@ def _hair_long(
     rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Long hair draping well below the shoulders."""
-    shadow, mid, highlight = pal
-
+    """Long hair rendered from declarative specs."""
+    context_values: dict[str, float] = {"hx": hx, "hy": hy, "hr": hr}
     if facing == Facing.NORTH:
-        stamp_ellipse(canvas, hx, hy, hr * 1.3, hr * 1.1, (*shadow, 235), 1.6, 0.82)
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.1,
-            hr * 1.2,
-            hr * 1.0,
-            (*mid, 225),
-            1.5,
-            0.8,
+        context_values["drape_main"] = hr * float(rng.uniform(2.2, 3.0))
+        specs = _HAIR_LONG_NORTH
+    elif facing in {Facing.EAST, Facing.WEST}:
+        context_values["back_drape"] = hr * float(rng.uniform(2.1, 3.0))
+        specs = _HAIR_LONG_SIDE
+    elif facing == Facing.SOUTH:
+        side_scale = 0.74 if _luma(pal[1]) > 155.0 else 1.0
+        context_values["hr_side_scale"] = hr * side_scale
+        context_values["drape_left"] = hr * float(rng.uniform(2.0, 3.0))
+        context_values["drape_right"] = hr * float(rng.uniform(2.0, 3.0))
+        context_values["drape_left_scaled"] = context_values["drape_left"] * side_scale
+        context_values["drape_right_scaled"] = (
+            context_values["drape_right"] * side_scale
         )
-        drape = hr * float(rng.uniform(2.2, 3.0))
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy + drape * 0.3,
-            hr * 0.9,
-            drape * 0.45,
-            (*shadow, 220),
-            1.7,
-            0.78,
+        specs = _HAIR_LONG_SOUTH
+    else:
+        side_scale = 0.74 if _luma(pal[1]) > 155.0 else 1.0
+        context_values["hr_side_scale"] = hr * side_scale
+        context_values["drape_left"] = hr * float(rng.uniform(2.0, 3.0))
+        context_values["drape_right"] = hr * float(rng.uniform(2.0, 3.0))
+        context_values["drape_left_scaled"] = context_values["drape_left"] * side_scale
+        context_values["drape_right_scaled"] = (
+            context_values["drape_right"] * side_scale
         )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy + drape * 0.25,
-            hr * 0.75,
-            drape * 0.38,
-            (*mid, 215),
-            1.5,
-            0.75,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.3,
-            hr * 0.7,
-            hr * 0.6,
-            (*highlight, 190),
-            1.3,
-            0.68,
-        )
-        return
-
-    if facing in {Facing.EAST, Facing.WEST}:
-        # Side profile is authored as left-facing; right-facing is mirrored during pose rendering.
-        front_sign = -1.0
-        back_sign = 1.0
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.1,
-            hy - hr * 0.38,
-            hr * 1.15,
-            hr * 0.8,
-            (*shadow, 235),
-            1.6,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.08,
-            hy - hr * 0.46,
-            hr * 1.02,
-            hr * 0.7,
-            (*mid, 225),
-            1.5,
-            0.8,
-        )
-        back_drape = hr * float(rng.uniform(2.1, 3.0))
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.62,
-            hy + back_drape * 0.2,
-            hr * 0.32,
-            back_drape * 0.3,
-            (*shadow, 215),
-            1.8,
-            0.78,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.58,
-            hy + back_drape * 0.15,
-            hr * 0.24,
-            back_drape * 0.24,
-            (*mid, 210),
-            1.6,
-            0.75,
-        )
-        # Keep a smaller front lock so profile still reads as "face side".
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.52,
-            hy + hr * 0.12,
-            hr * 0.1,
-            hr * 0.28,
-            (*mid, 208),
-            1.35,
-            0.72,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.26,
-            hy - hr * 0.7,
-            hr * 0.56,
-            hr * 0.4,
-            (*highlight, 190),
-            1.3,
-            0.68,
-        )
-        return
-
-    if facing == Facing.SOUTH:
-        # Front long hair keeps clear face read while maintaining shoulder drape.
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.48,
-            hr * 1.14,
-            hr * 0.72,
-            (*shadow, 235),
-            1.6,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.58,
-            hr * 1.02,
-            hr * 0.62,
-            (*mid, 225),
-            1.5,
-            0.8,
-        )
-        side_scale = 0.74 if _luma(mid) > 155.0 else 1.0
-        for side in (-1, 1):
-            sx = hx + side * hr * 0.78
-            drape = hr * float(rng.uniform(2.0, 3.0))
-            stamp_ellipse(
-                canvas,
-                sx,
-                hy + drape * 0.28,
-                hr * 0.3 * side_scale,
-                drape * 0.22 * side_scale,
-                (*shadow, 215),
-                1.8,
-                0.78,
-            )
-            stamp_ellipse(
-                canvas,
-                sx,
-                hy + drape * 0.24,
-                hr * 0.21 * side_scale,
-                drape * 0.18 * side_scale,
-                (*mid, 210),
-                1.6,
-                0.75,
-            )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.74,
-            hr * 0.66,
-            hr * 0.42,
-            (*highlight, 190),
-            1.3,
-            0.68,
-        )
-        return
-
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 0.35,
-        hr * 1.18,
-        hr * 0.82,
-        (*shadow, 235),
-        1.6,
-        0.82,
-    )
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 0.45,
-        hr * 1.08,
-        hr * 0.72,
-        (*mid, 225),
-        1.5,
-        0.8,
-    )
-    side_scale = 0.74 if _luma(mid) > 155.0 else 1.0
-    for side in (-1, 1):
-        sx = hx + side * hr * 0.7
-        drape = hr * float(rng.uniform(2.0, 3.0))
-        stamp_ellipse(
-            canvas,
-            sx,
-            hy + drape * 0.22,
-            hr * 0.36 * side_scale,
-            drape * 0.28 * side_scale,
-            (*shadow, 215),
-            1.8,
-            0.78,
-        )
-        stamp_ellipse(
-            canvas,
-            sx,
-            hy + drape * 0.18,
-            hr * 0.24 * side_scale,
-            drape * 0.22 * side_scale,
-            (*mid, 210),
-            1.6,
-            0.75,
-        )
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 0.68,
-        hr * 0.68,
-        hr * 0.44,
-        (*highlight, 190),
-        1.3,
-        0.68,
-    )
+        specs = _HAIR_LONG_FALLBACK
+    _stamp_tone_specs(canvas, pal, specs, ShapeContext(context_values))
 
 
 def _hair_tall(
@@ -793,141 +958,14 @@ def _hair_tall(
     _rng: np.random.Generator,
     facing: Facing,
 ) -> None:
-    """Tall upward hair (mohawk / swept up)."""
-    shadow, mid, highlight = pal
-
+    """Tall upward hair rendered from declarative specs."""
     if facing == Facing.NORTH:
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 0.1,
-            hr * 1.1,
-            hr * 1.0,
-            (*shadow, 230),
-            1.7,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 1.0,
-            hr * 0.65,
-            hr * 1.1,
-            (*mid, 225),
-            1.6,
-            0.8,
-        )
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy - hr * 1.2,
-            hr * 0.45,
-            hr * 0.8,
-            (*highlight, 200),
-            1.3,
-            0.7,
-        )
-        return
-
-    if facing in {Facing.EAST, Facing.WEST}:
-        # Side profile is authored as left-facing; right-facing is mirrored during pose rendering.
-        front_sign = -1.0
-        back_sign = 1.0
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.04,
-            hy - hr * 1.12,
-            hr * 0.66,
-            hr * 1.12,
-            (*shadow, 230),
-            1.8,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.02,
-            hy - hr * 1.24,
-            hr * 0.52,
-            hr * 0.94,
-            (*mid, 220),
-            1.5,
-            0.78,
-        )
-        # Side scalp cap keeps the back-of-head hair mass readable.
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.22,
-            hy - hr * 0.24,
-            hr * 0.34,
-            hr * 0.48,
-            (*shadow, 220),
-            1.45,
-            0.74,
-        )
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.18,
-            hy - hr * 0.28,
-            hr * 0.25,
-            hr * 0.36,
-            (*mid, 210),
-            1.35,
-            0.7,
-        )
-        # Back-of-head side mass so profile reads with rear hair coverage.
-        stamp_ellipse(
-            canvas,
-            hx + back_sign * hr * 0.58,
-            hy - hr * 0.02,
-            hr * 0.3,
-            hr * 0.44,
-            (*shadow, 214),
-            1.4,
-            0.74,
-        )
-        # Small front lock keeps a face-side edge cue.
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.22,
-            hy - hr * 0.34,
-            hr * 0.2,
-            hr * 0.26,
-            (*highlight, 198),
-            1.3,
-            0.7,
-        )
-        return
-
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 1.2,
-        hr * 0.7,
-        hr * 1.2,
-        (*shadow, 230),
-        1.8,
-        0.82,
-    )
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 1.3,
-        hr * 0.55,
-        hr * 1.0,
-        (*mid, 220),
-        1.5,
-        0.78,
-    )
-    stamp_ellipse(
-        canvas,
-        hx,
-        hy - hr * 1.5,
-        hr * 0.35,
-        hr * 0.7,
-        (*highlight, 200),
-        1.3,
-        0.7,
-    )
+        specs = _HAIR_TALL_NORTH
+    elif facing in {Facing.EAST, Facing.WEST}:
+        specs = _HAIR_TALL_SIDE
+    else:
+        specs = _HAIR_TALL_SOUTH
+    _stamp_tone_specs(canvas, pal, specs, ShapeContext({"hx": hx, "hy": hy, "hr": hr}))
 
 
 HAIR_STYLE_NAMES: tuple[str, ...] = (
@@ -974,11 +1012,7 @@ def _draw_torso_mass(
     palette: Palette3,
     facing: Facing,
 ) -> None:
-    """Draw one torso mass with three-tone shading."""
-    shadow, mid, highlight = palette
-    stamp_ellipse(canvas, cx, cy + 0.3, rx + 0.3, ry + 0.3, (*shadow, 240), 2.0, 0.88)
-    stamp_ellipse(canvas, cx, cy, rx, ry, (*mid, 235), 2.0, 0.88)
-
+    """Draw one torso mass with three-tone shading from data specs."""
     if facing == Facing.NORTH:
         highlight_alpha = 185
         highlight_rx = rx * 0.55
@@ -988,15 +1022,52 @@ def _draw_torso_mass(
         highlight_rx = rx * 0.7
         highlight_ry = ry * 0.5
 
-    stamp_ellipse(
+    specs: tuple[ToneStampSpec, ...] = (
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("cy", None, offset=0.3),
+            rx=_expr("rx", None, offset=0.3),
+            ry=_expr("ry", None, offset=0.3),
+            tone_idx=0,
+            alpha=240,
+            falloff=2.0,
+            hardness=0.88,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("cy"),
+            rx=_expr("rx"),
+            ry=_expr("ry"),
+            tone_idx=1,
+            alpha=235,
+            falloff=2.0,
+            hardness=0.88,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("cy", "ry", -0.25),
+            rx=_expr("highlight_rx"),
+            ry=_expr("highlight_ry"),
+            tone_idx=2,
+            alpha=highlight_alpha,
+            falloff=1.8,
+            hardness=0.75,
+        ),
+    )
+    _stamp_tone_specs(
         canvas,
-        cx,
-        cy - ry * 0.25,
-        highlight_rx,
-        highlight_ry,
-        (*highlight, highlight_alpha),
-        1.8,
-        0.75,
+        palette,
+        specs,
+        ShapeContext(
+            {
+                "cx": cx,
+                "cy": cy,
+                "rx": rx,
+                "ry": ry,
+                "highlight_rx": highlight_rx,
+                "highlight_ry": highlight_ry,
+            }
+        ),
     )
 
 
@@ -1009,40 +1080,56 @@ def _draw_belly_mass(
     facing: Facing,
 ) -> None:
     """Draw the lower-body belly mass used by the belly build."""
-    c_shadow, c_mid, c_highlight = cloth_pal
-    stamp_ellipse(
-        canvas,
-        cx,
-        belly_cy + 0.3,
-        params.belly_rx + 0.3,
-        params.belly_ry + 0.3,
-        (*c_shadow, 240),
-        2.0,
-        0.85,
-    )
-    stamp_ellipse(
-        canvas,
-        cx,
-        belly_cy,
-        params.belly_rx,
-        params.belly_ry,
-        (*c_mid, 235),
-        2.0,
-        0.85,
-    )
-
     hi_alpha = 175 if facing == Facing.NORTH else 190
     hi_rx = params.belly_rx * (0.4 if facing == Facing.NORTH else 0.5)
     hi_ry = params.belly_ry * (0.3 if facing == Facing.NORTH else 0.4)
-    stamp_ellipse(
+
+    specs: tuple[ToneStampSpec, ...] = (
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("belly_cy", None, offset=0.3),
+            rx=_expr("belly_rx", None, offset=0.3),
+            ry=_expr("belly_ry", None, offset=0.3),
+            tone_idx=0,
+            alpha=240,
+            falloff=2.0,
+            hardness=0.85,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("belly_cy"),
+            rx=_expr("belly_rx"),
+            ry=_expr("belly_ry"),
+            tone_idx=1,
+            alpha=235,
+            falloff=2.0,
+            hardness=0.85,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx", "belly_rx", -0.1),
+            cy=_expr("belly_cy", "belly_ry", -0.1),
+            rx=_expr("hi_rx"),
+            ry=_expr("hi_ry"),
+            tone_idx=2,
+            alpha=hi_alpha,
+            falloff=1.6,
+            hardness=0.7,
+        ),
+    )
+    _stamp_tone_specs(
         canvas,
-        cx - params.belly_rx * 0.1,
-        belly_cy - params.belly_ry * 0.1,
-        hi_rx,
-        hi_ry,
-        (*c_highlight, hi_alpha),
-        1.6,
-        0.7,
+        cloth_pal,
+        specs,
+        ShapeContext(
+            {
+                "cx": cx,
+                "belly_cy": belly_cy,
+                "belly_rx": params.belly_rx,
+                "belly_ry": params.belly_ry,
+                "hi_rx": hi_rx,
+                "hi_ry": hi_ry,
+            }
+        ),
     )
 
 
@@ -1055,51 +1142,63 @@ def _draw_broad_torso(
     facing: Facing,
 ) -> None:
     """Draw a shoulder-dominant torso silhouette."""
-    c_shadow, c_mid, c_highlight = cloth_pal
     shoulder_half_w = params.shoulder_width
     torso_ry = params.torso_ry
-
-    stamp_ellipse(
-        canvas,
-        cx,
-        torso_cy - torso_ry * 0.2,
-        shoulder_half_w,
-        torso_ry * 0.8,
-        (*c_shadow, 240),
-        2.2,
-        0.9,
-    )
-    stamp_ellipse(
-        canvas,
-        cx,
-        torso_cy - torso_ry * 0.3,
-        shoulder_half_w - 0.3,
-        torso_ry * 0.7,
-        (*c_mid, 235),
-        2.2,
-        0.9,
-    )
-    stamp_ellipse(
-        canvas,
-        cx,
-        torso_cy + torso_ry * 0.3,
-        shoulder_half_w - 1.5,
-        torso_ry * 0.6,
-        (*c_mid, 230),
-        2.0,
-        0.85,
-    )
-
     hi_alpha = 185 if facing == Facing.NORTH else 200
-    stamp_ellipse(
+    specs: tuple[ToneStampSpec, ...] = (
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", "torso_ry", -0.2),
+            rx=_expr("shoulder_half_w"),
+            ry=_expr("torso_ry", None, offset=0.0, factor=0.8),
+            tone_idx=0,
+            alpha=240,
+            falloff=2.2,
+            hardness=0.9,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", "torso_ry", -0.3),
+            rx=_expr("shoulder_half_w", None, offset=-0.3),
+            ry=_expr("torso_ry", None, factor=0.7),
+            tone_idx=1,
+            alpha=235,
+            falloff=2.2,
+            hardness=0.9,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", "torso_ry", 0.3),
+            rx=_expr("shoulder_half_w", None, offset=-1.5),
+            ry=_expr("torso_ry", None, factor=0.6),
+            tone_idx=1,
+            alpha=230,
+            falloff=2.0,
+            hardness=0.85,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", "torso_ry", -0.35),
+            rx=_expr("shoulder_half_w", None, factor=0.45),
+            ry=_expr("torso_ry", None, factor=0.4),
+            tone_idx=2,
+            alpha=hi_alpha,
+            falloff=1.6,
+            hardness=0.72,
+        ),
+    )
+    _stamp_tone_specs(
         canvas,
-        cx,
-        torso_cy - torso_ry * 0.35,
-        shoulder_half_w * 0.45,
-        torso_ry * 0.4,
-        (*c_highlight, hi_alpha),
-        1.6,
-        0.72,
+        cloth_pal,
+        specs,
+        ShapeContext(
+            {
+                "cx": cx,
+                "torso_cy": torso_cy,
+                "torso_ry": torso_ry,
+                "shoulder_half_w": shoulder_half_w,
+            }
+        ),
     )
 
 
@@ -1162,7 +1261,6 @@ def _draw_armor_torso(
     facing: Facing,
 ) -> None:
     """Draw armor torso with pauldrons."""
-    shadow, mid, highlight = cloth_pal
     if facing in {Facing.EAST, Facing.WEST}:
         # Side profile should be narrower than front/back plate width.
         rx = max(1.8, params.torso_rx * 0.78)
@@ -1170,97 +1268,140 @@ def _draw_armor_torso(
         rx = max(params.torso_rx + 0.4, params.shoulder_width * 0.9)
     ry = max(1.4, params.torso_ry - 0.2)
 
-    stamp_ellipse(
-        canvas, cx, torso_cy + 0.3, rx + 0.3, ry + 0.3, (*shadow, 245), 2.2, 0.92
-    )
-    stamp_ellipse(canvas, cx, torso_cy, rx, ry, (*mid, 240), 2.2, 0.92)
+    specs: list[ToneStampSpec] = [
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", None, offset=0.3),
+            rx=_expr("rx", None, offset=0.3),
+            ry=_expr("ry", None, offset=0.3),
+            tone_idx=0,
+            alpha=245,
+            falloff=2.2,
+            hardness=0.92,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy"),
+            rx=_expr("rx"),
+            ry=_expr("ry"),
+            tone_idx=1,
+            alpha=240,
+            falloff=2.2,
+            hardness=0.92,
+        ),
+    ]
 
     if facing == Facing.NORTH:
-        stamp_ellipse(
-            canvas,
-            cx,
-            torso_cy - ry * 0.25,
-            rx * 0.4,
-            ry * 0.3,
-            (*highlight, 190),
-            1.5,
-            0.7,
+        specs.append(
+            EllipseStampSpec(
+                cx=_expr("cx"),
+                cy=_expr("torso_cy", "ry", -0.25),
+                rx=_expr("rx", None, factor=0.4),
+                ry=_expr("ry", None, factor=0.3),
+                tone_idx=2,
+                alpha=190,
+                falloff=1.5,
+                hardness=0.7,
+            )
         )
     elif facing == Facing.SOUTH:
-        stamp_ellipse(
-            canvas,
-            cx - rx * 0.15,
-            torso_cy - ry * 0.3,
-            rx * 0.4,
-            ry * 0.35,
-            (*highlight, 215),
-            1.5,
-            0.7,
+        specs.append(
+            EllipseStampSpec(
+                cx=_expr("cx", "rx", -0.15),
+                cy=_expr("torso_cy", "ry", -0.3),
+                rx=_expr("rx", None, factor=0.4),
+                ry=_expr("ry", None, factor=0.35),
+                tone_idx=2,
+                alpha=215,
+                falloff=1.5,
+                hardness=0.7,
+            )
         )
     else:
         # Side-view plate highlight and shoulder sleeve.
-        front_sign = -1.0
-        stamp_ellipse(
-            canvas,
-            cx + front_sign * rx * 0.08,
-            torso_cy - ry * 0.26,
-            rx * 0.36,
-            ry * 0.34,
-            (*highlight, 208),
-            1.45,
-            0.68,
-        )
-        stamp_fuzzy_circle(
-            canvas,
-            cx + front_sign * (rx + 0.25),
-            torso_cy - ry * 0.42,
-            1.15,
-            (*mid, 226),
-            1.8,
-            0.82,
-        )
-        stamp_ellipse(
-            canvas,
-            cx + front_sign * (rx * 0.72),
-            torso_cy + ry * 0.06,
-            0.6,
-            0.82,
-            (*shadow, 220),
-            1.4,
-            0.72,
-        )
-        stamp_ellipse(
-            canvas,
-            cx + front_sign * (rx * 0.62),
-            torso_cy + ry * 0.34,
-            0.52,
-            0.3,
-            (*highlight, 195),
-            1.15,
-            0.62,
-        )
-        stamp_fuzzy_circle(
-            canvas,
-            cx + 0.22,
-            torso_cy - ry * 0.38,
-            0.65,
-            (*mid, 205),
-            1.5,
-            0.72,
+        specs.extend(
+            (
+                EllipseStampSpec(
+                    cx=_expr("cx", "rx", -0.08),
+                    cy=_expr("torso_cy", "ry", -0.26),
+                    rx=_expr("rx", None, factor=0.36),
+                    ry=_expr("ry", None, factor=0.34),
+                    tone_idx=2,
+                    alpha=208,
+                    falloff=1.45,
+                    hardness=0.68,
+                ),
+                CircleStampSpec(
+                    cx=_expr("cx", "rx", -1.0, offset=-0.25),
+                    cy=_expr("torso_cy", "ry", -0.42),
+                    radius=_expr(None, None, offset=1.15),
+                    tone_idx=1,
+                    alpha=226,
+                    falloff=1.8,
+                    hardness=0.82,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("cx", "rx", -0.72),
+                    cy=_expr("torso_cy", "ry", 0.06),
+                    rx=_expr(None, None, offset=0.6),
+                    ry=_expr(None, None, offset=0.82),
+                    tone_idx=0,
+                    alpha=220,
+                    falloff=1.4,
+                    hardness=0.72,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("cx", "rx", -0.62),
+                    cy=_expr("torso_cy", "ry", 0.34),
+                    rx=_expr(None, None, offset=0.52),
+                    ry=_expr(None, None, offset=0.3),
+                    tone_idx=2,
+                    alpha=195,
+                    falloff=1.15,
+                    hardness=0.62,
+                ),
+                CircleStampSpec(
+                    cx=_expr("cx", None, offset=0.22),
+                    cy=_expr("torso_cy", "ry", -0.38),
+                    radius=_expr(None, None, offset=0.65),
+                    tone_idx=1,
+                    alpha=205,
+                    falloff=1.5,
+                    hardness=0.72,
+                ),
+            )
         )
 
     if facing in {Facing.NORTH, Facing.SOUTH}:
-        for side in (-1, 1):
-            sx = cx + side * (rx + 0.5)
-            stamp_fuzzy_circle(
-                canvas,
-                sx,
-                torso_cy - ry * 0.5,
-                1.5,
-                (*mid, 230),
-                2.0,
-                0.88,
+        specs.extend(
+            (
+                CircleStampSpec(
+                    cx=_expr("cx", "rx", -1.0, offset=-0.5),
+                    cy=_expr("torso_cy", "ry", -0.5),
+                    radius=_expr(None, None, offset=1.5),
+                    tone_idx=1,
+                    alpha=230,
+                    falloff=2.0,
+                    hardness=0.88,
+                ),
+                CircleStampSpec(
+                    cx=_expr("cx", "rx", 1.0, offset=0.5),
+                    cy=_expr("torso_cy", "ry", -0.5),
+                    radius=_expr(None, None, offset=1.5),
+                    tone_idx=1,
+                    alpha=230,
+                    falloff=2.0,
+                    hardness=0.88,
+                ),
             )
+        )
+
+    _stamp_tone_specs(
+        canvas,
+        cloth_pal,
+        tuple(specs),
+        ShapeContext({"cx": cx, "torso_cy": torso_cy, "rx": rx, "ry": ry}),
+    )
 
 
 def _draw_robe_torso(
@@ -1274,42 +1415,59 @@ def _draw_robe_torso(
     facing: Facing,
 ) -> None:
     """Draw robe torso that extends down and covers legs."""
-    shadow, mid, highlight = cloth_pal
     ry = params.torso_ry + 2.0
-
-    stamp_ellipse(
-        canvas,
-        cx,
-        torso_cy + 1.0,
-        params.torso_rx + 0.8,
-        ry + 0.3,
-        (*shadow, 240),
-        2.0,
-        0.85,
-    )
-    stamp_ellipse(
-        canvas,
-        cx,
-        torso_cy + 0.8,
-        params.torso_rx + 0.5,
-        ry,
-        (*mid, 235),
-        2.0,
-        0.85,
-    )
 
     hi_alpha = 185 if facing == Facing.NORTH else 210
     hi_rx = params.torso_rx * (0.5 if facing == Facing.NORTH else 0.7)
     hi_ry = ry * (0.3 if facing == Facing.NORTH else 0.4)
-    stamp_ellipse(
+    hi_cy_factor = -0.1 if facing == Facing.NORTH else -0.15
+
+    specs: tuple[ToneStampSpec, ...] = (
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", None, offset=1.0),
+            rx=_expr("torso_rx", None, offset=0.8),
+            ry=_expr("ry", None, offset=0.3),
+            tone_idx=0,
+            alpha=240,
+            falloff=2.0,
+            hardness=0.85,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", None, offset=0.8),
+            rx=_expr("torso_rx", None, offset=0.5),
+            ry=_expr("ry"),
+            tone_idx=1,
+            alpha=235,
+            falloff=2.0,
+            hardness=0.85,
+        ),
+        EllipseStampSpec(
+            cx=_expr("cx"),
+            cy=_expr("torso_cy", "ry", hi_cy_factor),
+            rx=_expr("hi_rx"),
+            ry=_expr("hi_ry"),
+            tone_idx=2,
+            alpha=hi_alpha,
+            falloff=1.6,
+            hardness=0.7,
+        ),
+    )
+    _stamp_tone_specs(
         canvas,
-        cx,
-        torso_cy - ry * (0.1 if facing == Facing.NORTH else 0.15),
-        hi_rx,
-        hi_ry,
-        (*highlight, hi_alpha),
-        1.6,
-        0.7,
+        cloth_pal,
+        specs,
+        ShapeContext(
+            {
+                "cx": cx,
+                "torso_cy": torso_cy,
+                "torso_rx": params.torso_rx,
+                "ry": ry,
+                "hi_rx": hi_rx,
+                "hi_ry": hi_ry,
+            }
+        ),
     )
 
 
@@ -1487,314 +1645,46 @@ _BODY_PARAM_BUILD_ROLLERS: tuple[tuple[str, BodyParamRollFn], ...] = (
 # ---------------------------------------------------------------------------
 
 
-def _draw_head_and_hair(
-    canvas: np.ndarray,
-    appearance: CharacterAppearance,
-    hx: float,
-    hy: float,
-    hr: float,
-    facing: Facing,
-) -> None:
-    """Draw head and hair with facing-specific shapes."""
-    s_shadow, s_mid, s_highlight = appearance.skin_pal
-    h_shadow, h_mid, _h_highlight = appearance.hair_pal
+@dataclass(frozen=True)
+class CharacterDrawContext:
+    """Shared geometry and appearance values for layer rendering."""
 
-    if facing == Facing.NORTH:
-        stamp_fuzzy_circle(canvas, hx, hy + 0.2, hr + 0.2, (*s_shadow, 240), 2.0, 0.88)
-        stamp_fuzzy_circle(canvas, hx, hy, hr, (*s_mid, 235), 2.0, 0.88)
-    elif facing in {Facing.EAST, Facing.WEST}:
-        # Side profile is authored as left-facing; right-facing is mirrored during pose rendering.
-        front_sign = -1.0
-        back_sign = 1.0
-        stamp_ellipse(
-            canvas,
-            hx,
-            hy + 0.2,
-            hr * 0.85,
-            hr + 0.2,
-            (*s_shadow, 240),
-            2.0,
-            0.88,
-        )
-        stamp_ellipse(canvas, hx, hy, hr * 0.8, hr, (*s_mid, 235), 2.0, 0.88)
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.14,
-            hy - hr * 0.2,
-            hr * 0.45,
-            hr * 0.55,
-            (*s_highlight, 210),
-            1.6,
-            0.75,
-        )
-        # Profile cues: brighter face plane on the front side and darker back skull.
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.26,
-            hy - hr * 0.12,
-            hr * 0.34,
-            hr * 0.48,
-            (*s_highlight, 205),
-            1.5,
-            0.72,
-        )
-        if appearance.hair_style_idx != 4:
-            stamp_ellipse(
-                canvas,
-                hx + back_sign * hr * 0.28,
-                hy + hr * 0.03,
-                hr * 0.3,
-                hr * 0.46,
-                (*s_shadow, 195),
-                1.5,
-                0.72,
-            )
-        stamp_fuzzy_circle(
-            canvas,
-            hx + front_sign * hr * 0.63,
-            hy - hr * 0.02,
-            hr * 0.12,
-            (*s_highlight, 190),
-            1.4,
-            0.7,
-        )
-    else:
-        stamp_fuzzy_circle(canvas, hx, hy + 0.2, hr + 0.2, (*s_shadow, 240), 2.0, 0.88)
-        stamp_fuzzy_circle(canvas, hx, hy, hr, (*s_mid, 235), 2.0, 0.88)
-        stamp_fuzzy_circle(
-            canvas,
-            hx,
-            hy - hr * 0.22,
-            hr * 0.6,
-            (*s_highlight, 210),
-            1.6,
-            0.75,
-        )
-
-    hair_fn = HAIR_STYLES[appearance.hair_style_idx]
-    hair_rng = np.random.default_rng(appearance.hair_seed)
-    hair_fn(canvas, hx, hy, hr, appearance.hair_pal, hair_rng, facing)
-
-    # Keep a readable front-facing face window even with heavy hairstyles.
-    if facing == Facing.SOUTH:
-        is_long_front_hair = appearance.hair_style_idx == 3
-        is_medium_front_hair = appearance.hair_style_idx == 2
-
-        # Hard guardrail: medium/long front hair should never receive a
-        # post-hair skin overpaint at the forehead center (can read as bald spot).
-        if is_long_front_hair or is_medium_front_hair:
-            # Keep a hairline/fringe lock at the center so the forehead region
-            # remains hair-colored even after readability touch-ups.
-            stamp_ellipse(
-                canvas,
-                hx,
-                hy - hr * (0.26 if is_long_front_hair else 0.22),
-                hr * (0.24 if is_long_front_hair else 0.2),
-                hr * (0.13 if is_long_front_hair else 0.11),
-                (*h_mid, 210),
-                1.35,
-                0.7,
-            )
-            if is_long_front_hair:
-                stamp_ellipse(
-                    canvas,
-                    hx,
-                    hy - hr * 0.36,
-                    hr * 0.23,
-                    hr * 0.12,
-                    (*h_mid, 205),
-                    1.25,
-                    0.68,
-                )
-        else:
-            face_rx = hr * 0.44
-            face_ry = hr * 0.36
-            stamp_ellipse(
-                canvas,
-                hx,
-                hy - hr * 0.05,
-                face_rx,
-                face_ry,
-                (*s_mid, 205),
-                1.35,
-                0.72,
-            )
-            stamp_ellipse(
-                canvas,
-                hx,
-                hy - hr * 0.22,
-                hr * 0.28,
-                hr * 0.2,
-                (*s_highlight, 190),
-                1.2,
-                0.65,
-            )
-    elif facing in {Facing.EAST, Facing.WEST}:
-        # Re-assert profile facial cues after hair so side direction is legible.
-        front_sign = -1.0
-        back_sign = 1.0
-        if appearance.hair_style_idx == 4:
-            # Tall hair needs explicit back-of-head fill to avoid skin patches.
-            stamp_ellipse(
-                canvas,
-                hx + back_sign * hr * 0.42,
-                hy - hr * 0.08,
-                hr * 0.32,
-                hr * 0.46,
-                (*h_shadow, 224),
-                1.4,
-                0.76,
-            )
-            stamp_ellipse(
-                canvas,
-                hx + back_sign * hr * 0.36,
-                hy - hr * 0.12,
-                hr * 0.24,
-                hr * 0.34,
-                (*h_mid, 214),
-                1.3,
-                0.72,
-            )
-            # Hard mask over back half of side head to prevent any skin leak.
-            stamp_ellipse(
-                canvas,
-                hx + back_sign * hr * 0.52,
-                hy + hr * 0.02,
-                hr * 0.34,
-                hr * 0.5,
-                (*h_shadow, 232),
-                1.5,
-                0.82,
-            )
-            stamp_ellipse(
-                canvas,
-                hx + back_sign * hr * 0.44,
-                hy - hr * 0.02,
-                hr * 0.24,
-                hr * 0.36,
-                (*h_mid, 220),
-                1.35,
-                0.76,
-            )
-            # Deterministic hard mask over the side back-head region.
-            # Use direct pixel overpaint so skin tones cannot leak through via
-            # alpha blending in this area (the known "bald spot" artifact).
-            mask_cx = hx + back_sign * hr * 0.58
-            mask_cy = hy + hr * 0.02
-            mask_rx = hr * 0.52
-            mask_ry = hr * 0.84
-            x_min = max(0, int(np.floor(mask_cx - mask_rx - 1.0)))
-            x_max = min(canvas.shape[1] - 1, int(np.ceil(mask_cx + mask_rx + 1.0)))
-            y_min = max(0, int(np.floor(mask_cy - mask_ry - 1.0)))
-            y_max = min(canvas.shape[0] - 1, int(np.ceil(mask_cy + mask_ry + 1.0)))
-            for py in range(y_min, y_max + 1):
-                for px in range(x_min, x_max + 1):
-                    if canvas[py, px, 3] == 0:
-                        continue
-                    dx = (px + 0.5 - mask_cx) / max(0.001, mask_rx)
-                    dy = (py + 0.5 - mask_cy) / max(0.001, mask_ry)
-                    if dx * dx + dy * dy > 1.0:
-                        continue
-                    tone = h_shadow if dx >= 0.0 else h_mid
-                    canvas[py, px, 0] = tone[0]
-                    canvas[py, px, 1] = tone[1]
-                    canvas[py, px, 2] = tone[2]
-                    canvas[py, px, 3] = max(canvas[py, px, 3], 232)
-            # Safety pass: force the back half of the side head ellipse to hair.
-            # This makes side tall-hair silhouettes deterministic and prevents
-            # any remaining skin-toned "bald spot" pixels.
-            head_rx = max(0.001, hr * 0.95)
-            head_ry = max(0.001, hr * 1.08)
-            for py in range(y_min, y_max + 1):
-                for px in range(x_min, x_max + 1):
-                    if canvas[py, px, 3] == 0:
-                        continue
-                    head_dx = (px + 0.5 - hx) / head_rx
-                    head_dy = (py + 0.5 - (hy + hr * 0.03)) / head_ry
-                    if head_dx * head_dx + head_dy * head_dy > 1.5:
-                        continue
-                    if px + 0.5 < hx + back_sign * hr * 0.24:
-                        continue
-                    tone = h_shadow if px + 0.5 >= hx + back_sign * hr * 0.56 else h_mid
-                    canvas[py, px, 0] = tone[0]
-                    canvas[py, px, 1] = tone[1]
-                    canvas[py, px, 2] = tone[2]
-                    canvas[py, px, 3] = max(canvas[py, px, 3], 232)
-        stamp_ellipse(
-            canvas,
-            hx + front_sign * hr * 0.56,
-            hy - hr * 0.06,
-            hr * 0.2,
-            hr * 0.3,
-            (*s_mid, 210),
-            1.3,
-            0.68,
-        )
-        stamp_fuzzy_circle(
-            canvas,
-            hx + front_sign * hr * 0.72,
-            hy - hr * 0.03,
-            hr * 0.12,
-            (*s_highlight, 195),
-            1.25,
-            0.66,
-        )
-        # Stronger 2-pixel-like nose cue for clearer L-std/R-std direction read.
-        nose_x = hx + front_sign * hr * 0.9
-        nose_y = hy + hr * 0.01
-        stamp_ellipse(
-            canvas,
-            nose_x,
-            nose_y,
-            hr * 0.08,
-            hr * 0.06,
-            (*s_shadow, 200),
-            1.0,
-            0.62,
-        )
-        stamp_fuzzy_circle(
-            canvas,
-            nose_x + front_sign * 0.18,
-            nose_y + 0.02,
-            hr * 0.06,
-            (*s_shadow, 192),
-            1.0,
-            0.6,
-        )
-        if appearance.hair_style_idx != 4:
-            # Tiny ear cue on the back side.
-            stamp_fuzzy_circle(
-                canvas,
-                hx + back_sign * hr * 0.42,
-                hy + hr * 0.02,
-                hr * 0.1,
-                (*s_shadow, 175),
-                1.25,
-                0.66,
-            )
+    canvas: np.ndarray
+    appearance: CharacterAppearance
+    pose: Pose
+    params: BodyParams
+    facing: Facing
+    cx: float
+    hr: float
+    head_cy: float
+    torso_cy: float
+    belly_cy: float
+    torso_bottom: float
+    leg_bottom: int
+    leg_top: int
+    is_thin_legs: bool
 
 
-def _draw_character(
+CharacterLayerFn = Callable[[CharacterDrawContext], None]
+
+
+def _build_character_draw_context(
     canvas: np.ndarray,
     appearance: CharacterAppearance,
     pose: Pose,
-) -> None:
-    """Draw one character using pre-rolled appearance and pose."""
+) -> CharacterDrawContext:
+    """Resolve geometric anchors once for the layer pipeline."""
     params = appearance.body_params
     facing = pose.facing
     cx = params.canvas_size / 2.0
-
     hr = params.head_radius
     head_cy = hr + params.head_top_pad + pose.body_dy
     torso_cy = head_cy + hr + params.neck_gap + params.torso_ry * params.torso_cy_factor
-
     belly_cy = torso_cy + params.belly_cy_offset
     torso_bottom = torso_cy + params.torso_ry
     if params.belly_ry > 0:
         torso_bottom = belly_cy + params.belly_ry
 
-    # 1) Legs (unless robe covers them).
-    p_shadow, p_mid, _p_hi = appearance.pants_pal
     leg_bottom = params.canvas_size - 1
     leg_top = leg_bottom - 2
     is_thin_legs = params.leg_w1 <= 1.05 and params.arm_thickness == 1
@@ -1806,6 +1696,36 @@ def _draw_character(
         min_leg_len = 4 if is_thin_legs else 3
         anchored_top = int(torso_bottom + 0.4)
         leg_top = min(anchored_top, leg_bottom - min_leg_len)
+
+    return CharacterDrawContext(
+        canvas=canvas,
+        appearance=appearance,
+        pose=pose,
+        params=params,
+        facing=facing,
+        cx=cx,
+        hr=hr,
+        head_cy=head_cy,
+        torso_cy=torso_cy,
+        belly_cy=belly_cy,
+        torso_bottom=torso_bottom,
+        leg_bottom=leg_bottom,
+        leg_top=leg_top,
+        is_thin_legs=is_thin_legs,
+    )
+
+
+def _layer_legs(context: CharacterDrawContext) -> None:
+    """Draw leg masses and toe/readability cues."""
+    canvas = context.canvas
+    appearance = context.appearance
+    pose = context.pose
+    params = context.params
+    facing = context.facing
+    cx = context.cx
+    leg_bottom = context.leg_bottom
+    leg_top = context.leg_top
+    p_shadow, p_mid, _p_hi = appearance.pants_pal
 
     if not appearance.covers_legs:
         if facing in {Facing.EAST, Facing.WEST}:
@@ -1846,7 +1766,7 @@ def _draw_character(
                 (*p_mid, 230),
             )
 
-        if facing in {Facing.NORTH, Facing.SOUTH} and is_thin_legs:
+        if facing in {Facing.NORTH, Facing.SOUTH} and context.is_thin_legs:
             # Add a tiny upper-leg mass so thin builds do not read as disconnected
             # "sticks" under the torso at gameplay zoom levels.
             thigh_y = min(float(params.canvas_size - 1), leg_top + 1.1)
@@ -1901,9 +1821,30 @@ def _draw_character(
                 0.6,
             )
 
-    # 2) Belly and torso.
-    if params.belly_ry > 0 and not appearance.covers_legs:
-        _draw_belly_mass(canvas, cx, belly_cy, params, appearance.cloth_pal, facing)
+
+def _layer_torso(context: CharacterDrawContext) -> None:
+    """Draw torso-adjacent body masses below clothing."""
+    if context.params.belly_ry > 0 and not context.appearance.covers_legs:
+        _draw_belly_mass(
+            context.canvas,
+            context.cx,
+            context.belly_cy,
+            context.params,
+            context.appearance.cloth_pal,
+            context.facing,
+        )
+
+
+def _layer_clothing(context: CharacterDrawContext) -> None:
+    """Draw torso clothing and robe/boot coverage."""
+    canvas = context.canvas
+    appearance = context.appearance
+    params = context.params
+    facing = context.facing
+    cx = context.cx
+    torso_cy = context.torso_cy
+    torso_bottom = context.torso_bottom
+    p_shadow, _p_mid, _p_hi = appearance.pants_pal
 
     torso_rng = np.random.default_rng(appearance.hair_seed + 101)
     appearance.clothing_fn(
@@ -1968,7 +1909,18 @@ def _draw_character(
                     0.85,
                 )
 
-    # 3) Arms.
+
+def _layer_arms(context: CharacterDrawContext) -> None:
+    """Draw arm strokes and hand blobs."""
+    canvas = context.canvas
+    appearance = context.appearance
+    pose = context.pose
+    params = context.params
+    facing = context.facing
+    cx = context.cx
+    torso_cy = context.torso_cy
+    belly_cy = context.belly_cy
+
     _s_shadow, s_mid, _s_hi = appearance.skin_pal
     _c_shadow, _c_mid, _c_hi = appearance.cloth_pal
     is_broad = params.shoulder_width > params.torso_rx
@@ -2140,52 +2092,453 @@ def _draw_character(
                     0.85,
                 )
 
-    # 4) Neck (hidden from back).
-    if facing != Facing.NORTH and params.neck_rx > 0 and params.neck_ry > 0:
+
+def _layer_neck(context: CharacterDrawContext) -> None:
+    """Draw neck for visible facings."""
+    params = context.params
+    appearance = context.appearance
+    if context.facing != Facing.NORTH and params.neck_rx > 0 and params.neck_ry > 0:
+        is_broad = params.shoulder_width > params.torso_rx
+        is_belly = params.belly_ry > 0
+        is_thin = (
+            params.arm_thickness == 1 and params.hand_radius > 0 and params.neck_rx > 0
+        )
         if is_belly or is_broad:
-            neck_y = head_cy + hr + 0.1
+            neck_y = context.head_cy + context.hr + 0.1
         elif is_thin:
-            neck_y = head_cy + hr + 0.15
+            neck_y = context.head_cy + context.hr + 0.15
         else:
-            neck_y = head_cy + hr + params.neck_gap * 0.5
+            neck_y = context.head_cy + context.hr + params.neck_gap * 0.5
         stamp_ellipse(
-            canvas,
-            cx,
+            context.canvas,
+            context.cx,
             neck_y,
             params.neck_rx,
             params.neck_ry,
-            (*s_mid, 225),
+            (*appearance.skin_pal[1], 225),
             2.0,
             0.85,
         )
 
-    # 5) Head and hair.
-    _draw_head_and_hair(canvas, appearance, cx, head_cy, hr, facing)
 
-    if facing in {Facing.EAST, Facing.WEST}:
-        # Final nose overlay: snap to near-integer pixel centers so it remains
-        # visible across walk frames with subpixel body bob.
-        front_sign = -1.0
-        nose_x = float(round(cx + front_sign * hr * 0.9))
-        nose_y = float(round(head_cy - hr * 0.02))
-        stamp_fuzzy_circle(
+def _apply_tall_side_hair_mask(
+    canvas: np.ndarray,
+    hx: float,
+    hy: float,
+    hr: float,
+    h_shadow: colors.Color,
+    h_mid: colors.Color,
+) -> None:
+    """Hard-mask side tall-hair back-head region to prevent bald-spot leaks."""
+    back_sign = 1.0
+    mask_cx = hx + back_sign * hr * 0.58
+    mask_cy = hy + hr * 0.02
+    mask_rx = hr * 0.52
+    mask_ry = hr * 0.84
+    x_min = max(0, int(np.floor(mask_cx - mask_rx - 1.0)))
+    x_max = min(canvas.shape[1] - 1, int(np.ceil(mask_cx + mask_rx + 1.0)))
+    y_min = max(0, int(np.floor(mask_cy - mask_ry - 1.0)))
+    y_max = min(canvas.shape[0] - 1, int(np.ceil(mask_cy + mask_ry + 1.0)))
+    for py in range(y_min, y_max + 1):
+        for px in range(x_min, x_max + 1):
+            if canvas[py, px, 3] == 0:
+                continue
+            dx = (px + 0.5 - mask_cx) / max(0.001, mask_rx)
+            dy = (py + 0.5 - mask_cy) / max(0.001, mask_ry)
+            if dx * dx + dy * dy > 1.0:
+                continue
+            tone = h_shadow if dx >= 0.0 else h_mid
+            canvas[py, px, 0] = tone[0]
+            canvas[py, px, 1] = tone[1]
+            canvas[py, px, 2] = tone[2]
+            canvas[py, px, 3] = max(canvas[py, px, 3], 232)
+
+    # Safety pass: force the back half of the side head ellipse to hair.
+    head_rx = max(0.001, hr * 0.95)
+    head_ry = max(0.001, hr * 1.08)
+    for py in range(y_min, y_max + 1):
+        for px in range(x_min, x_max + 1):
+            if canvas[py, px, 3] == 0:
+                continue
+            head_dx = (px + 0.5 - hx) / head_rx
+            head_dy = (py + 0.5 - (hy + hr * 0.03)) / head_ry
+            if head_dx * head_dx + head_dy * head_dy > 1.5:
+                continue
+            if px + 0.5 < hx + back_sign * hr * 0.24:
+                continue
+            tone = h_shadow if px + 0.5 >= hx + back_sign * hr * 0.56 else h_mid
+            canvas[py, px, 0] = tone[0]
+            canvas[py, px, 1] = tone[1]
+            canvas[py, px, 2] = tone[2]
+            canvas[py, px, 3] = max(canvas[py, px, 3], 232)
+
+
+def _layer_head(context: CharacterDrawContext) -> None:
+    """Draw base head mass before hair."""
+    appearance = context.appearance
+    facing = context.facing
+    hx = context.cx
+    hy = context.head_cy
+    hr = context.hr
+    values = {"hx": hx, "hy": hy, "hr": hr}
+
+    if facing == Facing.NORTH:
+        specs: tuple[ToneStampSpec, ...] = (
+            CircleStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy", None, offset=0.2),
+                radius=_expr("hr", None, offset=0.2),
+                tone_idx=0,
+                alpha=240,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+            CircleStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy"),
+                radius=_expr("hr"),
+                tone_idx=1,
+                alpha=235,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+        )
+    elif facing in {Facing.EAST, Facing.WEST}:
+        specs_list: list[ToneStampSpec] = [
+            EllipseStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy", None, offset=0.2),
+                rx=_expr("hr", None, factor=0.85),
+                ry=_expr("hr", None, offset=0.2),
+                tone_idx=0,
+                alpha=240,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+            EllipseStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy"),
+                rx=_expr("hr", None, factor=0.8),
+                ry=_expr("hr"),
+                tone_idx=1,
+                alpha=235,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+            EllipseStampSpec(
+                cx=_expr("hx", "hr", -0.14),
+                cy=_expr("hy", "hr", -0.2),
+                rx=_expr("hr", None, factor=0.45),
+                ry=_expr("hr", None, factor=0.55),
+                tone_idx=2,
+                alpha=210,
+                falloff=1.6,
+                hardness=0.75,
+            ),
+            EllipseStampSpec(
+                cx=_expr("hx", "hr", -0.26),
+                cy=_expr("hy", "hr", -0.12),
+                rx=_expr("hr", None, factor=0.34),
+                ry=_expr("hr", None, factor=0.48),
+                tone_idx=2,
+                alpha=205,
+                falloff=1.5,
+                hardness=0.72,
+            ),
+        ]
+        if appearance.hair_style_idx != 4:
+            specs_list.append(
+                EllipseStampSpec(
+                    cx=_expr("hx", "hr", 0.28),
+                    cy=_expr("hy", "hr", 0.03),
+                    rx=_expr("hr", None, factor=0.3),
+                    ry=_expr("hr", None, factor=0.46),
+                    tone_idx=0,
+                    alpha=195,
+                    falloff=1.5,
+                    hardness=0.72,
+                )
+            )
+        specs_list.append(
+            CircleStampSpec(
+                cx=_expr("hx", "hr", -0.63),
+                cy=_expr("hy", "hr", -0.02),
+                radius=_expr("hr", None, factor=0.12),
+                tone_idx=2,
+                alpha=190,
+                falloff=1.4,
+                hardness=0.7,
+            )
+        )
+        specs = tuple(specs_list)
+    else:
+        specs = (
+            CircleStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy", None, offset=0.2),
+                radius=_expr("hr", None, offset=0.2),
+                tone_idx=0,
+                alpha=240,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+            CircleStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy"),
+                radius=_expr("hr"),
+                tone_idx=1,
+                alpha=235,
+                falloff=2.0,
+                hardness=0.88,
+            ),
+            CircleStampSpec(
+                cx=_expr("hx"),
+                cy=_expr("hy", "hr", -0.22),
+                radius=_expr("hr", None, factor=0.6),
+                tone_idx=2,
+                alpha=210,
+                falloff=1.6,
+                hardness=0.75,
+            ),
+        )
+
+    _stamp_tone_specs(context.canvas, appearance.skin_pal, specs, ShapeContext(values))
+
+
+def _layer_hair(context: CharacterDrawContext) -> None:
+    """Draw hairstyle and post-hair readability overlays."""
+    canvas = context.canvas
+    appearance = context.appearance
+    facing = context.facing
+    hx = context.cx
+    hy = context.head_cy
+    hr = context.hr
+    h_shadow, h_mid, _h_highlight = appearance.hair_pal
+
+    hair_fn = HAIR_STYLES[appearance.hair_style_idx]
+    hair_rng = np.random.default_rng(appearance.hair_seed)
+    hair_fn(canvas, hx, hy, hr, appearance.hair_pal, hair_rng, facing)
+
+    if facing == Facing.SOUTH:
+        is_long_front_hair = appearance.hair_style_idx == 3
+        is_medium_front_hair = appearance.hair_style_idx == 2
+        values = {"hx": hx, "hy": hy, "hr": hr}
+        if is_long_front_hair or is_medium_front_hair:
+            specs_list: list[ToneStampSpec] = [
+                EllipseStampSpec(
+                    cx=_expr("hx"),
+                    cy=_expr("hy", "hr", -(0.26 if is_long_front_hair else 0.22)),
+                    rx=_expr("hr", None, factor=(0.24 if is_long_front_hair else 0.2)),
+                    ry=_expr("hr", None, factor=(0.13 if is_long_front_hair else 0.11)),
+                    tone_idx=1,
+                    alpha=210,
+                    falloff=1.35,
+                    hardness=0.7,
+                )
+            ]
+            if is_long_front_hair:
+                specs_list.append(
+                    EllipseStampSpec(
+                        cx=_expr("hx"),
+                        cy=_expr("hy", "hr", -0.36),
+                        rx=_expr("hr", None, factor=0.23),
+                        ry=_expr("hr", None, factor=0.12),
+                        tone_idx=1,
+                        alpha=205,
+                        falloff=1.25,
+                        hardness=0.68,
+                    )
+                )
+            _stamp_tone_specs(
+                canvas,
+                appearance.hair_pal,
+                tuple(specs_list),
+                ShapeContext(values),
+            )
+        else:
+            face_specs: tuple[ToneStampSpec, ...] = (
+                EllipseStampSpec(
+                    cx=_expr("hx"),
+                    cy=_expr("hy", "hr", -0.05),
+                    rx=_expr("hr", None, factor=0.44),
+                    ry=_expr("hr", None, factor=0.36),
+                    tone_idx=1,
+                    alpha=205,
+                    falloff=1.35,
+                    hardness=0.72,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("hx"),
+                    cy=_expr("hy", "hr", -0.22),
+                    rx=_expr("hr", None, factor=0.28),
+                    ry=_expr("hr", None, factor=0.2),
+                    tone_idx=2,
+                    alpha=190,
+                    falloff=1.2,
+                    hardness=0.65,
+                ),
+            )
+            _stamp_tone_specs(
+                canvas, appearance.skin_pal, face_specs, ShapeContext(values)
+            )
+    elif facing in {Facing.EAST, Facing.WEST}:
+        values = {"hx": hx, "hy": hy, "hr": hr}
+        if appearance.hair_style_idx == 4:
+            tall_specs: tuple[ToneStampSpec, ...] = (
+                EllipseStampSpec(
+                    cx=_expr("hx", "hr", 0.42),
+                    cy=_expr("hy", "hr", -0.08),
+                    rx=_expr("hr", None, factor=0.32),
+                    ry=_expr("hr", None, factor=0.46),
+                    tone_idx=0,
+                    alpha=224,
+                    falloff=1.4,
+                    hardness=0.76,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("hx", "hr", 0.36),
+                    cy=_expr("hy", "hr", -0.12),
+                    rx=_expr("hr", None, factor=0.24),
+                    ry=_expr("hr", None, factor=0.34),
+                    tone_idx=1,
+                    alpha=214,
+                    falloff=1.3,
+                    hardness=0.72,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("hx", "hr", 0.52),
+                    cy=_expr("hy", "hr", 0.02),
+                    rx=_expr("hr", None, factor=0.34),
+                    ry=_expr("hr", None, factor=0.5),
+                    tone_idx=0,
+                    alpha=232,
+                    falloff=1.5,
+                    hardness=0.82,
+                ),
+                EllipseStampSpec(
+                    cx=_expr("hx", "hr", 0.44),
+                    cy=_expr("hy", "hr", -0.02),
+                    rx=_expr("hr", None, factor=0.24),
+                    ry=_expr("hr", None, factor=0.36),
+                    tone_idx=1,
+                    alpha=220,
+                    falloff=1.35,
+                    hardness=0.76,
+                ),
+            )
+            _stamp_tone_specs(
+                canvas, appearance.hair_pal, tall_specs, ShapeContext(values)
+            )
+            _apply_tall_side_hair_mask(canvas, hx, hy, hr, h_shadow, h_mid)
+
+        face_specs_list: list[ToneStampSpec] = [
+            EllipseStampSpec(
+                cx=_expr("hx", "hr", -0.56),
+                cy=_expr("hy", "hr", -0.06),
+                rx=_expr("hr", None, factor=0.2),
+                ry=_expr("hr", None, factor=0.3),
+                tone_idx=1,
+                alpha=210,
+                falloff=1.3,
+                hardness=0.68,
+            ),
+            CircleStampSpec(
+                cx=_expr("hx", "hr", -0.72),
+                cy=_expr("hy", "hr", -0.03),
+                radius=_expr("hr", None, factor=0.12),
+                tone_idx=2,
+                alpha=195,
+                falloff=1.25,
+                hardness=0.66,
+            ),
+            EllipseStampSpec(
+                cx=_expr("hx", "hr", -0.9),
+                cy=_expr("hy", "hr", 0.01),
+                rx=_expr("hr", None, factor=0.08),
+                ry=_expr("hr", None, factor=0.06),
+                tone_idx=0,
+                alpha=200,
+                falloff=1.0,
+                hardness=0.62,
+            ),
+            CircleStampSpec(
+                cx=_expr("hx", "hr", -0.9, offset=-0.18),
+                cy=_expr("hy", "hr", 0.01, offset=0.02),
+                radius=_expr("hr", None, factor=0.06),
+                tone_idx=0,
+                alpha=192,
+                falloff=1.0,
+                hardness=0.6,
+            ),
+        ]
+        if appearance.hair_style_idx != 4:
+            face_specs_list.append(
+                CircleStampSpec(
+                    cx=_expr("hx", "hr", 0.42),
+                    cy=_expr("hy", "hr", 0.02),
+                    radius=_expr("hr", None, factor=0.1),
+                    tone_idx=0,
+                    alpha=175,
+                    falloff=1.25,
+                    hardness=0.66,
+                )
+            )
+        _stamp_tone_specs(
             canvas,
+            appearance.skin_pal,
+            tuple(face_specs_list),
+            ShapeContext(values),
+        )
+
+
+def _layer_face_final(context: CharacterDrawContext) -> None:
+    """Draw final side-profile nose overlay."""
+    if context.facing in {Facing.EAST, Facing.WEST}:
+        front_sign = -1.0
+        nose_x = float(round(context.cx + front_sign * context.hr * 0.9))
+        nose_y = float(round(context.head_cy - context.hr * 0.02))
+        s_shadow = context.appearance.skin_pal[0]
+        stamp_fuzzy_circle(
+            context.canvas,
             nose_x,
             nose_y,
-            max(0.24, hr * 0.08),
-            (*_s_shadow, 230),
+            max(0.24, context.hr * 0.08),
+            (*s_shadow, 230),
             1.0,
             0.9,
         )
         stamp_fuzzy_circle(
-            canvas,
+            context.canvas,
             nose_x + front_sign * 0.35,
             nose_y + 0.02,
-            max(0.2, hr * 0.06),
-            (*_s_shadow, 220),
+            max(0.2, context.hr * 0.06),
+            (*s_shadow, 220),
             1.0,
             0.85,
         )
+
+
+_CHARACTER_LAYER_PIPELINE: tuple[tuple[str, CharacterLayerFn], ...] = (
+    ("legs", _layer_legs),
+    ("torso", _layer_torso),
+    ("clothing", _layer_clothing),
+    ("arms", _layer_arms),
+    ("neck", _layer_neck),
+    ("head", _layer_head),
+    ("hair", _layer_hair),
+    ("face", _layer_face_final),
+)
+
+
+def _draw_character(
+    canvas: np.ndarray,
+    appearance: CharacterAppearance,
+    pose: Pose,
+) -> None:
+    """Draw one character via an explicit ordered layer pipeline."""
+    context = _build_character_draw_context(canvas, appearance, pose)
+    for _layer_name, layer_fn in _CHARACTER_LAYER_PIPELINE:
+        layer_fn(context)
 
 
 # ---------------------------------------------------------------------------
