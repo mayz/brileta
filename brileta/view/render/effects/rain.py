@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from brileta import colors, config
-from brileta.types import DeltaTime, saturate
+from brileta.types import DeltaTime, TileDisplacement, saturate
 from brileta.util import rng
 
 
@@ -35,6 +35,14 @@ class _UniformRNG(Protocol):
     """Minimal RNG interface required for rain wind sampling."""
 
     def uniform(self, a: float, b: float) -> float: ...
+
+
+# Wrap period for accumulated advection.  Python accumulates in float64
+# (plenty of precision), but values are packed as f32 GPU uniforms.
+# At magnitude 10 000 the f32 ULP is ~0.001 - well below the smallest
+# spacing grid cell (~0.25).  Wrapping each component independently means
+# cell indices shift at different times, making the transition imperceptible.
+_ADVECTION_WRAP: float = 10_000.0
 
 
 def _clamp_angle(angle_rad: float) -> float:
@@ -119,10 +127,19 @@ class RainConfig:
 
 @dataclass
 class RainAnimationState:
-    """Real-time rain animation clock and wind-shape evolution."""
+    """Real-time rain animation clock and wind-shape evolution.
 
-    time: float = 0.0
+    Advection is accumulated incrementally each frame rather than computed
+    as ``slant_dir * time * speed``. This avoids a massive discontinuous
+    jump in spawn-space coordinates when speed or angle change mid-stream
+    (e.g. switching rain presets).
+    """
+
     render_angle: float = 0.0
+    # Accumulated rain displacement in tile-space, built incrementally each
+    # frame so that speed/angle changes only affect the delta going forward.
+    # Wrapped at _ADVECTION_WRAP to prevent f32 precision loss in the shader.
+    advection: TileDisplacement = (0.0, 0.0)
     _initialized: bool = False
     _micro_phase_a: float = 0.0
     _micro_phase_b: float = 0.0
@@ -173,7 +190,7 @@ class RainAnimationState:
         return compute_rain_density(rain_config)
 
     def _reset_wind_state(self, baseline_angle: float) -> None:
-        """Reset wind-driven state while preserving animation clock."""
+        """Reset wind-driven state while preserving animation clock and advection."""
         self._initialized = False
         self.render_angle = baseline_angle
         self._gust_active = False
@@ -209,7 +226,6 @@ class RainAnimationState:
     ) -> None:
         """Advance rain animation and evolve rain angle toward natural motion."""
         dt = max(0.0, float(delta_time))
-        self.time = (self.time + dt) % 10000.0
 
         if rain_config is None:
             return
@@ -314,3 +330,14 @@ class RainAnimationState:
         alpha = 1.0 - math.exp(-response_rate * dt)
         self.render_angle += (target_angle - self.render_angle) * alpha
         self.render_angle = _clamp_angle(self.render_angle)
+
+        # Accumulate advection incrementally so preset changes only affect the
+        # delta going forward, avoiding a discontinuous jump in spawn-space.
+        speed = rain_config.drop_speed
+        slant_x = math.sin(self.render_angle)
+        slant_y = math.cos(self.render_angle)
+        ax, ay = self.advection
+        self.advection = (
+            (ax + slant_x * speed * dt) % _ADVECTION_WRAP,
+            (ay + slant_y * speed * dt) % _ADVECTION_WRAP,
+        )

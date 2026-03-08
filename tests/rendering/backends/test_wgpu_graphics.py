@@ -401,11 +401,10 @@ class TestWGPUGraphicsContext:
             intensity=0.5,
             angle=0.2,
             drop_length=0.9,
-            drop_speed=8.0,
+            advection=(100.0, 200.0),
             drop_spacing=1.35,
             stream_spacing=0.33,
             rain_color=(10, 20, 30),
-            time=1.25,
             rain_exclusion_mask_buffer=np.zeros((30, 40), dtype=np.bool_),
             pixel_bounds=(0, 0, 100, 100),
         )

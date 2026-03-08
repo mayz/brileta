@@ -22,6 +22,7 @@ from brileta.types import (
     PixelRect,
     SpriteUV,
     TileDimensions,
+    TileDisplacement,
     ViewOffset,
     WorldTilePos,
     saturate,
@@ -123,11 +124,10 @@ class RainEffectState:
     intensity: float
     angle: float
     drop_length: float
-    drop_speed: float
+    advection: TileDisplacement
     drop_spacing: float
     stream_spacing: float
     rain_color: colors.Color
-    time: float
     rain_exclusion_mask_buffer: np.ndarray | None
     pixel_bounds: PixelRect
 
@@ -1443,11 +1443,10 @@ class WGPUGraphicsContext(GraphicsContext):
                     rain.intensity,
                     rain.angle,
                     rain.drop_length,
-                    rain.drop_speed,
+                    rain.advection,
                     rain.drop_spacing,
                     rain.stream_spacing,
                     rain.rain_color,
-                    rain.time,
                     rain.rain_exclusion_mask_buffer,
                     rain.pixel_bounds,
                 )
@@ -1969,11 +1968,10 @@ class WGPUGraphicsContext(GraphicsContext):
         intensity: float,
         angle: float,
         drop_length: float,
-        drop_speed: float,
+        advection: TileDisplacement,
         drop_spacing: float,
         stream_spacing: float,
         rain_color: colors.Color,
-        time: float,
         rain_exclusion_mask_buffer: np.ndarray | None,
         pixel_bounds: PixelRect,
     ) -> None:
@@ -1985,11 +1983,10 @@ class WGPUGraphicsContext(GraphicsContext):
             intensity=intensity,
             angle=angle,
             drop_length=drop_length,
-            drop_speed=drop_speed,
+            advection=advection,
             drop_spacing=drop_spacing,
             stream_spacing=stream_spacing,
             rain_color=rain_color,
-            time=time,
             rain_exclusion_mask_buffer=rain_exclusion_mask_buffer,
             pixel_bounds=pixel_bounds,
         )

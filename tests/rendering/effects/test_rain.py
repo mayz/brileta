@@ -46,21 +46,40 @@ def test_rain_config_from_config_uses_defaults() -> None:
     assert rain.color == config.RAIN_COLOR
 
 
-def test_rain_animation_accumulates_time() -> None:
-    state = RainAnimationState()
+def test_rain_animation_accumulates_advection_incrementally() -> None:
+    """Advection should accumulate each frame using current angle and speed."""
+    state = RainAnimationState(_wind_rng=_MidpointRNG())
+    rain = RainConfig(enabled=True, angle=0.0, drop_speed=10.0)
 
-    state.update(dt(0.25))
-    state.update(dt(0.75))
+    state.update(dt(1.0), rain)
 
-    assert state.time == 1.0
+    # angle=0 means slant_dir = (sin(0), cos(0)) = (0, 1).
+    # After 1 second at speed 10, advection should be roughly (0, 10).
+    assert state.advection[0] == pytest.approx(0.0, abs=0.01)
+    assert state.advection[1] == pytest.approx(10.0, abs=0.5)
 
 
-def test_rain_animation_wraps_time_at_10000_seconds() -> None:
-    state = RainAnimationState(time=9999.9)
+def test_rain_advection_continuous_across_speed_change() -> None:
+    """Changing speed should not cause advection to jump discontinuously."""
+    state = RainAnimationState(_wind_rng=_MidpointRNG())
+    rain = RainConfig(enabled=True, angle=0.0, drop_speed=10.0)
 
-    state.update(dt(0.3))
+    # Run for a while at the old speed.
+    for _ in range(60):
+        state.update(dt(1 / 60), rain)
+    advection_before = state.advection
 
-    assert state.time == pytest.approx(0.2)
+    # Switch to a faster speed (like changing presets).
+    rain.drop_speed = 25.0
+    state.update(dt(1 / 60), rain)
+    advection_after = state.advection
+
+    # The delta from a single frame should be bounded by 25 * (1/60) ~ 0.42,
+    # not a huge jump proportional to accumulated time.
+    dx = advection_after[0] - advection_before[0]
+    dy = advection_after[1] - advection_before[1]
+    frame_delta = (dx**2 + dy**2) ** 0.5
+    assert frame_delta < 1.0
 
 
 def test_rain_animation_clamps_manual_baseline_angle() -> None:
@@ -234,8 +253,8 @@ def test_rain_uniform_packing_matches_shader_layout() -> None:
     Shader struct RainUniforms:
       vec4 0: letterbox (offset_x, offset_y, scaled_w, scaled_h)
       vec4 1: viewport  (offset_x, offset_y, size_x, size_y)
-      vec4 2: rain_params (intensity, angle, drop_length, drop_speed)
-      vec4 3: anim_data   (color_r, color_g, color_b, time)
+      vec4 2: rain_params (intensity, angle, drop_length, advection_x)
+      vec4 3: anim_data   (color_r, color_g, color_b, advection_y)
       vec4 4: spacing_data (tile_w_px, tile_h_px, drop_spacing, stream_spacing)
     """
     from brileta.backends.wgpu.rain_renderer import WGPURainRenderer
@@ -249,11 +268,10 @@ def test_rain_uniform_packing_matches_shader_layout() -> None:
         intensity=0.5,
         angle=0.3,
         drop_length=0.9,
-        drop_speed=25.0,
+        advection=(100.5, 42.5),
         drop_spacing=1.35,
         stream_spacing=0.33,
         rain_color=(180, 200, 220),
-        time=42.5,
     )
 
     assert len(data) == 20 * 4  # 20 floats, 4 bytes each
@@ -263,9 +281,9 @@ def test_rain_uniform_packing_matches_shader_layout() -> None:
     assert floats[0:4] == (10.0, 20.0, 800.0, 600.0)
     # vec4 1: viewport
     assert floats[4:8] == (5.0, 15.0, 30.0, 20.0)
-    # vec4 2: rain_params (intensity, angle, drop_length, drop_speed)
-    assert floats[8:12] == pytest.approx((0.5, 0.3, 0.9, 25.0))
-    # vec4 3: anim_data (color_r, color_g, color_b, time)
+    # vec4 2: rain_params (intensity, angle, drop_length, advection_x)
+    assert floats[8:12] == pytest.approx((0.5, 0.3, 0.9, 100.5))
+    # vec4 3: anim_data (color_r, color_g, color_b, advection_y)
     assert floats[12:16] == pytest.approx((180.0, 200.0, 220.0, 42.5))
     # vec4 4: spacing_data (tile_w_px, tile_h_px, drop_spacing, stream_spacing)
     assert floats[16:20] == pytest.approx((16.0, 24.0, 1.35, 0.33))

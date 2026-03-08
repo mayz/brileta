@@ -1125,6 +1125,10 @@ class WorldView(View):
             # values before sending them to the shader.
             zoom_scale = max(float(config.ZOOM_STOPS[0]), float(self._viewport_zoom))
             zoom_compensation = 1.0 / zoom_scale
+            # Zoom-compensate the accumulated advection vector so it stays
+            # consistent with the zoom-compensated spacing grid.
+            adv = self.rain_animation.advection
+            scaled_advection = (adv[0] * zoom_compensation, adv[1] * zoom_compensation)
             graphics.set_rain_effect(
                 viewport_offset=viewport_offset,
                 viewport_size=viewport_size,
@@ -1132,11 +1136,10 @@ class WorldView(View):
                 intensity=self.rain_config.intensity,
                 angle=rain_angle,
                 drop_length=self.rain_config.drop_length * zoom_compensation,
-                drop_speed=self.rain_config.drop_speed * zoom_compensation,
+                advection=scaled_advection,
                 drop_spacing=self.rain_config.drop_spacing * zoom_compensation,
                 stream_spacing=self.rain_config.stream_spacing * zoom_compensation,
                 rain_color=self.rain_config.color,
-                time=self.rain_animation.time,
                 rain_exclusion_mask_buffer=rain_exclusion_mask,
                 pixel_bounds=(
                     round(px_left),

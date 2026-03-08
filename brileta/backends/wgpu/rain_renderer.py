@@ -9,7 +9,13 @@ import numpy as np
 import wgpu
 
 from brileta import colors, config
-from brileta.types import PixelPos, PixelRect, TileDimensions, WorldTilePos
+from brileta.types import (
+    PixelPos,
+    PixelRect,
+    TileDimensions,
+    TileDisplacement,
+    WorldTilePos,
+)
 
 from .resource_manager import ALPHA_BLEND_STATE
 from .textured_quad_renderer import VERTEX_DTYPE
@@ -182,11 +188,10 @@ class WGPURainRenderer:
         intensity: float,
         angle: float,
         drop_length: float,
-        drop_speed: float,
+        advection: TileDisplacement,
         drop_spacing: float,
         stream_spacing: float,
         rain_color: colors.Color,
-        time: float,
         rain_exclusion_mask_buffer: np.ndarray | None,
         pixel_bounds: PixelRect,
     ) -> None:
@@ -233,11 +238,10 @@ class WGPURainRenderer:
             intensity=intensity,
             angle=angle,
             drop_length=drop_length,
-            drop_speed=drop_speed,
+            advection=advection,
             drop_spacing=drop_spacing,
             stream_spacing=stream_spacing,
             rain_color=rain_color,
-            time=time,
         )
         self.resource_manager.queue.write_buffer(
             self._uniform_buffer, 0, memoryview(uniform_data)
@@ -266,11 +270,10 @@ class WGPURainRenderer:
         intensity: float,
         angle: float,
         drop_length: float,
-        drop_speed: float,
+        advection: TileDisplacement,
         drop_spacing: float,
         stream_spacing: float,
         rain_color: colors.Color,
-        time: float,
     ) -> bytes:
         """Pack rain uniforms using vec4-aligned layout."""
         return struct.pack(
@@ -286,11 +289,11 @@ class WGPURainRenderer:
             float(intensity),
             float(angle),
             float(drop_length),
-            float(drop_speed),
+            float(advection[0]),
             float(rain_color[0]),
             float(rain_color[1]),
             float(rain_color[2]),
-            float(time),
+            float(advection[1]),
             float(tile_dimensions[0]),
             float(tile_dimensions[1]),
             float(drop_spacing),

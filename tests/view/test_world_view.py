@@ -1681,7 +1681,7 @@ class TestAtmosphericViewportSizing:
         view._game_time = 0.0
         view.camera_frac_offset = (0.0, 0.0)
         view.rain_config = SimpleNamespace(enabled=False)
-        view.rain_animation = SimpleNamespace(time=0.0, render_angle=0.0)
+        view.rain_animation = SimpleNamespace(render_angle=0.0, advection=(0.0, 0.0))
 
         active_layer = SimpleNamespace(
             blend_mode="darken",
@@ -1818,7 +1818,7 @@ class TestAtmosphericViewportSizing:
             stream_spacing=0.25,
             color=(10, 20, 30),
         )
-        view.rain_animation = SimpleNamespace(time=12.5, render_angle=0.2)
+        view.rain_animation = SimpleNamespace(render_angle=0.2, advection=(50.0, 300.0))
         rain_exclusion_mask = np.zeros((10, 6), dtype=np.bool_)
         view._build_rain_exclusion_mask = Mock(return_value=rain_exclusion_mask)
 
@@ -1903,9 +1903,9 @@ class TestAtmosphericViewportSizing:
         rain_call = graphics.set_rain_effect.call_args
         assert rain_call is not None
         assert rain_call.kwargs["viewport_size"] == (10, 6)
-        assert rain_call.kwargs["time"] == 12.5
         assert rain_call.kwargs["drop_length"] == pytest.approx(1.8)
-        assert rain_call.kwargs["drop_speed"] == pytest.approx(14.0)
+        # Advection is zoom-compensated (multiplied by 1/0.5 = 2.0).
+        assert rain_call.kwargs["advection"] == pytest.approx((100.0, 600.0))
         assert rain_call.kwargs["drop_spacing"] == pytest.approx(2.8)
         assert rain_call.kwargs["stream_spacing"] == pytest.approx(0.5)
         assert rain_call.kwargs["rain_exclusion_mask_buffer"] is rain_exclusion_mask

@@ -18,9 +18,9 @@ struct RainUniforms {
     letterbox: vec4<f32>,
     // vec4 1: viewport (offset_x, offset_y, size_x, size_y)
     viewport_data: vec4<f32>,
-    // vec4 2: intensity, angle, drop_length, drop_speed
+    // vec4 2: intensity, angle, drop_length, advection_x
     rain_params: vec4<f32>,
-    // vec4 3: color_r, color_g, color_b, time
+    // vec4 3: color_r, color_g, color_b, advection_y
     anim_data: vec4<f32>,
     // vec4 4: tile_w_px, tile_h_px, drop_spacing, stream_spacing
     spacing_data: vec4<f32>,
@@ -77,9 +77,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let intensity = clamp(uniforms.rain_params.x, 0.0, 1.0);
     let angle = uniforms.rain_params.y;
     let base_drop_length = max(uniforms.rain_params.z, 0.05);
-    let base_drop_speed = max(uniforms.rain_params.w, 0.01);
+    let advection = vec2<f32>(uniforms.rain_params.w, uniforms.anim_data.w);
     let rain_color = uniforms.anim_data.xyz / 255.0;
-    let time = uniforms.anim_data.w;
     let tile_size_px = max(uniforms.spacing_data.xy, vec2<f32>(1.0, 1.0));
     let base_drop_spacing = max(uniforms.spacing_data.z, 0.12);
     let base_density_spacing = max(uniforms.spacing_data.w, 0.01);
@@ -109,7 +108,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // World-space lattice for stable random seeds.
     // Query cells in the "spawn space" (undo advection) so we inspect
     // neighbors that can actually land near this pixel at current time.
-    let advection = slant_dir * (time * base_drop_speed);
+    // Advection is accumulated incrementally on the CPU to avoid a
+    // discontinuous jump when speed or angle change (preset switches).
     let spawn_space_pos = world_pos - advection;
     let base_cell_x = i32(floor(spawn_space_pos.x / base_density_spacing));
     let base_cell_y = i32(floor(spawn_space_pos.y / base_drop_spacing));

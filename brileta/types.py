@@ -26,6 +26,9 @@ DIRECTIONS: tuple[Direction, ...] = tuple(
     d for d in DIRECTIONS_AND_CENTER if d != (0, 0)
 )
 type Heading = tuple[float, float]  # Example: (1.0, 0.3) = continuous drift direction
+type TileDisplacement = tuple[
+    float, float
+]  # Accumulated displacement in tile-space units
 
 # Viewport coordinates - relative to the visible area
 type ViewportTileCoord = TileCoord  # Example: vp_x=0, vp_y=0

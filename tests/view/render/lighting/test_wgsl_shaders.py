@@ -115,15 +115,11 @@ class TestWGSLLightingShaders:
             "let center_pos = vec2<f32>(spawn_x, spawn_y) + advection;" in shader_source
         )
         assert "let lateral_axis = dot(world_pos, perp_dir);" not in shader_source
-        assert (
-            "let along_axis = dot(world_pos, slant_dir) - (time * base_drop_speed);"
-            not in shader_source
-        )
+        assert "time * base_drop_speed" not in shader_source
         assert (
             "let center_pos = (perp_dir * center_lateral) + (slant_dir * center_along);"
             not in shader_source
         )
-        assert "(time * base_drop_speed * speed_jitter)" not in shader_source
         assert "if (occupancy > 0.09)" in shader_source
 
         adapter = wgpu.gpu.request_adapter()  # type: ignore[possibly-unbound]
