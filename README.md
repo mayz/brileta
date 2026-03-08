@@ -1,10 +1,8 @@
 # Brileta
 
-Brileta is a game engine and sandbox written in Python and C, built for experimenting with game mechanics, graphics, and procedural generation. There's no underlying framework - rendering, input, audio, lighting, AI, and world generation are all homegrown, with WGPU for GPU access and C extensions for hot paths. It has roguelike bones: glyph-based rendering, turn-based play, procedural worlds.
+Brileta is a game engine and sandbox written in Python and C, built for experimenting with game mechanics, graphics, and procedural generation. There's no underlying framework - rendering, input, audio, lighting, AI, and world generation are all homegrown, with WGPU for GPU access and C extensions for hot paths. It has roguelike bones: tile-based maps, turn-based play, procedural worlds, and per-entity procedural sprites.
 
 The current sandbox generates a settlement and drops you into it. Everything is deterministic from a single seed.
-
-This is a personal hobby project. There's no release timeline, no roadmap promises, and no guarantee that anything works.
 
 <img src="media/screenshot.jpg" width="600">
 
@@ -29,10 +27,11 @@ This is a personal hobby project. There's no release timeline, no roadmap promis
 
 ### Procedural Sprites
 
-- Every tree and boulder in the game is a unique sprite, generated per-pixel from its world position and the map seed.
-- Both trees and boulders use four archetypes with three-step shading (shadow, mid-tone, highlight). Trees vary by silhouette and canopy color over lobe-based geometry. Boulders vary by proportion and stone color, with procedural cracks and lichen patches.
+- Every actor and environmental object is a unique sprite, generated per-pixel from a deterministic seed.
+- Trees use four archetypes with lobe-based canopy geometry, varying by silhouette and color. Boulders vary by proportion and stone color, with procedural cracks and lichen patches. Both use three-step shading (shadow, mid-tone, highlight).
+- Character sprites are assembled layer-by-layer - body, clothing, hair - with directional poses and appearance variation driven by a per-actor seed.
 - Billboard sun lighting in the fragment shader shifts highlights across sprite pixels as the sun moves.
-- Dynamic sprite atlas with skyline bin-packing integrates procedural sprites into the glyph rendering pipeline.
+- Dynamic sprite atlas with skyline bin-packing integrates procedural sprites into the rendering pipeline.
 
 ### Utility AI with Goals
 
