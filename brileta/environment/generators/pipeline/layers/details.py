@@ -129,7 +129,7 @@ class DetailLayer(GenerationLayer):
         ctx: GenerationContext,
         density: float,
         density_noise: NoiseGenerator,
-        outdoor_tiles: set[int],
+        outdoor_tiles: set[TileTypeID],
         reserved_positions: set[WorldTilePos],
         eligible: Callable[[WorldTilePos], bool],
     ) -> None:

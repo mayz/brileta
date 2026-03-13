@@ -1176,7 +1176,7 @@ class WGPUGraphicsContext(GraphicsContext):
             # Get the actual content scale from GLFW for high-DPI displays
             import glfw
 
-            scale_x, scale_y = glfw.get_window_content_scale(self.window.glfw_window)  # type: ignore[possibly-missing-attribute]
+            scale_x, scale_y = glfw.get_window_content_scale(self.window.glfw_window)
             return (scale_x, scale_y)
         except (AttributeError, TypeError, Exception):
             # Fallback for tests or when GLFW window is not available

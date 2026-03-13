@@ -92,7 +92,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
         # Keep interactive resizing within a sane usability envelope.
         if app_config.resizable:
             min_width_px, min_height_px = self._minimum_window_size_px()
-            glfw.set_window_size_limits(  # type: ignore[possibly-missing-attribute]
+            glfw.set_window_size_limits(
                 self.window,
                 min_width_px,
                 min_height_px,
@@ -110,7 +110,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
         if app_config.fullscreen:
             self._enter_monitor_fullscreen()
         elif app_config.maximized:
-            glfw.maximize_window(self.window)  # type: ignore[possibly-missing-attribute]
+            glfw.maximize_window(self.window)
         initial_window_width, initial_window_height = map(
             int, glfw.get_window_size(self.window)
         )
@@ -392,7 +392,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
 
         self.windowed_x, self.windowed_y = glfw.get_window_pos(self.window)
         self.windowed_width, self.windowed_height = glfw.get_window_size(self.window)
-        glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
+        glfw.set_window_monitor(
             self.window,
             monitor,
             0,
@@ -405,7 +405,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
 
     def _exit_monitor_fullscreen(self) -> None:
         """Return from monitor fullscreen to previous windowed size."""
-        glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
+        glfw.set_window_monitor(
             self.window,
             None,
             self.windowed_x,

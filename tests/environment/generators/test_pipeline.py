@@ -161,7 +161,7 @@ class TestPipelineGenerator:
         # Reset call order
         RecordingLayer.call_order = []
 
-        layers = [
+        layers: list[GenerationLayer] = [
             RecordingLayer("first"),
             RecordingLayer("second"),
             RecordingLayer("third"),

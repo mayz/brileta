@@ -19,6 +19,7 @@ from brileta import config
 from brileta.environment.generators.buildings.templates import get_default_templates
 from brileta.types import RandomSeed
 
+from .layer import GenerationLayer
 from .layers import (
     BuildingPlacementLayer,
     DetailLayer,
@@ -94,7 +95,7 @@ def create_settlement_pipeline(
     if street_style is None:
         street_style = config.SETTLEMENT_STREET_STYLE
 
-    layers = [
+    layers: list[GenerationLayer] = [
         # 1. Region setup: fill map with placeholder tiles, create outdoor region
         OpenFieldLayer(),
         # 2. Natural terrain: the pre-settlement landscape (dirt + grass via noise)

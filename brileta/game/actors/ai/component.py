@@ -173,9 +173,10 @@ class AIComponent:
         # internally. base_score is the per-archetype tuning knob: bump it
         # up to make this NPC type favor the action, lower it to suppress.
         # See each action class for its full scoring config.
-        brain_actions = actions
-        if brain_actions is None:
-            brain_actions = [
+        brain_actions: list[UtilityAction] = (
+            actions
+            if actions is not None
+            else [
                 AttackAction(base_score=1.0),
                 FleeAction(base_score=1.0),
                 AvoidAction(base_score=0.7),
@@ -186,6 +187,7 @@ class AIComponent:
                 # wired up when guards / soldiers with assigned patrol routes
                 # are implemented. See PatrolAction in behaviors/patrol.py.
             ]
+        )
 
         self.brain = UtilityBrain(brain_actions)
         # Some archetypes (e.g., skittish/predator) react to nearby actors
