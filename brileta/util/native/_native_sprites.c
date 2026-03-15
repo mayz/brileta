@@ -1588,6 +1588,22 @@ rim_done:
     Py_RETURN_NONE;
 }
 
+/* Spans this wide or narrower are treated as thin structures (trunks,
+ * branches) and protected from nibble erosion. */
+#define THIN_SPAN_MAX 3
+
+/* Return the width of the contiguous horizontal run of opaque pixels
+ * (alpha > 128) containing column `col` on the given `row`. */
+static inline int horiz_opaque_span(const uint8_t *data, int row, int col, int w) {
+    int left = col;
+    while (left > 0 && PX(data, row, left - 1, w)[3] > 128)
+        left--;
+    int right = col;
+    while (right < w - 1 && PX(data, row, right + 1, w)[3] > 128)
+        right++;
+    return right - left + 1;
+}
+
 /*
  * sprite_nibble_canopy(canvas, seed, center_x, center_y, canopy_radius,
  *                      nibble_prob, interior_prob)
@@ -1660,12 +1676,34 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
         float np = clampf((float)nibble_prob, 0.0f, 1.0f);
         float ip = clampf((float)interior_prob, 0.0f, 1.0f);
 
-        /* Nibble pass: erase random rim pixels. */
+        /* Precompute horizontal opaque span width for each rim pixel
+         * so we can protect thin structures (trunks, branches). */
+        uint8_t *span = (uint8_t *)calloc(n_pixels, 1);
+        if (!span) {
+            free(rim);
+            oom = 1;
+            goto nibble_canopy_done;
+        }
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                if (!rim[row * w + col])
+                    continue;
+                int s = horiz_opaque_span(data, row, col, w);
+                span[row * w + col] = (uint8_t)(s < 255 ? s : 255);
+            }
+        }
+
+        /* Nibble pass: erase random rim pixels.
+         * Skip pixels in narrow spans to avoid severing trunks. */
         int any_nibbled = 0;
         for (int row = 0; row < h; row++) {
             for (int col = 0; col < w; col++) {
                 if (!rim[row * w + col])
                     continue;
+                if (span[row * w + col] <= THIN_SPAN_MAX) {
+                    native_rng_next_double(&rng); /* Consume for determinism. */
+                    continue;
+                }
                 if (native_rng_next_double(&rng) < np) {
                     PX(data, row, col, w)[3] = 0;
                     rim[row * w + col] = 2; /* Mark as nibbled for interior pass. */
@@ -1675,7 +1713,8 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
         }
 
         if (any_nibbled && ip > 0.0f) {
-            /* Interior nibble: for nibbled pixels, also clear one pixel toward center. */
+            /* Interior nibble: for nibbled pixels, also clear one pixel
+             * toward center.  Protect thin spans from interior carving. */
             for (int row = 0; row < h; row++) {
                 for (int col = 0; col < w; col++) {
                     if (rim[row * w + col] != 2)
@@ -1699,12 +1738,17 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
                     int inner_x = clampi(col + step_x, 0, w - 1);
                     int inner_y = clampi(row + step_y, 0, h - 1);
 
-                    if (PX(data, inner_y, inner_x, w)[3] > 128)
-                        PX(data, inner_y, inner_x, w)[3] = 0;
+                    /* Recompute span at the target; the rim pass may have
+                     * changed nearby alpha, making precomputed values stale. */
+                    if (PX(data, inner_y, inner_x, w)[3] > 128) {
+                        if (horiz_opaque_span(data, inner_y, inner_x, w) > THIN_SPAN_MAX)
+                            PX(data, inner_y, inner_x, w)[3] = 0;
+                    }
                 }
             }
         }
 
+        free(span);
         free(rim);
     }
 

@@ -11,6 +11,7 @@ from brileta.sprites.primitives import (
     draw_line,
     draw_thick_line,
     generate_deciduous_canopy,
+    nibble_canopy,
     paste_sprite,
 )
 
@@ -249,3 +250,59 @@ class TestGenerateDeciduousCanopy:
 
         assert 3 <= len(lobes) <= 5
         assert int(np.count_nonzero(canvas[:, :, 3])) > 0
+
+
+def _make_tree_canvas() -> np.ndarray:
+    """Build a small canvas with a wide canopy and a thin trunk.
+
+    Layout (16x16 RGBA):
+      Rows 2-8, cols 3-12: wide canopy blob (10px)
+      Rows 9-12, cols 7-8:  thin trunk (2px)
+    """
+    canvas = np.zeros((16, 16, 4), dtype=np.uint8)
+    canvas[2:9, 3:13] = [40, 120, 40, 255]  # canopy
+    canvas[9:13, 7:9] = [80, 50, 30, 255]  # trunk
+    return canvas
+
+
+class TestNibbleCanopyThinProtection:
+    """Thin structures (trunks, branches) must survive canopy nibbling."""
+
+    # Center / radius chosen so the trunk falls inside the canopy envelope.
+    CX, CY, RADIUS = 7.5, 5.0, 10.0
+
+    def test_thin_trunk_survives_nibbling(self) -> None:
+        """A 2px-wide trunk inside the canopy envelope must not be erased."""
+        canvas = _make_tree_canvas()
+        trunk_alpha_before = canvas[9:13, 7:9, 3].copy()
+
+        nibble_canopy(
+            canvas,
+            seed=42,
+            center_x=self.CX,
+            center_y=self.CY,
+            canopy_radius=self.RADIUS,
+            nibble_probability=1.0,
+            interior_probability=1.0,
+        )
+
+        # Every trunk pixel should still be fully opaque.
+        np.testing.assert_array_equal(canvas[9:13, 7:9, 3], trunk_alpha_before)
+
+    def test_wide_canopy_is_nibbled(self) -> None:
+        """Wide canopy edges (span > 3) should still be eroded normally."""
+        canvas = _make_tree_canvas()
+        canopy_opaque_before = int(np.count_nonzero(canvas[2:9, 3:13, 3]))
+
+        nibble_canopy(
+            canvas,
+            seed=42,
+            center_x=self.CX,
+            center_y=self.CY,
+            canopy_radius=self.RADIUS,
+            nibble_probability=1.0,
+            interior_probability=1.0,
+        )
+
+        canopy_opaque_after = int(np.count_nonzero(canvas[2:9, 3:13, 3]))
+        assert canopy_opaque_after < canopy_opaque_before
