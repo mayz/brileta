@@ -387,23 +387,19 @@ def _generate_conifer(canvas: np.ndarray, size: int, rng: np.random.Generator) -
     cx = size / 2.0 + lean * 0.2
     trunk_bottom = size - 1
 
-    draw_tapered_trunk(
-        canvas,
-        cx,
-        trunk_bottom,
-        1,
-        width_bottom=max(1.5, size * 0.1),
-        width_top=1.0,
-        rgba=trunk_rgba,
-        root_flare=1,
-    )
-
-    # Stacked triangular tiers - taller, narrower, more numerous.
+    # Pre-compute canopy tier geometry so we know where the canopy base
+    # lands before drawing the trunk (prevents trunk poking through
+    # narrow triangle apexes between or above tiers).
     n_tiers = int(rng.integers(3, 6))
     max_width = float(size * rng.uniform(0.35, 0.55))
     tier_height_base = size * 0.35
     # Start tiers above the trunk's visible base.
-    current_bottom = trunk_bottom - int(size * 0.2)
+    canopy_base_y = trunk_bottom - int(size * 0.2)
+    current_bottom = canopy_base_y
+
+    tier_specs: list[
+        tuple[float, int, int, float, colors.ColorRGBA]
+    ] = []  # (cx, top, height, half_w, rgba)
 
     for i in range(n_tiers):
         t = i / max(1, n_tiers - 1) if n_tiers > 1 else 0.0
@@ -430,10 +426,27 @@ def _generate_conifer(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         )
 
         tier_top = current_bottom - tier_h
-        fill_triangle(canvas, tier_cx, tier_top, tier_w, tier_h, tier_rgba)
+        tier_specs.append((tier_cx, tier_top, tier_h, tier_w, tier_rgba))
 
         # Next tier starts partway up this one (overlap ~35%).
         current_bottom = tier_top + max(1, int(tier_h * 0.35))
+
+    # Stop the trunk at the canopy base so no trunk pixels leak through
+    # narrow triangle apexes between or above tiers.
+    draw_tapered_trunk(
+        canvas,
+        cx,
+        trunk_bottom,
+        canopy_base_y,
+        width_bottom=max(1.5, size * 0.1),
+        width_top=1.0,
+        rgba=trunk_rgba,
+        root_flare=1,
+    )
+
+    # Draw canopy tiers over the trunk.
+    for tier_cx, tier_top, tier_h, tier_w, tier_rgba in tier_specs:
+        fill_triangle(canvas, tier_cx, tier_top, tier_w, tier_h, tier_rgba)
 
     darken_rim(canvas)
 
