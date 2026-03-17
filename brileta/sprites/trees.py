@@ -345,6 +345,11 @@ def _generate_deciduous(
             sx = canopy_cx + ux * start_dist
             sy = canopy_cy + uy * start_dist
             ext_len = float(rng.uniform(2.0, 3.2))
+
+            # Skip extensions that would reach into the trunk zone.
+            if sy + uy * ext_len > trunk_top:
+                continue
+
             ex = sx + ux * ext_len
             ey = sy + uy * ext_len
             draw_line(canvas, sx, sy, ex, ey, branch_tip_rgba)

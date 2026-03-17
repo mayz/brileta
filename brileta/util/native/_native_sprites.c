@@ -1605,6 +1605,38 @@ static inline int horiz_opaque_span(const uint8_t *data, int row, int col, int w
 }
 
 /*
+ * Check whether removing the opaque pixel at (row, col) would disconnect
+ * its opaque neighbors.  Examines the 8-neighbor ring (N, NE, E, SE, S,
+ * SW, W, NW) and counts 4-connected components among the opaque entries.
+ * If there are two or more components, the center pixel is a bridge and
+ * erasing it would split the sprite.
+ */
+static inline int would_disconnect(const uint8_t *data, int h, int w, int row, int col) {
+    /* Sample the 8 neighbors clockwise: N, NE, E, SE, S, SW, W, NW. */
+    int opaque[8];
+    opaque[0] = row > 0 && PX(data, row - 1, col, w)[3] > 128;
+    opaque[1] = row > 0 && col < w - 1 && PX(data, row - 1, col + 1, w)[3] > 128;
+    opaque[2] = col < w - 1 && PX(data, row, col + 1, w)[3] > 128;
+    opaque[3] = row < h - 1 && col < w - 1 && PX(data, row + 1, col + 1, w)[3] > 128;
+    opaque[4] = row < h - 1 && PX(data, row + 1, col, w)[3] > 128;
+    opaque[5] = row < h - 1 && col > 0 && PX(data, row + 1, col - 1, w)[3] > 128;
+    opaque[6] = col > 0 && PX(data, row, col - 1, w)[3] > 128;
+    opaque[7] = row > 0 && col > 0 && PX(data, row - 1, col - 1, w)[3] > 128;
+
+    /* Count 4-connected components in the circular ring.  Each rising edge
+     * (transition from non-opaque to opaque going clockwise) starts a new
+     * component. */
+    int components = 0;
+    for (int i = 0; i < 8; i++) {
+        if (opaque[i] && !opaque[(i + 7) & 7]) {
+            if (++components > 1)
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/*
  * sprite_nibble_canopy(canvas, seed, center_x, center_y, canopy_radius,
  *                      nibble_prob, interior_prob)
  *
@@ -1705,6 +1737,8 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
                     continue;
                 }
                 if (native_rng_next_double(&rng) < np) {
+                    if (would_disconnect(data, h, w, row, col))
+                        continue;
                     PX(data, row, col, w)[3] = 0;
                     rim[row * w + col] = 2; /* Mark as nibbled for interior pass. */
                     any_nibbled = 1;
@@ -1741,7 +1775,8 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
                     /* Recompute span at the target; the rim pass may have
                      * changed nearby alpha, making precomputed values stale. */
                     if (PX(data, inner_y, inner_x, w)[3] > 128) {
-                        if (horiz_opaque_span(data, inner_y, inner_x, w) > THIN_SPAN_MAX)
+                        if (horiz_opaque_span(data, inner_y, inner_x, w) > THIN_SPAN_MAX &&
+                            !would_disconnect(data, h, w, inner_y, inner_x))
                             PX(data, inner_y, inner_x, w)[3] = 0;
                     }
                 }

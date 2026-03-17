@@ -306,3 +306,58 @@ class TestNibbleCanopyThinProtection:
 
         canopy_opaque_after = int(np.count_nonzero(canvas[2:9, 3:13, 3]))
         assert canopy_opaque_after < canopy_opaque_before
+
+
+def _make_dumbbell_canvas() -> np.ndarray:
+    """Build a canvas with two blobs connected by a single bridge pixel.
+
+    Layout (10x10 RGBA):
+      Left blob:   rows 3-6, cols 1-3
+      Bridge:      row 5, col 4
+      Right blob:  rows 3-6, cols 5-7
+    Removing the bridge pixel at (5, 4) would disconnect the two blobs.
+    """
+    canvas = np.zeros((10, 10, 4), dtype=np.uint8)
+    canvas[3:7, 1:4] = [40, 120, 40, 255]  # left blob
+    canvas[3:7, 5:8] = [40, 120, 40, 255]  # right blob
+    canvas[5, 4] = [40, 120, 40, 255]  # bridge pixel
+    return canvas
+
+
+class TestNibbleCanopyBridgeProtection:
+    """Bridge pixels whose removal would disconnect the sprite are preserved."""
+
+    # Center / radius chosen so all pixels fall inside the canopy envelope.
+    CX, CY, RADIUS = 4.5, 4.5, 8.0
+
+    def test_bridge_pixel_survives_nibbling(self) -> None:
+        """A single-pixel bridge connecting two blobs must not be erased."""
+        canvas = _make_dumbbell_canvas()
+
+        nibble_canopy(
+            canvas,
+            seed=0,
+            center_x=self.CX,
+            center_y=self.CY,
+            canopy_radius=self.RADIUS,
+            nibble_probability=1.0,
+            interior_probability=1.0,
+        )
+
+        # The bridge pixel must remain opaque.
+        assert int(canvas[5, 4, 3]) > 128
+
+    def test_bridge_survives_many_seeds(self) -> None:
+        """Bridge pixel is protected regardless of PRNG seed."""
+        for seed in range(20):
+            canvas = _make_dumbbell_canvas()
+            nibble_canopy(
+                canvas,
+                seed=seed,
+                center_x=self.CX,
+                center_y=self.CY,
+                canopy_radius=self.RADIUS,
+                nibble_probability=1.0,
+                interior_probability=1.0,
+            )
+            assert int(canvas[5, 4, 3]) > 128, f"Bridge erased with seed={seed}"
