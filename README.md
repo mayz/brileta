@@ -64,6 +64,10 @@ The current sandbox generates a settlement and drops you into it. Everything is 
 3. Run `make`.
 4. Run the sandbox with `make run`.
 
+## Related
+
+[brileta-sprites](https://github.com/mayz/brileta-sprites) is a standalone TypeScript port of the tree and boulder sprite generation, released under an MIT license with a [live browser demo](https://mayz.github.io/brileta-sprites/demo/).
+
 ## License
 
 Licensed under [AGPL-3.0](LICENSE). See [NOTICE](NOTICE) for third-party attributions.
