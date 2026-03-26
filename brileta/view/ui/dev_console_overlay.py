@@ -551,7 +551,7 @@ class DevConsoleOverlay(TextOverlay):
             0,
             self.pixel_width,
             self.pixel_height,
-            (0, 0, 0, 200),  # type: ignore[arg-type]
+            (0, 0, 0, 200),  # ty: ignore[invalid-argument-type]
             True,
         )
 
@@ -733,7 +733,7 @@ class DevConsoleOverlay(TextOverlay):
                     y,
                     self.pixel_width,
                     tile_h,
-                    _HIGHLIGHT_BG,  # type: ignore[arg-type]
+                    _HIGHLIGHT_BG,  # ty: ignore[invalid-argument-type]
                     True,
                 )
 

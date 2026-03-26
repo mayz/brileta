@@ -163,7 +163,7 @@ class TestSelectableListRendererBasics:
     def test_init_keycap_mode(self) -> None:
         """Verify KEYCAP mode initialization."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         assert renderer.mode == LayoutMode.KEYCAP
         assert renderer.rows == []
@@ -173,21 +173,21 @@ class TestSelectableListRendererBasics:
     def test_init_inline_mode(self) -> None:
         """Verify INLINE mode initialization."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         assert renderer.mode == LayoutMode.INLINE
 
     def test_default_mode_is_keycap(self) -> None:
         """Verify default mode is KEYCAP."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
 
         assert renderer.mode == LayoutMode.KEYCAP
 
     def test_reset_clears_all_state(self) -> None:
         """Verify reset() clears all state including hover."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
 
         renderer.rows = [SelectableRow(text="Test")]
         renderer.hovered_index = 0
@@ -202,7 +202,7 @@ class TestSelectableListRendererBasics:
     def test_render_empty_list_returns_start_position(self) -> None:
         """Rendering empty list should return the start y position."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
 
         y_result = renderer.render(
             x_start=10,
@@ -224,7 +224,7 @@ class TestKeycapModeRendering:
         mock_draw_keycap.return_value = 40  # Keycap width
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Action 1", key="A"),
             SelectableRow(text="Action 2", key="B"),
@@ -249,7 +249,7 @@ class TestKeycapModeRendering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action 1", key="A")]
         renderer.hovered_index = 0
 
@@ -274,7 +274,7 @@ class TestKeycapModeRendering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Disabled", key="A", enabled=False)]
         renderer.hovered_index = 0
 
@@ -296,7 +296,7 @@ class TestKeycapModeRendering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Action 1", key="A"),
             SelectableRow(text="Action 2", key="B"),
@@ -321,7 +321,7 @@ class TestKeycapModeRendering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Action 1", key="A"),
             SelectableRow(text="Action 2", key="B"),
@@ -348,7 +348,7 @@ class TestInlineModeRendering:
     def test_inline_mode_draws_key_as_text(self) -> None:
         """INLINE mode should render key as '(key) ' text, not keycap."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Item", key="A")]
 
         renderer.render(
@@ -366,7 +366,7 @@ class TestInlineModeRendering:
     def test_inline_mode_draws_prefix_segments(self) -> None:
         """INLINE mode should render prefix segments before the key."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(
                 text="Sword",
@@ -391,7 +391,7 @@ class TestInlineModeRendering:
     def test_inline_mode_draws_suffix(self) -> None:
         """INLINE mode should render suffix after main text."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(
                 text="Attack",
@@ -420,7 +420,7 @@ class TestColorHandling:
     def test_brighten_color_on_hover(self) -> None:
         """Hovering should brighten the color by 40 RGB."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         original = (100, 100, 100)
         brightened = renderer._brighten_if_hovered(original, is_hovered=True)
@@ -430,7 +430,7 @@ class TestColorHandling:
     def test_brighten_color_caps_at_255(self) -> None:
         """Brightening should cap at 255."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         original = (230, 240, 250)
         brightened = renderer._brighten_if_hovered(original, is_hovered=True)
@@ -440,7 +440,7 @@ class TestColorHandling:
     def test_no_brighten_when_not_hovered(self) -> None:
         """Color should not change when not hovered."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         original = (100, 100, 100)
         result = renderer._brighten_if_hovered(original, is_hovered=False)
@@ -450,7 +450,7 @@ class TestColorHandling:
     def test_disabled_row_uses_grey(self) -> None:
         """Disabled rows should use grey color."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         row = SelectableRow(text="Disabled", enabled=False, color=colors.WHITE)
         color = renderer._get_effective_color(row, is_hovered=False)
@@ -460,7 +460,7 @@ class TestColorHandling:
     def test_disabled_row_force_color_keeps_original(self) -> None:
         """Disabled rows with force_color should keep original color."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         row = SelectableRow(
             text="Condition", enabled=False, color=colors.RED, force_color=True
@@ -481,7 +481,7 @@ class TestHitAreaDetection:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Action 1", key="A"),
             SelectableRow(text="Action 2", key="B"),
@@ -514,7 +514,7 @@ class TestHitAreaDetection:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action", key="A")]
 
         renderer.render(
@@ -543,7 +543,7 @@ class TestHitAreaDetection:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Disabled", key="A", enabled=False)]
 
         renderer.render(
@@ -569,7 +569,7 @@ class TestHitAreaDetection:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         row1 = SelectableRow(text="Action 1", key="A", data="data1")
         row2 = SelectableRow(text="Action 2", key="B", data="data2")
         renderer.rows = [row1, row2]
@@ -599,7 +599,7 @@ class TestHitAreaDetection:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Disabled", key="A", enabled=False)]
 
         renderer.render(
@@ -621,7 +621,7 @@ class TestHitAreaDetection:
     def test_get_row_at_pixel_returns_none_outside_areas(self) -> None:
         """get_row_at_pixel should return None when outside all hit areas."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action", key="A")]
 
         # Don't render, so no hit areas
@@ -636,7 +636,7 @@ class TestHotkeyLookup:
     def test_get_row_by_hotkey_finds_row(self) -> None:
         """get_row_by_hotkey should find a row by its key."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
         row = SelectableRow(text="Action", key="A", data="action_data")
         renderer.rows = [row]
 
@@ -647,7 +647,7 @@ class TestHotkeyLookup:
     def test_get_row_by_hotkey_case_insensitive(self) -> None:
         """Hotkey lookup should be case-insensitive."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
         row = SelectableRow(text="Action", key="A", data="action_data")
         renderer.rows = [row]
 
@@ -660,7 +660,7 @@ class TestHotkeyLookup:
     def test_get_row_by_hotkey_returns_none_for_disabled(self) -> None:
         """Hotkey lookup should not return disabled rows."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Disabled", key="A", enabled=False)]
 
         result = renderer.get_row_by_hotkey("A")
@@ -670,7 +670,7 @@ class TestHotkeyLookup:
     def test_get_row_by_hotkey_returns_none_for_missing(self) -> None:
         """Hotkey lookup should return None for non-existent keys."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action", key="A")]
 
         result = renderer.get_row_by_hotkey("Z")
@@ -680,7 +680,7 @@ class TestHotkeyLookup:
     def test_get_row_by_hotkey_with_no_key_rows(self) -> None:
         """Hotkey lookup should handle rows without keys."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas)  # type: ignore
+        renderer = SelectableListRenderer(canvas)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="No Key")]
 
         result = renderer.get_row_by_hotkey("A")
@@ -703,7 +703,7 @@ class TestHitAreaAlignment:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Talk", key="T"),
             SelectableRow(text="Attack", key="A"),
@@ -731,7 +731,7 @@ class TestHitAreaAlignment:
     def test_hit_areas_are_contiguous_inline_mode(self) -> None:
         """Hit areas should be contiguous in inline mode too."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Talk", key="T"),
             SelectableRow(text="Attack", key="A"),
@@ -763,7 +763,7 @@ class TestHitAreaAlignment:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Talk", key="T"),
             SelectableRow(text="Attack", key="A"),
@@ -802,7 +802,7 @@ class TestHitAreaAlignment:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(text="Talk", key="T"),
             SelectableRow(text="Attack", key="A"),
@@ -848,7 +848,7 @@ class TestExecuteCallback:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         callback_called = []
 
@@ -885,7 +885,7 @@ class TestExecuteCallback:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         renderer.rows = [
             SelectableRow(text="Action", key="A"),  # No execute callback
@@ -910,7 +910,7 @@ class TestExecuteCallback:
     def test_execute_at_pixel_returns_false_outside_hit_areas(self) -> None:
         """execute_at_pixel should return False outside all hit areas."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         renderer.rows = [SelectableRow(text="Action", key="A", execute=lambda: None)]
 
@@ -931,7 +931,7 @@ class TestKeycapVerticalCentering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action", key="A")]
 
         line_height = 16
@@ -976,7 +976,7 @@ class TestKeycapVerticalCentering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Action", key="A")]
 
         line_height = 16
@@ -1018,7 +1018,7 @@ class TestLabelVerticalCentering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Attack", key="A")]
 
         line_height = 16
@@ -1058,7 +1058,7 @@ class TestLabelVerticalCentering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [SelectableRow(text="Attack", key="A")]
 
         line_height = 16
@@ -1090,7 +1090,7 @@ class TestLabelVerticalCentering:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
         renderer.rows = [
             SelectableRow(
                 text="Attack",
@@ -1130,7 +1130,7 @@ class TestRenderResetsHoverState:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         # First render with some rows
         renderer.rows = [
@@ -1178,7 +1178,7 @@ class TestRenderResetsHoverState:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         # Render with rows
         renderer.rows = [
@@ -1229,7 +1229,7 @@ class TestRenderResetsHoverState:
         mock_draw_keycap.return_value = 40
 
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.KEYCAP)  # ty: ignore[invalid-argument-type]
 
         # First render: 3 rows
         renderer.rows = [
@@ -1280,7 +1280,7 @@ class TestTextTruncation:
     def test_truncate_to_fit_short_text_unchanged(self) -> None:
         """Short text should not be truncated."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         result = renderer._truncate_to_fit("Short", max_width=100)
 
@@ -1289,7 +1289,7 @@ class TestTextTruncation:
     def test_truncate_to_fit_long_text_adds_ellipsis(self) -> None:
         """Long text should be truncated with ellipsis."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         # With 8px per char, "VeryLongTextHere" = 16 chars * 8 = 128px
         # Truncate to fit in 50px
@@ -1301,7 +1301,7 @@ class TestTextTruncation:
     def test_truncate_to_fit_zero_width_returns_empty(self) -> None:
         """Zero width should return empty string."""
         canvas = MockCanvas()
-        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # type: ignore
+        renderer = SelectableListRenderer(canvas, LayoutMode.INLINE)  # ty: ignore[invalid-argument-type]
 
         result = renderer._truncate_to_fit("Text", max_width=0)
 

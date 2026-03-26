@@ -267,7 +267,7 @@ def test_bump_into_container_opens_search_menu() -> None:
 
     # Mock the overlay_system.show_overlay to verify it's called
     mock_overlay = MagicMock()
-    controller.overlay_system = mock_overlay  # type: ignore[unresolved-attribute]
+    controller.overlay_system = mock_overlay  # ty: ignore[unresolved-attribute]
 
     # Patch DualPaneMenu so it doesn't need full controller setup
     with patch("brileta.view.ui.inventory.DualPaneMenu") as mock_menu_class:

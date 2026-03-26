@@ -799,8 +799,8 @@ def test_handle_approach_step_peeks_at_path() -> None:
 
     # Intent should be created
     assert intent is not None
-    assert intent.dx == 1  # type: ignore[possibly-missing-attribute]
-    assert intent.dy == 0  # type: ignore[possibly-missing-attribute]
+    assert intent.dx == 1  # ty: ignore[unresolved-attribute]
+    assert intent.dy == 0  # ty: ignore[unresolved-attribute]
 
     # Path should NOT be popped yet
     assert len(active_plan.cached_path) == 3

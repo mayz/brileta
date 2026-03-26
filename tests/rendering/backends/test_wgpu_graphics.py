@@ -662,10 +662,10 @@ class TestWGPUGraphicsContext:
 
         # draw_mouse_cursor should handle None ui_renderer gracefully
         mock_cursor = MockCursorManager()
-        self.graphics_ctx.draw_mouse_cursor(mock_cursor)  # type: ignore[arg-type]
+        self.graphics_ctx.draw_mouse_cursor(mock_cursor)  # ty: ignore[invalid-argument-type]
 
         # render_particles should handle None screen_renderer gracefully
-        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())  # type: ignore[arg-type]
+        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())  # ty: ignore[invalid-argument-type]
 
         # apply_environmental_effect is now implemented
         self.graphics_ctx.apply_environmental_effect(
@@ -838,17 +838,17 @@ class TestDrawSpriteSmoothBatch:
         # With color=128/255~0.502 and light=0.5:
         # result = min(1.0, 0.502*0.5*0.7 + 0.5*0.3) = min(1.0, 0.176+0.15) ~ 0.326
         final_colors = args[5]
-        r = float(final_colors[0, 0])  # type: ignore[index]
+        r = float(final_colors[0, 0])  # ty: ignore[not-subscriptable]
         assert 0.3 < r < 0.4, f"Expected blended color ~0.326, got {r}"
         # Alpha should be 1.0.
-        assert float(final_colors[0, 3]) == 1.0  # type: ignore[index]
+        assert float(final_colors[0, 3]) == 1.0  # ty: ignore[not-subscriptable]
 
     def test_gpu_lighting_passes_base_color_through(self) -> None:
         """GPU path should pass base color unmodified (shader handles lighting)."""
         args, _kwargs = self._call_batch(n=1, gpu_lighting=True)
 
         final_colors = args[5]
-        r = float(final_colors[0, 0])  # type: ignore[index]
+        r = float(final_colors[0, 0])  # ty: ignore[not-subscriptable]
         expected = 128.0 / 255.0
         assert abs(r - expected) < 0.01, f"Expected {expected}, got {r}"
 
@@ -857,14 +857,14 @@ class TestDrawSpriteSmoothBatch:
         _args, kwargs = self._call_batch(n=1, gpu_lighting=True)
 
         flags = kwargs["flags"]
-        assert int(flags[0]) == 3  # type: ignore[index]  # bits 0 and 1 set
+        assert int(flags[0]) == 3  # ty: ignore[not-subscriptable]  # bits 0 and 1 set
 
     def test_cpu_flags_set_sprite_atlas_only(self) -> None:
         """CPU path should set only the sprite_atlas flag (bit 1)."""
         _args, kwargs = self._call_batch(n=1, gpu_lighting=False)
 
         flags = kwargs["flags"]
-        assert int(flags[0]) == 2  # type: ignore[index]  # only bit 1 set
+        assert int(flags[0]) == 2  # ty: ignore[not-subscriptable]  # only bit 1 set
 
     def test_tile_bg_normalized_for_gpu(self) -> None:
         """GPU path should normalize tile_bg from 0-255 to 0-1."""
@@ -872,14 +872,14 @@ class TestDrawSpriteSmoothBatch:
 
         tile_bg = kwargs["tile_bg"]
         expected = 64.0 / 255.0
-        np.testing.assert_allclose(tile_bg[0], [expected] * 3, atol=0.01)  # type: ignore[index]
+        np.testing.assert_allclose(tile_bg[0], [expected] * 3, atol=0.01)  # ty: ignore[not-subscriptable]
 
     def test_tile_bg_zeroed_for_cpu(self) -> None:
         """CPU path should pass zero tile_bg (not used by shader)."""
         _args, kwargs = self._call_batch(n=1, gpu_lighting=False)
 
         tile_bg = kwargs["tile_bg"]
-        np.testing.assert_allclose(tile_bg[0], [0.0, 0.0, 0.0])  # type: ignore[index]
+        np.testing.assert_allclose(tile_bg[0], [0.0, 0.0, 0.0])  # ty: ignore[not-subscriptable]
 
     def test_noop_when_screen_renderer_is_none(self) -> None:
         """Method should be a no-op when screen_renderer is not available."""

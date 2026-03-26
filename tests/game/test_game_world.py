@@ -519,7 +519,7 @@ class TestItemOperations:
         )
         item = make_test_item("Loot")
         assert pile_actor.inventory is not None
-        pile_actor.inventory.add_to_inventory(item)  # type: ignore[possibly-missing-attribute]
+        pile_actor.inventory.add_to_inventory(item)  # ty: ignore[unresolved-attribute]
         gw.add_actor(pile_actor)
 
         # Call the real GameWorld implementation, not DummyGameWorld's override.

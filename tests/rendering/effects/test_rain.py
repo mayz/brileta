@@ -260,7 +260,7 @@ def test_rain_uniform_packing_matches_shader_layout() -> None:
     from brileta.backends.wgpu.rain_renderer import WGPURainRenderer
 
     data = WGPURainRenderer._build_uniforms(
-        None,  # type: ignore[arg-type]  # static method-like, self unused
+        None,  # ty: ignore[invalid-argument-type]  # static method-like, self unused
         letterbox_geometry=(10, 20, 800, 600),
         viewport_offset=(5, 15),
         viewport_size=(30, 20),

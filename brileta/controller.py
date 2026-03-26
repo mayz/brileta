@@ -1638,7 +1638,7 @@ class Controller:
         """
         from brileta.game.resolution.d20_system import D20System
 
-        return D20System(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # ty: ignore[invalid-argument-type]
 
     def start_plan(
         self,

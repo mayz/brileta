@@ -211,7 +211,7 @@ class ItemDetailPanel:
         # Look for attack with PREFERRED
         chosen_attack: tuple[str, object] | None = None
         for label, attack in attacks:
-            if attack and WeaponProperty.PREFERRED in attack.properties:  # type: ignore[unresolved-attribute]
+            if attack and WeaponProperty.PREFERRED in attack.properties:  # ty: ignore[unresolved-attribute]
                 chosen_attack = (label, attack)
                 break
 
@@ -227,22 +227,22 @@ class ItemDetailPanel:
             label, attack = chosen_attack
             if label == "Ranged":
                 # Skip ammo display for THROWN weapons (single-use items)
-                if WeaponProperty.THROWN in attack.properties:  # type: ignore[unresolved-attribute]
-                    stats = f"Ranged: {attack.damage_dice}"  # type: ignore[unresolved-attribute]
+                if WeaponProperty.THROWN in attack.properties:  # ty: ignore[unresolved-attribute]
+                    stats = f"Ranged: {attack.damage_dice}"  # ty: ignore[unresolved-attribute]
                 else:
                     ammo_str = (
-                        f"{attack.current_ammo}/{attack.max_ammo}"  # type: ignore[unresolved-attribute]
-                        if attack.max_ammo  # type: ignore[unresolved-attribute]
+                        f"{attack.current_ammo}/{attack.max_ammo}"  # ty: ignore[unresolved-attribute]
+                        if attack.max_ammo  # ty: ignore[unresolved-attribute]
                         else "N/A"
                     )
-                    stats = f"Ranged: {attack.damage_dice} [{ammo_str}]"  # type: ignore[unresolved-attribute]
+                    stats = f"Ranged: {attack.damage_dice} [{ammo_str}]"  # ty: ignore[unresolved-attribute]
             else:
-                stats = f"{label}: {attack.damage_dice}"  # type: ignore[unresolved-attribute]
+                stats = f"{label}: {attack.damage_dice}"  # ty: ignore[unresolved-attribute]
 
             # Append weapon properties to description (not stats line)
             description.extend(
                 WEAPON_PROPERTY_DESCRIPTIONS[prop]
-                for prop in attack.properties  # type: ignore[unresolved-attribute]
+                for prop in attack.properties  # ty: ignore[unresolved-attribute]
                 if isinstance(prop, WeaponProperty | TacticalProperty)
                 and prop in WEAPON_PROPERTY_DESCRIPTIONS
             )

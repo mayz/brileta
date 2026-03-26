@@ -333,7 +333,7 @@ def test_find_closest_adjacent_tile_selects_closest(
     # Target at (3, 3), reference at (6, 3) - player is to the right
     # Adjacent tiles: (2,3), (4,3), (3,2), (3,4)
     # (4,3) is closest to (6,3) with distance 2
-    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result == (4, 3)
 
 
@@ -349,7 +349,7 @@ def test_find_closest_adjacent_tile_selects_left_when_player_on_left(
     # Target at (5, 5), reference at (2, 5) - player is to the left
     # Adjacent tiles: (4,5), (6,5), (5,4), (5,6)
     # (4,5) is closest to (2,5) with distance 2
-    result = find_closest_adjacent_tile(5, 5, 2, 5, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(5, 5, 2, 5, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result == (4, 5)
 
 
@@ -366,7 +366,7 @@ def test_find_closest_adjacent_tile_skips_occupied(
 
     # Target at (3, 3), reference at (6, 3)
     # (4,3) is blocked, so should select next closest
-    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result != (4, 3)
     assert result is not None
 
@@ -390,8 +390,8 @@ def test_find_closest_adjacent_tile_allows_reference_actor(
         4,
         3,
         gm,
-        gw,  # type: ignore[arg-type]
-        reference_actor=ref_actor,  # type: ignore[arg-type]
+        gw,  # ty: ignore[invalid-argument-type]
+        reference_actor=ref_actor,  # ty: ignore[invalid-argument-type]
     )
     assert result == (4, 3)
 
@@ -410,7 +410,7 @@ def test_find_closest_adjacent_tile_skips_unwalkable(
 
     # Target at (3, 3), reference at (6, 3)
     # (4,3) is a wall, so should select next closest
-    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result != (4, 3)
     assert result is not None
 
@@ -428,7 +428,7 @@ def test_find_closest_adjacent_tile_returns_none_when_all_blocked(
     gm.invalidate_property_caches()
     gw = DummyGameWorld(actors_at_locations={})
 
-    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result is None
 
 
@@ -445,7 +445,7 @@ def test_find_closest_adjacent_tile_allows_non_blocking_actor(
 
     # Target at (3, 3), reference at (6, 3) - (4,3) is closest
     # Non-blocking actor should not prevent selection
-    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # ty: ignore[invalid-argument-type]
     assert result == (4, 3)
 
 
@@ -458,7 +458,7 @@ def test_probe_step_passable_tile(
     """A walkable, unoccupied tile returns None (passable)."""
     gm, _ = basic_setup
     gw = DummyGameWorld(actors_at_locations={})
-    assert probe_step(gm, gw, 3, 3) is None  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is None  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_out_of_bounds(
@@ -467,10 +467,10 @@ def test_probe_step_out_of_bounds(
     """Coordinates outside the map return OUT_OF_BOUNDS."""
     gm, _ = basic_setup
     gw = DummyGameWorld(actors_at_locations={})
-    assert probe_step(gm, gw, -1, 5) is StepBlock.OUT_OF_BOUNDS  # type: ignore[arg-type]
-    assert probe_step(gm, gw, 5, -1) is StepBlock.OUT_OF_BOUNDS  # type: ignore[arg-type]
-    assert probe_step(gm, gw, 10, 5) is StepBlock.OUT_OF_BOUNDS  # type: ignore[arg-type]
-    assert probe_step(gm, gw, 5, 10) is StepBlock.OUT_OF_BOUNDS  # type: ignore[arg-type]
+    assert probe_step(gm, gw, -1, 5) is StepBlock.OUT_OF_BOUNDS  # ty: ignore[invalid-argument-type]
+    assert probe_step(gm, gw, 5, -1) is StepBlock.OUT_OF_BOUNDS  # ty: ignore[invalid-argument-type]
+    assert probe_step(gm, gw, 10, 5) is StepBlock.OUT_OF_BOUNDS  # ty: ignore[invalid-argument-type]
+    assert probe_step(gm, gw, 5, 10) is StepBlock.OUT_OF_BOUNDS  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_wall(
@@ -481,7 +481,7 @@ def test_probe_step_wall(
     gm.tiles[3, 3] = TileTypeID.WALL
     gm.invalidate_property_caches()
     gw = DummyGameWorld(actors_at_locations={})
-    assert probe_step(gm, gw, 3, 3) is StepBlock.WALL  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.WALL  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_closed_door(
@@ -492,7 +492,7 @@ def test_probe_step_closed_door(
     gm.tiles[3, 3] = TileTypeID.DOOR_CLOSED
     gm.invalidate_property_caches()
     gw = DummyGameWorld(actors_at_locations={})
-    assert probe_step(gm, gw, 3, 3) is StepBlock.CLOSED_DOOR  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.CLOSED_DOOR  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_blocked_by_actor(
@@ -502,7 +502,7 @@ def test_probe_step_blocked_by_actor(
     gm, _ = basic_setup
     blocker = DummyActor(3, 3, blocks_movement=True)
     gw = DummyGameWorld(actors_at_locations={(3, 3): blocker})
-    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_ACTOR  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_ACTOR  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_blocked_by_container(
@@ -514,7 +514,7 @@ def test_probe_step_blocked_by_container(
     gm, _ = basic_setup
     container = Container(3, 3, name="Crate")
     gw = DummyGameWorld(actors_at_locations={(3, 3): container})
-    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_CONTAINER  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_CONTAINER  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_non_blocking_actor_passable(
@@ -524,7 +524,7 @@ def test_probe_step_non_blocking_actor_passable(
     gm, _ = basic_setup
     actor = DummyActor(3, 3, blocks_movement=False)
     gw = DummyGameWorld(actors_at_locations={(3, 3): actor})
-    assert probe_step(gm, gw, 3, 3) is None  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is None  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_exclude_actor(
@@ -535,9 +535,9 @@ def test_probe_step_exclude_actor(
     actor = DummyActor(3, 3, blocks_movement=True)
     gw = DummyGameWorld(actors_at_locations={(3, 3): actor})
     # Without exclusion: blocked
-    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_ACTOR  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_ACTOR  # ty: ignore[invalid-argument-type]
     # With exclusion: passable
-    assert probe_step(gm, gw, 3, 3, exclude_actor=actor) is None  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3, exclude_actor=actor) is None  # ty: ignore[invalid-argument-type]
 
 
 def test_probe_step_closed_door_passable_when_can_open(
@@ -549,11 +549,11 @@ def test_probe_step_closed_door_passable_when_can_open(
     gm.invalidate_property_caches()
     gw = DummyGameWorld(actors_at_locations={})
     # Default (no flag): blocked
-    assert probe_step(gm, gw, 3, 3) is StepBlock.CLOSED_DOOR  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3) is StepBlock.CLOSED_DOOR  # ty: ignore[invalid-argument-type]
     # Explicit can_open_doors=False: blocked
-    assert probe_step(gm, gw, 3, 3, can_open_doors=False) is StepBlock.CLOSED_DOOR  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3, can_open_doors=False) is StepBlock.CLOSED_DOOR  # ty: ignore[invalid-argument-type]
     # can_open_doors=True: passable
-    assert probe_step(gm, gw, 3, 3, can_open_doors=True) is None  # type: ignore[arg-type]
+    assert probe_step(gm, gw, 3, 3, can_open_doors=True) is None  # ty: ignore[invalid-argument-type]
 
 
 # --- Door-Aware Pathfinding Tests ---

@@ -390,7 +390,7 @@ def patched_controller(stop_after: int):
         app = DummyApp()
         graphics = DummyGraphicsContext()
         controller = Controller(app, cast(GraphicsContext, graphics))
-        controller.stop_after = stop_after  # type: ignore[attr-defined]
+        controller.stop_after = stop_after  # ty: ignore[unresolved-attribute]
 
         # Patch update_logic_step to raise StopIteration after stop_after calls
         original_update_logic_step = controller.update_logic_step

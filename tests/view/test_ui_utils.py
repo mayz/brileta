@@ -180,7 +180,7 @@ class TestDrawKeycap:
         """Letter should be centered when bbox offset is (0, 0)."""
         canvas = MockCanvasForKeycap(bbox_offset=(0, 0), char_width=8)
 
-        draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # type: ignore
+        draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # ty: ignore[invalid-argument-type]
 
         # Verify text was drawn
         assert len(canvas.drawn_texts) == 1
@@ -199,7 +199,7 @@ class TestDrawKeycap:
         # Simulate a font where "C" has bbox starting at (2, 3)
         canvas = MockCanvasForKeycap(bbox_offset=(2, 3), char_width=8)
 
-        draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # type: ignore
+        draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # ty: ignore[invalid-argument-type]
 
         text_call = canvas.drawn_texts[0]
 
@@ -219,7 +219,7 @@ class TestDrawKeycap:
         """draw_keycap should return the width consumed."""
         canvas = MockCanvasForKeycap()
 
-        width = draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # type: ignore
+        width = draw_keycap(canvas, pixel_x=100, pixel_y=50, key="C")  # ty: ignore[invalid-argument-type]
 
         # keycap_width (20) + 12px padding after keycap
         assert width == 32

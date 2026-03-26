@@ -126,7 +126,7 @@ class LiveVariableRegistry:
         self,
         name: str,
         description: str = "",
-        stats_type: type[T] = MostRecentNVar,  # type: ignore[assignment]
+        stats_type: type[T] = MostRecentNVar,  # ty: ignore[invalid-parameter-default]
         num_samples: int = 1000,
         formatter: Callable[[Any], str] | None = None,
     ) -> LiveVariable:

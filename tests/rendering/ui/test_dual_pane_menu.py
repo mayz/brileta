@@ -73,7 +73,7 @@ def _make_controller_with_ground_items() -> Controller:
     stim = STIM_TYPE.create()
     knife = COMBAT_KNIFE_TYPE.create()
     location = (player.x, player.y)
-    controller.gw.items[location] = [stim, knife]  # type: ignore[possibly-missing-attribute]
+    controller.gw.items[location] = [stim, knife]  # ty: ignore[unresolved-attribute]
 
     return controller
 

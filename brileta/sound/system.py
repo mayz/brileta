@@ -249,7 +249,7 @@ class SoundSystem:
             dx = ax - listener_x_f
             dy = ay - listener_y_f
             if dx * dx + dy * dy <= cull_dist_sq:
-                for emitter in actor.sound_emitters:  # type: ignore[union-attr]
+                for emitter in actor.sound_emitters:  # ty: ignore[not-iterable]
                     if emitter.active:
                         active_emitters.append((emitter, ax, ay))
                         emitter_positions[emitter] = (ax, ay)

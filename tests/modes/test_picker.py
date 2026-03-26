@@ -325,7 +325,7 @@ def test_combat_mode_repushes_picker_after_selection(
     from brileta.modes.picker import PickerResult
 
     result = PickerResult(actor=None, tile=(5, 5))
-    initial_on_select(result)  # type: ignore[misc]
+    initial_on_select(result)  # ty: ignore[call-non-callable]
 
     # Combat mode should have re-pushed picker
     assert controller.active_mode is controller.picker_mode

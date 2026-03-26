@@ -41,7 +41,7 @@ class DummyController:
     def create_resolver(self, **kwargs: object) -> object:
         from brileta.game.resolution.d20_system import D20System
 
-        return D20System(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # ty: ignore[invalid-argument-type]
 
     def queue_action(self, intent: object) -> None:
         """Stub queue action used by default-action tests."""
@@ -91,20 +91,20 @@ class TestClassifyTarget:
     def test_classify_npc(self) -> None:
         """An NPC (non-player character) should be classified as NPC."""
         controller, _player, npc = _make_test_world()
-        target_type = classify_target(controller, npc)  # type: ignore[arg-type]
+        target_type = classify_target(controller, npc)  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.NPC
 
     def test_classify_dead_npc_as_none(self) -> None:
         """A dead character should not be classified as an NPC target."""
         controller, _player, npc = _make_test_world()
         npc.health._hp = 0
-        target_type = classify_target(controller, npc)  # type: ignore[arg-type]
+        target_type = classify_target(controller, npc)  # ty: ignore[invalid-argument-type]
         assert target_type is None
 
     def test_classify_player_as_none(self) -> None:
         """The player should not be classifiable (returns None)."""
         controller, player, _npc = _make_test_world()
-        target_type = classify_target(controller, player)  # type: ignore[arg-type]
+        target_type = classify_target(controller, player)  # ty: ignore[invalid-argument-type]
         assert target_type is None
 
     def test_classify_container(self) -> None:
@@ -114,28 +114,28 @@ class TestClassifyTarget:
             1, 0, name="Crate", game_world=cast(GameWorld, controller.gw)
         )
         controller.gw.add_actor(container)
-        target_type = classify_target(controller, container)  # type: ignore[arg-type]
+        target_type = classify_target(controller, container)  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.CONTAINER
 
     def test_classify_closed_door_tile(self) -> None:
         """A closed door tile should be classified as DOOR_CLOSED."""
         controller, _player, _ = _make_test_world()
         controller.gw.game_map.tiles[3, 3] = TileTypeID.DOOR_CLOSED
-        target_type = classify_target(controller, (3, 3))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (3, 3))  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.DOOR_CLOSED
 
     def test_classify_open_door_tile(self) -> None:
         """An open door tile should be classified as DOOR_OPEN."""
         controller, _player, _ = _make_test_world()
         controller.gw.game_map.tiles[3, 3] = TileTypeID.DOOR_OPEN
-        target_type = classify_target(controller, (3, 3))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (3, 3))  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.DOOR_OPEN
 
     def test_classify_floor_tile(self) -> None:
         """A walkable floor tile should be classified as FLOOR."""
         controller, _player, _ = _make_test_world()
         # The tile at (10, 10) is a floor tile by default
-        target_type = classify_target(controller, (10, 10))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (10, 10))  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.FLOOR
 
     def test_classify_item_pile(self) -> None:
@@ -145,19 +145,19 @@ class TestClassifyTarget:
 
         knife = COMBAT_KNIFE_TYPE.create()
         controller.gw.items[(10, 10)] = [knife]
-        target_type = classify_target(controller, (10, 10))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (10, 10))  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.ITEM_PILE
 
     def test_classify_none_target(self) -> None:
         """None should return None."""
         controller, _player, _npc = _make_test_world()
-        target_type = classify_target(controller, None)  # type: ignore[arg-type]
+        target_type = classify_target(controller, None)  # ty: ignore[invalid-argument-type]
         assert target_type is None
 
     def test_classify_out_of_bounds(self) -> None:
         """Out of bounds coordinates should return None."""
         controller, _player, _npc = _make_test_world()
-        target_type = classify_target(controller, (100, 100))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (100, 100))  # ty: ignore[invalid-argument-type]
         assert target_type is None
 
     def test_classify_tile_with_container(self) -> None:
@@ -169,7 +169,7 @@ class TestClassifyTarget:
         controller.gw.add_actor(container)
 
         # Classify the tile position, not the actor
-        target_type = classify_target(controller, (3, 3))  # type: ignore[arg-type]
+        target_type = classify_target(controller, (3, 3))  # ty: ignore[invalid-argument-type]
         assert target_type == TargetType.CONTAINER
 
 
@@ -241,7 +241,7 @@ class TestExecuteDefaultActionInCombatMode:
         player.x = 4
         player.y = 5
 
-        result = execute_default_action(controller, npc)  # type: ignore[arg-type]
+        result = execute_default_action(controller, npc)  # ty: ignore[invalid-argument-type]
 
         assert result is True
         assert len(queued_actions) == 1
@@ -273,7 +273,7 @@ class TestExecuteDefaultActionInCombatMode:
         player.x = 4
         player.y = 5
 
-        result = execute_default_action(controller, npc)  # type: ignore[arg-type]
+        result = execute_default_action(controller, npc)  # ty: ignore[invalid-argument-type]
 
         assert result is True
         assert len(plan_calls) == 1
@@ -297,7 +297,7 @@ class TestExecuteDefaultActionInCombatMode:
         )
         controller.is_combat_mode = lambda: False
 
-        result = execute_default_action(controller, npc)  # type: ignore[arg-type]
+        result = execute_default_action(controller, npc)  # ty: ignore[invalid-argument-type]
 
         assert result is False
         assert queued_actions == []
@@ -339,7 +339,7 @@ class TestAdjacentPositionSelection:
         controller.start_plan = mock_start_plan
         controller.is_combat_mode = mock_is_combat_mode
 
-        result = execute_default_action(controller, container)  # type: ignore[arg-type]
+        result = execute_default_action(controller, container)  # ty: ignore[invalid-argument-type]
 
         assert result is True
         assert len(plan_calls) == 1
@@ -373,7 +373,7 @@ class TestAdjacentPositionSelection:
         controller.start_plan = mock_start_plan
         controller.is_combat_mode = mock_is_combat_mode
 
-        result = execute_default_action(controller, container)  # type: ignore[arg-type]
+        result = execute_default_action(controller, container)  # ty: ignore[invalid-argument-type]
 
         assert result is True
         assert len(plan_calls) == 1
@@ -409,7 +409,7 @@ class TestAdjacentPositionSelection:
         controller.start_plan = mock_start_plan
         controller.is_combat_mode = mock_is_combat_mode
 
-        result = execute_default_action(controller, (2, 3))  # type: ignore[arg-type]
+        result = execute_default_action(controller, (2, 3))  # ty: ignore[invalid-argument-type]
 
         assert result is True
         assert len(plan_calls) == 1

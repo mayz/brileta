@@ -81,7 +81,7 @@ def test_layout_matches_legacy_shape_on_80x50() -> None:
     """80x50 keeps familiar panel sizes while using responsive calculations."""
     fm_stub = _build_layout_stub(80, 50, equipment_min_width=20)
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     assert fm_stub.world_view.bounds == (20, 0, 80, 39)
     assert fm_stub.action_panel_view.bounds == (0, 0, 20, 26)
@@ -95,7 +95,7 @@ def test_layout_scales_for_zoomed_small_console() -> None:
     """Small consoles keep world area usable instead of collapsing to a corner."""
     fm_stub = _build_layout_stub(47, 28, equipment_min_width=20)
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     assert fm_stub.world_view.bounds == (10, 0, 47, 23)
     assert fm_stub.action_panel_view.bounds == (0, 0, 10, 16)
@@ -109,7 +109,7 @@ def test_layout_falls_back_to_world_when_console_is_tiny() -> None:
     """Extremely small consoles avoid negative or inverted bounds."""
     fm_stub = _build_layout_stub(20, 12, equipment_min_width=20)
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     assert fm_stub.world_view.bounds == (0, 0, 20, 12)
     assert fm_stub.action_panel_view.bounds == (0, 0, 0, 12)
@@ -124,7 +124,7 @@ def test_layout_hidden_minimap_gives_sidebar_back_to_action_panel() -> None:
     fm_stub = _build_layout_stub(80, 50, equipment_min_width=20)
     fm_stub.mini_map_view.visible = False
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     assert fm_stub.action_panel_view.bounds == (0, 0, 20, 39)
     assert fm_stub.mini_map_view.bounds == (0, 0, 0, 0)
@@ -140,7 +140,7 @@ def test_layout_caps_bottom_bar_height_when_tiles_are_zoomed() -> None:
         native_tile_size=(20, 20),
     )
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     # Pixel cap shrinks bottom UI from 10 rows to ~3 rows at this zoom level.
     assert fm_stub.world_view.bounds == (20, 0, 80, 46)
@@ -170,7 +170,7 @@ def test_layout_is_not_overly_aggressive_at_intermediate_sizes() -> None:
     """Intermediate consoles should keep HUD compact without over-collapsing."""
     fm_stub = _build_layout_stub(60, 38, equipment_min_width=20)
 
-    FrameManager._layout_views(fm_stub)  # type: ignore[arg-type]
+    FrameManager._layout_views(fm_stub)  # ty: ignore[invalid-argument-type]
 
     assert fm_stub.world_view.bounds == (13, 0, 60, 30)
     assert fm_stub.action_panel_view.bounds == (0, 0, 13, 22)

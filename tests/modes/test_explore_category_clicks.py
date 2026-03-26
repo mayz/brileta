@@ -176,7 +176,7 @@ class TestActionClickHandling:
             name="Test Action",
             description="Test",
             category=ActionCategory.COMBAT,
-            action_class=mock_action_class,  # type: ignore[arg-type]
+            action_class=mock_action_class,  # ty: ignore[invalid-argument-type]
             static_params={"target": "enemy"},
         )
         # Set up the mock list renderer with a row containing this action
@@ -240,7 +240,7 @@ class TestActionClickHandling:
             name="Callback Action",
             description="Test",
             category=ActionCategory.SOCIAL,
-            action_class=MagicMock(),  # type: ignore[arg-type]
+            action_class=MagicMock(),  # ty: ignore[invalid-argument-type]
             static_params={},
             execute=execute_callback,
         )
@@ -301,7 +301,7 @@ class TestStaleHitAreasRegression:
             name="Attack",
             description="Attack the target",
             category=ActionCategory.COMBAT,
-            action_class=MagicMock(),  # type: ignore[arg-type]
+            action_class=MagicMock(),  # ty: ignore[invalid-argument-type]
             static_params={},
         )
         action_row = SelectableRow(text="Attack", key="A", data=action)
@@ -342,7 +342,7 @@ class TestStaleHitAreasRegression:
             name="Stale Attack",
             description="This action should not be returned",
             category=ActionCategory.COMBAT,
-            action_class=MagicMock(),  # type: ignore[arg-type]
+            action_class=MagicMock(),  # ty: ignore[invalid-argument-type]
             static_params={},
         )
         stale_row = SelectableRow(text="Stale Attack", key="A", data=stale_action)

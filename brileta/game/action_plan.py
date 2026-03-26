@@ -103,7 +103,7 @@ class IntentStep(Step):
             to pass to the intent constructor (in addition to controller).
     """
 
-    intent_class: type[GameIntent] = field(default=None)  # type: ignore[assignment]
+    intent_class: type[GameIntent] = field(default=None)  # ty: ignore[invalid-assignment]
     """The GameIntent subclass to instantiate and execute."""
 
     params: Callable[[PlanContext], dict] = field(default=lambda ctx: {})

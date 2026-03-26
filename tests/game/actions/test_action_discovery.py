@@ -47,7 +47,7 @@ class DummyController:
     def create_resolver(self, **kwargs: object) -> object:
         from brileta.game.resolution.d20_system import D20System
 
-        return D20System(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # ty: ignore[invalid-argument-type]
 
 
 def _set_disposition_toward(

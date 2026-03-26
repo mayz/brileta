@@ -381,7 +381,7 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
             non_improvised = [
                 w
                 for w in candidates
-                if WeaponProperty.IMPROVISED not in w.melee_attack.properties  # type: ignore[union-attr]
+                if WeaponProperty.IMPROVISED not in w.melee_attack.properties  # ty: ignore[unresolved-attribute]
             ]
             if non_improvised:
                 return non_improvised[0]

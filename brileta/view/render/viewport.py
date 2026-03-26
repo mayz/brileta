@@ -155,7 +155,7 @@ class Viewport:
             self.map_height,
         )
         if self._cached_bounds_key == key:
-            return self._cached_bounds  # type: ignore[return-value]
+            return self._cached_bounds  # ty: ignore[invalid-return-type]
 
         half_w: TileCoord = self.width_tiles // 2
         half_h: TileCoord = self.height_tiles // 2
@@ -238,7 +238,7 @@ class ViewportSystem:
             self.viewport.height_tiles,
         )
         if self._cached_scale_key == key:
-            return self._cached_scale  # type: ignore[return-value]
+            return self._cached_scale  # ty: ignore[invalid-return-type]
         width_scale = self._display_width_tiles / max(1, self.viewport.width_tiles)
         height_scale = self._display_height_tiles / max(1, self.viewport.height_tiles)
         result = (width_scale, height_scale)
