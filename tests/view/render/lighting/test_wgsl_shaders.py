@@ -38,7 +38,7 @@ class TestWGSLLightingShaders:
         assert "fs_main" in shader_source, "Missing fragment shader main function"
 
         # Create a device for testing compilation
-        adapter = wgpu.gpu.request_adapter()  # ty: ignore[unresolved-attribute]
+        adapter = wgpu.gpu.request_adapter()
         device = adapter.request_device()
 
         # Try to create shader module - this will raise if compilation fails
@@ -64,7 +64,7 @@ class TestWGSLLightingShaders:
         assert "vs_main" in shader_source
         assert "fs_main" in shader_source
 
-        adapter = wgpu.gpu.request_adapter()  # ty: ignore[unresolved-attribute]
+        adapter = wgpu.gpu.request_adapter()
         device = adapter.request_device()
         shader_module = device.create_shader_module(code=shader_source)
         assert shader_module is not None
@@ -122,7 +122,7 @@ class TestWGSLLightingShaders:
         )
         assert "if (occupancy > 0.09)" in shader_source
 
-        adapter = wgpu.gpu.request_adapter()  # ty: ignore[unresolved-attribute]
+        adapter = wgpu.gpu.request_adapter()
         device = adapter.request_device()
         shader_module = device.create_shader_module(code=shader_source)
         assert shader_module is not None

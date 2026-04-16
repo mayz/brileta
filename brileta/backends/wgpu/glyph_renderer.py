@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import wgpu
@@ -25,29 +25,37 @@ if TYPE_CHECKING:
 MAX_TEXTURE_QUADS = 5000
 EDGE_NEIGHBOR_COUNT = 4
 
-# Vertex structure for glyph rendering (foreground + background colors + noise)
-TEXTURE_VERTEX_DTYPE = np.dtype(
-    [
-        ("position", "2f4"),  # (x, y)
-        ("uv", "2f4"),  # (u, v)
-        ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
-        ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
-        ("noise_amplitude", "f4"),  # Sub-tile brightness noise amplitude
-        ("noise_pattern", "u4"),  # Sub-tile brightness pattern ID (u32 for WGSL input)
-        ("edge_neighbor_mask", "u4"),  # Cardinal tile-type boundary mask (W/N/S/E)
-        ("edge_blend", "f4"),  # Organic edge feathering amplitude (0.0-1.0)
-    ]
-    + [(f"edge_neighbor_bg_{i}", "3f4") for i in range(EDGE_NEIGHBOR_COUNT)]
-    + [
-        # Sub-tile split fields for perspective offset boundary tiles.
-        ("split_y", "f4"),  # Y threshold [0,1]: 0=no split, >0=split point
-        ("split_bg_color", "4f4"),  # Background RGBA for below-split portion
-        ("split_fg_color", "4f4"),  # Foreground RGBA for below-split portion
-        ("split_noise_amplitude", "f4"),  # Noise amplitude for below-split portion
-        ("split_noise_pattern", "u4"),  # Noise pattern for below-split portion
-        # Packed roof wear data for per-pixel shader effects.
-        ("wear_pack", "u4"),
-    ]
+# Vertex structure for glyph rendering (foreground + background colors + noise).
+# Cast to np.dtype[np.void] because ty infers np.dtype([...]) as dtype[float64];
+# structured dtypes are void-typed, and the cast lets field indexing type-check.
+TEXTURE_VERTEX_DTYPE = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("position", "2f4"),  # (x, y)
+            ("uv", "2f4"),  # (u, v)
+            ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+            ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+            ("noise_amplitude", "f4"),  # Sub-tile brightness noise amplitude
+            (
+                "noise_pattern",
+                "u4",
+            ),  # Sub-tile brightness pattern ID (u32 for WGSL input)
+            ("edge_neighbor_mask", "u4"),  # Cardinal tile-type boundary mask (W/N/S/E)
+            ("edge_blend", "f4"),  # Organic edge feathering amplitude (0.0-1.0)
+        ]
+        + [(f"edge_neighbor_bg_{i}", "3f4") for i in range(EDGE_NEIGHBOR_COUNT)]
+        + [
+            # Sub-tile split fields for perspective offset boundary tiles.
+            ("split_y", "f4"),  # Y threshold [0,1]: 0=no split, >0=split point
+            ("split_bg_color", "4f4"),  # Background RGBA for below-split portion
+            ("split_fg_color", "4f4"),  # Foreground RGBA for below-split portion
+            ("split_noise_amplitude", "f4"),  # Noise amplitude for below-split portion
+            ("split_noise_pattern", "u4"),  # Noise pattern for below-split portion
+            # Packed roof wear data for per-pixel shader effects.
+            ("wear_pack", "u4"),
+        ]
+    ),
 )
 
 

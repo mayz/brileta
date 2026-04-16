@@ -58,6 +58,7 @@ include = ["tests/**"]
 
 [tool.ty.overrides.rules]
 invalid-assignment = "ignore"  # Mock assignments in tests
+unresolved-attribute = "ignore"  # Mock attribute access in tests (.return_value, .assert_called_*, .call_count)
 
 [dependency-groups]
 dev = [

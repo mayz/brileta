@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -18,12 +18,17 @@ if TYPE_CHECKING:
 
 # Per-cell animation state for tiles with dynamic color/glyph effects.
 # Values range from 0-1000 and are used to modulate tile colors via random walk.
-TileAnimationState = np.dtype(
-    [
-        ("fg_values", "3h"),  # RGB modulation values for foreground (0-1000)
-        ("bg_values", "3h"),  # RGB modulation values for background (0-1000)
-        ("show_glyph", np.bool_),  # Whether to show the glyph this frame
-    ]
+# Cast to np.dtype[np.void] so ty treats the structured dtype correctly;
+# without the cast, np.dtype([...]) is inferred as dtype[float64].
+TileAnimationState = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("fg_values", "3h"),  # RGB modulation values for foreground (0-1000)
+            ("bg_values", "3h"),  # RGB modulation values for background (0-1000)
+            ("show_glyph", np.bool_),  # Whether to show the glyph this frame
+        ]
+    ),
 )
 
 

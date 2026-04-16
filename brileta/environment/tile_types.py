@@ -13,7 +13,7 @@ This module defines:
 """
 
 from enum import IntEnum, auto
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import numpy as np
 
@@ -73,12 +73,17 @@ ROOF_STYLE_TILE_TYPES: dict[str, TileTypeID] = {
 # This structure is designed to be backend-agnostic and compatible with
 # GlyphBuffer. The RGB values are converted to RGBA as needed during
 # rendering (typically adding full alpha=255).
-TileTypeAppearance = np.dtype(
-    [
-        ("ch", np.int32),  # Character code (e.g., ord('@'))
-        ("fg", "3B"),  # Foreground RGB: 3 unsigned bytes (0-255 each)
-        ("bg", "3B"),  # Background RGB: 3 unsigned bytes (0-255 each)
-    ]
+# Cast to np.dtype[np.void]: ty infers np.dtype([...]) as dtype[float64], but
+# structured dtypes are void-typed and need the cast for field indexing to type-check.
+TileTypeAppearance = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("ch", np.int32),  # Character code (e.g., ord('@'))
+            ("fg", "3B"),  # Foreground RGB: 3 unsigned bytes (0-255 each)
+            ("bg", "3B"),  # Background RGB: 3 unsigned bytes (0-255 each)
+        ]
+    ),
 )
 
 # RGB drift range for animated tile color oscillation.
@@ -100,51 +105,72 @@ class TileAnimationConfig(NamedTuple):
 
 # Animation parameters for tiles that have dynamic color/glyph effects.
 # Colors oscillate via random walk, creating organic shimmer effects.
-TileAnimationParams = np.dtype(
-    [
-        ("animates", np.bool_),  # Does this tile animate?
-        ("fg_variation", "3B"),  # RGB variation range for foreground glyph color
-        ("bg_variation", "3B"),  # RGB variation range for background color
-        ("glyph_flicker_chance", np.float32),  # Probability of hiding glyph (0.0-1.0)
-    ]
+TileAnimationParams = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("animates", np.bool_),  # Does this tile animate?
+            ("fg_variation", "3B"),  # RGB variation range for foreground glyph color
+            ("bg_variation", "3B"),  # RGB variation range for background color
+            (
+                "glyph_flicker_chance",
+                np.float32,
+            ),  # Probability of hiding glyph (0.0-1.0)
+        ]
+    ),
 )
 
 # Light emission parameters for tiles that glow (e.g., lava, acid pools, hot coals).
 # These tiles contribute light to the lightmap, illuminating surrounding tiles.
-TileEmissionParams = np.dtype(
-    [
-        ("emits_light", np.bool_),  # Does this tile emit light?
-        ("light_color", "3B"),  # RGB emission color (0-255 each)
-        ("light_radius", np.uint8),  # Light radius in tiles (typically 2-4)
-        ("light_intensity", np.float32),  # Emission strength (0.0-1.0)
-    ]
+TileEmissionParams = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("emits_light", np.bool_),  # Does this tile emit light?
+            ("light_color", "3B"),  # RGB emission color (0-255 each)
+            ("light_radius", np.uint8),  # Light radius in tiles (typically 2-4)
+            ("light_intensity", np.float32),  # Emission strength (0.0-1.0)
+        ]
+    ),
 )
 
 # Defines the intrinsic data for a *type* of tile (flyweight).
 # This includes its game logic properties (walkable, transparent)
 # and its visual appearances under different lighting conditions.
-TileTypeData = np.dtype(
-    [
-        ("walkable", bool),
-        ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
-        ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
-        (
-            "shadow_height",
-            np.uint8,
-        ),  # Shadow height (0 = no shadow, 1+ = tiles of shadow)
-        ("material", np.int8),  # ImpactMaterial enum value for impact sounds
-        ("hazard_damage", "U8"),  # Dice string for damage (e.g., "1d4"), empty = safe
-        ("hazard_damage_type", "U16"),  # Damage type: "acid", "fire", "electric", etc.
-        ("display_name", "U32"),  # Human-readable name (Unicode string, max 32 chars)
-        # Appearance when explored but not in FOV
-        ("dark", TileTypeAppearance),
-        # Appearance when in FOV (before dynamic lighting)
-        ("light", TileTypeAppearance),
-        # Animation parameters (color oscillation, glyph flicker)
-        ("animation", TileAnimationParams),
-        # Light emission parameters (glowing tiles like lava, acid, coals)
-        ("emission", TileEmissionParams),
-    ]
+TileTypeData = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("walkable", bool),
+            ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
+            ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
+            (
+                "shadow_height",
+                np.uint8,
+            ),  # Shadow height (0 = no shadow, 1+ = tiles of shadow)
+            ("material", np.int8),  # ImpactMaterial enum value for impact sounds
+            (
+                "hazard_damage",
+                "U8",
+            ),  # Dice string for damage (e.g., "1d4"), empty = safe
+            (
+                "hazard_damage_type",
+                "U16",
+            ),  # Damage type: "acid", "fire", "electric", etc.
+            (
+                "display_name",
+                "U32",
+            ),  # Human-readable name (Unicode string, max 32 chars)
+            # Appearance when explored but not in FOV
+            ("dark", TileTypeAppearance),
+            # Appearance when in FOV (before dynamic lighting)
+            ("light", TileTypeAppearance),
+            # Animation parameters (color oscillation, glyph flicker)
+            ("animation", TileAnimationParams),
+            # Light emission parameters (glowing tiles like lava, acid, coals)
+            ("emission", TileEmissionParams),
+        ]
+    ),
 )
 
 # --- Tile Type Registration System ---

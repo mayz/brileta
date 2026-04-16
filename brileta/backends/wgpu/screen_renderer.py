@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import wgpu
@@ -37,17 +37,23 @@ _QUAD_LOCAL_UVS = np.array(
     dtype=np.float32,
 )
 
-VERTEX_DTYPE = np.dtype(
-    [
-        ("position", "2f4"),  # (x, y)
-        ("uv", "2f4"),  # (u, v)
-        ("uv_local", "2f4"),  # (u, v) local to the quad (0..1)
-        ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
-        ("world_pos", "2f4"),  # World tile coordinates for actor lighting
-        ("actor_light_scale", "f4"),  # Shadow receiver dimming scale
-        ("flags", "u4"),  # Bitmask flags for per-quad shader behavior
-        ("tile_bg", "3f4"),  # Base tile background RGB for actor contrast checks
-    ]
+# Cast to np.dtype[np.void] because ty's numpy stubs infer np.dtype([...]) as
+# dtype[float64]; the cast reflects reality (structured dtypes are void-typed)
+# and makes field indexing like arr["position"] type-check.
+VERTEX_DTYPE = cast(
+    "np.dtype[np.void]",
+    np.dtype(
+        [
+            ("position", "2f4"),  # (x, y)
+            ("uv", "2f4"),  # (u, v)
+            ("uv_local", "2f4"),  # (u, v) local to the quad (0..1)
+            ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+            ("world_pos", "2f4"),  # World tile coordinates for actor lighting
+            ("actor_light_scale", "f4"),  # Shadow receiver dimming scale
+            ("flags", "u4"),  # Bitmask flags for per-quad shader behavior
+            ("tile_bg", "3f4"),  # Base tile background RGB for actor contrast checks
+        ]
+    ),
 )
 
 
