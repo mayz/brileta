@@ -377,9 +377,17 @@ class BuildingPlacementLayer(GenerationLayer):
         margin = 2
         max_attempts = 50
 
+        # Largest top-left coordinate that still keeps the building (plus margin)
+        # inside the map. If the building is too large to fit within the margins,
+        # randint's range would be empty, so report failure instead of crashing.
+        max_x = ctx.width - width - margin
+        max_y = ctx.height - height - margin
+        if max_x < margin or max_y < margin:
+            return None
+
         for _ in range(max_attempts):
-            x = _rng.randint(margin, ctx.width - width - margin)
-            y = _rng.randint(margin, ctx.height - height - margin)
+            x = _rng.randint(margin, max_x)
+            y = _rng.randint(margin, max_y)
 
             candidate = Rect(x, y, width, height)
             if not self._too_close_to_existing(candidate, placed_buildings):

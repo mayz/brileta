@@ -103,8 +103,10 @@ class CumulativeVar(StatsVar):
         if self.count <= self.num_samples:
             self.samples[self.count - 1] = value
         else:
-            # Random replacement
-            j = _rng.randint(0, self.count)
+            # Random replacement. randint is inclusive on both ends, so the
+            # index must range over [0, count - 1] to give each of the `count`
+            # observed values an equal chance of being in the reservoir.
+            j = _rng.randint(0, self.count - 1)
             if j < self.num_samples:
                 self.samples[j] = value
 
