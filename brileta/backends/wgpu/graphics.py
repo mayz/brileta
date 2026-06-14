@@ -177,7 +177,6 @@ class WGPUGraphicsContext(GraphicsContext):
         self.device: wgpu.GPUDevice | None = None
         self.queue: wgpu.GPUQueue | None = None
         self.wgpu_context: wgpu.GPUCanvasContext | None = None
-        self.swap_chain: Any = None
 
         # Resource managers (initialized after device)
         self.resource_manager: WGPUResourceManager | None = None

@@ -81,9 +81,6 @@ class AttackConsequenceGenerator:
 class ConsequenceHandler:
     """Apply consequences to the game world."""
 
-    def __init__(self) -> None:
-        pass
-
     def apply_consequence(self, consequence: Consequence) -> None:
         if consequence.type == "weapon_drop":
             self._apply_weapon_drop(consequence.target, consequence.data.get("weapon"))

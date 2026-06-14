@@ -192,10 +192,6 @@ class Canvas(ABC):
     def get_effective_line_height(self) -> int:
         """Return the line height currently used for text rendering."""
 
-    def configure_renderer(self, sdl_renderer) -> None:
-        """Configure SDL renderer. Default implementation does nothing."""
-        _ = sdl_renderer
-
     def configure_drawing_offset(self, offset_x: int, offset_y: int) -> None:
         """Configure coordinate translation for backends."""
         self.drawing_offset_x = offset_x

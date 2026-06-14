@@ -244,33 +244,3 @@ class WGPUShaderManager:
             entries=entries,
             label=label or "",
         )
-
-    def clear_cache(self) -> None:
-        """Clear all cached shaders and pipelines."""
-        self._shader_cache.clear()
-        self._module_cache.clear()
-        # Note: Pipelines don't need explicit cleanup in WGPU
-        self._pipeline_cache.clear()
-        logger.debug("WGPU shader cache cleared")
-
-    def reload_shader(self, shader_path: str) -> None:
-        """Reload a specific shader from disk, clearing its cache.
-
-        Args:
-            shader_path: Path to shader file to reload
-        """
-        if shader_path in self._shader_cache:
-            del self._shader_cache[shader_path]
-            logger.debug(f"Cleared cache for shader: {shader_path}")
-
-        # Clear any modules that use this shader
-        modules_to_clear = [key for key in self._module_cache if shader_path in key]
-        for key in modules_to_clear:
-            del self._module_cache[key]
-            logger.debug(f"Cleared module cache for: {key}")
-
-        # Clear any pipelines that use this shader
-        pipelines_to_clear = [key for key in self._pipeline_cache if shader_path in key]
-        for key in pipelines_to_clear:
-            del self._pipeline_cache[key]
-            logger.debug(f"Cleared pipeline cache for: {key}")

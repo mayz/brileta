@@ -22,8 +22,6 @@ HairDrawFn = Callable[
 ]
 
 # Named indices into HAIR_STYLES for readability checks elsewhere.
-HAIR_IDX_BALD = 0
-HAIR_IDX_SHORT = 1
 HAIR_IDX_MEDIUM = 2
 HAIR_IDX_LONG = 3
 HAIR_IDX_TALL = 4

@@ -215,15 +215,6 @@ class GameMap:
             )
         return colors.LIGHT_GROUND if is_light else colors.DARK_GROUND
 
-    def _get_region_wall_color(self, region: MapRegion, is_light: bool) -> colors.Color:
-        """Get the appropriate wall background color for a region."""
-        # Determine if this is an outdoor region based on sky exposure
-        is_outdoor = region.sky_exposure > 0.5
-
-        if is_outdoor:
-            return colors.OUTDOOR_LIGHT_WALL if is_light else colors.OUTDOOR_DARK_WALL
-        return colors.LIGHT_WALL if is_light else colors.DARK_WALL
-
     def get_region_at(self, world_pos: WorldTilePos) -> MapRegion | None:
         """Get the MapRegion at the given world position, if any."""
         x, y = world_pos

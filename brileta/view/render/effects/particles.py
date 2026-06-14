@@ -36,7 +36,6 @@ class ParticleLayer(Enum):
 # Generic particle creation methods:
 #   - emit_radial_burst()        # Particles radiating from a point
 #   - emit_directional_cone()    # Particles in a directional cone
-#   - emit_area_flash()          # Background flash effect over area
 #   - emit_background_tint()     # Background tinting particles (smoke, gas)
 #
 # # In render loop:
@@ -372,68 +371,6 @@ class SubTileParticleSystem:
             self.flash_intensity[idx] = np.nan
             self.layers[idx] = layer.value
             self.active_count += 1
-
-    def emit_area_flash(
-        self,
-        tile_x: float,
-        tile_y: float,
-        radius: int,
-        flash_color: colors.Color = (255, 255, 200),
-        lifetime_range: FloatRange = (0.1, 0.2),
-        intensity_falloff: bool = True,
-        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
-    ) -> None:
-        """
-        Create a bright background flash effect over a circular area.
-
-        Perfect for explosions, lightning, magic effects. Creates stationary
-        particles that only affect background color for a brief flash.
-
-        Args:
-            tile_x: X center position in tile coordinates
-            tile_y: Y center position in tile coordinates
-            radius: Flash radius in tiles
-            flash_color: RGB color of the flash
-            lifetime_range: (min_lifetime, max_lifetime) in seconds
-            intensity_falloff: If True, flash intensity decreases with distance
-        """
-        for dx in range(-radius, radius + 1):
-            for dy in range(-radius, radius + 1):
-                # Calculate distance from center
-                distance = (dx * dx + dy * dy) ** 0.5
-
-                # Skip tiles outside the circular radius
-                if distance <= radius:
-                    # Calculate flash intensity based on distance
-                    if intensity_falloff:
-                        flash_intensity = 1.0 - (distance / radius)
-                    else:
-                        flash_intensity = 1.0
-
-                    # Random lifetime within range
-                    min_lifetime, max_lifetime = lifetime_range
-                    lifetime = _rng.uniform(min_lifetime, max_lifetime)
-
-                    if self.active_count >= self.max_particles:
-                        return
-
-                    idx = self.active_count
-                    self.positions[idx] = (
-                        (tile_x + dx) * self.subdivision,
-                        (tile_y + dy) * self.subdivision,
-                    )
-                    self.velocities[idx] = (0.0, 0.0)
-                    self.lifetimes[idx] = lifetime
-                    self.max_lifetimes[idx] = lifetime
-                    self.colors[idx] = (0, 0, 0)
-                    self.chars[idx] = ""
-                    self.bg_colors[idx] = flash_color
-                    self.has_bg_color[idx] = True
-                    self.bg_blend_mode[idx] = BlendMode.REPLACE.value
-                    self.gravity[idx] = 0.0
-                    self.flash_intensity[idx] = flash_intensity
-                    self.layers[idx] = layer.value
-                    self.active_count += 1
 
     def emit_background_tint(
         self,

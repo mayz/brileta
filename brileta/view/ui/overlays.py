@@ -70,10 +70,6 @@ class Overlay(abc.ABC):
         """Deactivate overlay. Triggers automatic removal from stack."""
         self.is_active = False
 
-    def can_stack_with(self, other: Overlay) -> bool:
-        """Return True if can coexist with another overlay. Override for exclusivity."""
-        return True
-
 
 class TextOverlay(Overlay):
     """An overlay that renders via a TextBackend."""
@@ -285,18 +281,6 @@ class OverlaySystem:
     def show_menu(self, menu: Menu) -> None:
         """Legacy method: Show a menu overlay."""
         self.show_overlay(menu)
-
-    def hide_current_menu(self) -> None:
-        """Legacy method: Hide the currently active overlay."""
-        self.hide_current_overlay()
-
-    def hide_all_menus(self) -> None:
-        """Legacy method: Hide all active overlays."""
-        self.hide_all_overlays()
-
-    def has_active_menus(self) -> bool:
-        """Legacy method: Check if there are any active overlays."""
-        return self.has_active_overlays()
 
 
 class MenuOption:

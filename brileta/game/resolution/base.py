@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class ResolutionResult(abc.ABC):  # noqa: B024 - no abstract methods defined
+class ResolutionResult:
     """Base result data returned by a resolver implementation."""
 
     outcome_tier: OutcomeTier = OutcomeTier.FAILURE

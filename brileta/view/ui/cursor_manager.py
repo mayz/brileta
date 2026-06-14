@@ -29,11 +29,7 @@ class CursorManager:
     """Manages loading, storing, providing, and drawing mouse cursor
     textures and hotspots."""
 
-    def __init__(
-        self,
-        base_asset_path: str = "assets/cursors/",
-    ) -> None:
-        self.base_asset_path = base_asset_path
+    def __init__(self) -> None:
         self.cursors: dict[str, CursorData] = {}
 
         self.mouse_pixel_x: PixelCoord = 0
@@ -57,15 +53,6 @@ class CursorManager:
                 f"Defaulting to 'arrow'."
             )
             self.active_cursor_type = "arrow"
-
-    def get_cursor_data(self, cursor_name: str) -> CursorData | None:
-        """Retrieves the CursorData object for a given cursor name."""
-        return self.cursors.get(cursor_name)
-
-    def get_hotspot(self, cursor_name: str) -> tuple[int, int]:
-        """Retrieves the hotspot for a given cursor name."""
-        cursor_data = self.cursors.get(cursor_name)
-        return cursor_data.hotspot if cursor_data else (0, 0)
 
     def _load_cursor(
         self, cursor_name: str, filename: str, hotspot: tuple[int, int]
