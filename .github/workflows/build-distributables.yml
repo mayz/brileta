@@ -19,7 +19,7 @@ jobs:
         include:
           - os: macos-latest
             artifact: Brileta-macos
-            asset: Brileta.app.zip
+            asset: Brileta-macos.zip
           - os: windows-latest
             artifact: Brileta-windows
             asset: Brileta-windows.zip
