@@ -1,0 +1,64 @@
+name: Build distributables
+
+# PyInstaller does not cross-compile, so each OS builds on its own runner.
+# Produces a double-clickable bundle per platform and uploads it as an artifact.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS: BUNDLE wraps the COLLECT output into Brileta.app but leaves
+          # the source dist/Brileta/ in place, so upload only the .app to avoid
+          # packing two full copies. Windows/Linux have no .app - upload the
+          # onedir folder.
+          - os: macos-latest
+            artifact: Brileta-macos
+            path: dist/Brileta.app
+          - os: windows-latest
+            artifact: Brileta-windows
+            path: dist/Brileta
+          - os: ubuntu-latest
+            artifact: Brileta-linux
+            path: dist/Brileta
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # wgpu/glfw need native GL/Vulkan/X11 libs present for PyInstaller's
+      # analysis to import the backends cleanly on Linux runners.
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dri libgl1 libglx-mesa0 libegl1 \
+            libx11-6 libxext6 libxrandr2 libxi6 libxxf86vm1 \
+            libvulkan1 mesa-vulkan-drivers
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Build native C extension
+        run: uv pip install -e .
+
+      - name: Build with PyInstaller
+        run: uv run pyinstaller brileta.spec --noconfirm
+
+      # itch.io wants a zip of the .app (macOS) or the build folder (Win/Linux).
+      # actions/upload-artifact zips its input, so we point it at the raw output.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error

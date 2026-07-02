@@ -1,4 +1,4 @@
-.PHONY: all format ruff-format clang-format ruff-check clang-tidy lint typecheck test check clean run
+.PHONY: all format ruff-format clang-format ruff-check clang-tidy lint typecheck test check clean run dist
 
 # Globally silence `make` output
 MAKEFLAGS += --silent
@@ -88,9 +88,10 @@ test: native-build
 # Alias for 'all'
 check: all
 
-# Clean up cache files
+# Clean up cache files and build artifacts
 clean:
 	rm -f $(NATIVE_STAMP)
+	rm -rf build dist
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
@@ -98,3 +99,20 @@ clean:
 # Run the game inside the virtual environment
 run:
 	uv run python -m brileta
+
+# Build a standalone, double-clickable distributable via PyInstaller, then zip
+# it the way itch.io expects. macOS produces dist/Brileta.app; Windows/Linux
+# produce dist/Brileta/. Not part of `all` - build releases on demand.
+dist: native-build
+	uv sync
+	uv run pyinstaller brileta.spec --noconfirm
+	cd dist && \
+	if [ -d Brileta.app ]; then \
+		rm -f Brileta-macos.zip; \
+		ditto -c -k --sequesterRsrc --keepParent Brileta.app Brileta-macos.zip; \
+		echo "✅ dist/Brileta.app  ->  dist/Brileta-macos.zip"; \
+	else \
+		rm -f Brileta-$$(uname -s).zip; \
+		zip -r -q Brileta-$$(uname -s).zip Brileta; \
+		echo "✅ dist/Brileta  ->  dist/Brileta-$$(uname -s).zip"; \
+	fi

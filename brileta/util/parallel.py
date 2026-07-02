@@ -20,9 +20,27 @@ from __future__ import annotations
 
 import atexit
 import multiprocessing
+import sys
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
+
+# A PyInstaller build NEVER spawns a worker pool. A spawned worker re-execs the
+# app; in a windowed macOS build every child runs the Cocoa bootloader and shows
+# up as a phantom Dock/Cmd+Tab icon. Forcing the frozen binary to run serially -
+# unconditionally, whatever the map size or however the world is (re)generated,
+# including from the dev console - makes those icons structurally impossible: no
+# pool is ever created, so no worker process ever exists. World-gen is a ~15ms
+# one-shot on the shipped map; even a huge dev-console regen is a few seconds
+# serially, which is fine for a developer action in a shipped binary.
+_FROZEN = getattr(sys, "frozen", False)
+
+# In the dev environment (make run), workers are plain Python processes that
+# never show as icons, so the pool is free to use - but only worth it once the
+# work outweighs the ~65ms macOS worker-spawn cost. Below this item count serial
+# is faster and avoids spawning workers for trivial startup work. Measured
+# break-even is ~1.5-2k items; 5k leaves comfortable margin.
+_PARALLEL_MIN_ITEMS = 5000
 
 # Persistent worker pool, lazily created on first parallel_map() call.
 # macOS uses 'spawn' by default (Python 3.12+), so each worker must
@@ -64,8 +82,14 @@ def parallel_map[T](
     Returns:
         Results in input order, identical to ``list(map(fn, ...))``.
     """
+    # Callers pass finite lists; materialize so we can size the work and reuse
+    # the columns for either path.
+    cols = [list(it) for it in iterables]
+    n = len(cols[0]) if cols else 0
+    if _FROZEN or n < _PARALLEL_MIN_ITEMS:
+        return list(map(fn, *cols))
     pool = _ensure_pool()
-    return list(pool.map(fn, *iterables, chunksize=chunksize))
+    return list(pool.map(fn, *cols, chunksize=chunksize))
 
 
 def shutdown_pool() -> None:

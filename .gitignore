@@ -30,3 +30,4 @@ wheels/
 dist/
 build/
 *.spec
+!brileta.spec
