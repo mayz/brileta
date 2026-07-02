@@ -1247,6 +1247,12 @@ class Controller:
             self.presentation_manager.update(self.fixed_timestep)
 
             with record_time_live_variable("time.logic.action_ms"):
+                # Explore mode: NPCs accrue time-driven energy every step so the
+                # world keeps moving while the player idles. Combat energy stays
+                # player-action-driven, so we skip ambient accrual there.
+                if not self.is_combat_mode():
+                    self.turn_manager.accumulate_ambient_energy(self.fixed_timestep)
+
                 # GAME LOGIC: Process all NPC actions for this step
                 # This is where the core game simulation happens
                 self._process_all_available_npc_actions()
@@ -1352,21 +1358,22 @@ class Controller:
         return (actor.y, actor.x, actor.name)
 
     def _process_all_available_npc_actions(self) -> None:
-        """Process all NPCs who can currently afford actions immediately.
+        """Process NPCs who can currently afford actions this logic step.
 
-        This eliminates the artificial frame-rate delay that was breaking speed ratios
-        in RAF V1. All NPCs who gained sufficient energy from the last player action
-        will act immediately, maintaining perfect proportional speed relationships.
+        Combat mode: process one NPC per tick, gated on presentation timing, so
+        reactions are sequenced and readable (player can follow cause and effect).
 
-        NPC actions wait for presentation timing to complete, creating readable
-        sequencing where players can follow cause and effect.
+        Explore mode: process all ready NPCs immediately, ungated by presentation
+        timing, so ambient wandering NPCs act in parallel on their own rhythms
+        instead of being serialized into a one-per-second metronome.
         """
-        # Wait for current action's presentation to complete before NPCs act
-        if not self.turn_manager.is_presentation_complete():
-            return
-
-        # Process all available NPC actions from TurnManager
-        self.turn_manager.process_all_npc_reactions()
+        if self.is_combat_mode():
+            # Wait for current action's presentation to complete before NPCs act
+            if not self.turn_manager.is_presentation_complete():
+                return
+            self.turn_manager.process_all_npc_reactions()
+        else:
+            self.turn_manager.process_all_ready_npcs_immediately()
 
     def queue_action(self, action: GameIntent) -> None:
         """
@@ -1440,7 +1447,12 @@ class Controller:
 
     def enter_combat_mode(self) -> None:
         """Enter combat mode from current mode."""
+        already_in_combat = self.is_combat_mode()
         self.transition_to_mode(self.combat_mode)
+        if not already_in_combat:
+            # NPCs may have wandered up with a full ambient energy bar. Zero it
+            # so combat starts player-driven and nobody gets a free instant hit.
+            self.turn_manager.clamp_npc_energy_for_combat()
 
     def exit_combat_mode(
         self, reason: CombatEndReason = CombatEndReason.MANUAL_EXIT

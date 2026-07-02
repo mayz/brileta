@@ -209,6 +209,10 @@ class DummyTurnManager:
         """Dummy implementation for held-key NPC processing."""
         pass
 
+    def accumulate_ambient_energy(self, timestep: FixedTimestep) -> None:
+        """Dummy implementation of explore-mode ambient energy accrual."""
+        pass
+
     def _apply_terrain_hazard(self, actor: Any) -> None:
         """Dummy implementation for terrain hazard checks."""
         pass

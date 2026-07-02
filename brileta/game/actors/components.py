@@ -1324,6 +1324,14 @@ class EnergyComponent:
     accumulated_energy: float = 0.0
     max_energy: int = 200  # Energy cap to prevent infinite accumulation
     actor: Actor | None = None  # Set by Actor.__init__ after construction
+    # Whether this NPC's one-time explore-mode ambient flavor (phase offset and
+    # speed multiplier) has been applied yet (see
+    # TurnManager.accumulate_ambient_energy).
+    ambient_phased: bool = False
+    # Per-NPC multiplier on explore-mode ambient accrual rate, so same-speed
+    # NPCs stroll at slightly different paces. Only affects ambient accrual, not
+    # combat/player-action energy. Seeded on first ambient accrual.
+    ambient_speed_multiplier: float = 1.0
 
     @property
     def energy(self) -> float:

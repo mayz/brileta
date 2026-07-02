@@ -16,6 +16,7 @@ from brileta.game.actors.status_effects import StaggeredEffect
 from brileta.game.enums import ActionBlockReason
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
+from brileta.types import FixedTimestep
 from tests.helpers import DummyGameWorld, get_controller_with_player_and_map
 
 
@@ -92,6 +93,13 @@ class DummyController:
         self.update_fov_called = False
         self.message_log = type("Log", (), {"add_message": lambda *a, **kw: None})()
         self.combat_tooltip_invalidations = 0
+        # Most turn-manager tests exercise the player-action-driven RAF, which is
+        # now the combat-mode energy path, so default the dummy to combat mode.
+        # Explore-mode tests flip this to False.
+        self.combat_mode_active = True
+
+    def is_combat_mode(self) -> bool:
+        return self.combat_mode_active
 
     def invalidate_combat_tooltip(self) -> None:
         self.combat_tooltip_invalidations += 1
@@ -379,6 +387,204 @@ def test_npc_on_hazard_takes_damage_once_per_player_action() -> None:
     controller.turn_manager.on_player_action()
     second_damage = hp_after_first - npc.health.hp
     assert second_damage >= 1, "NPC should take damage again on next player action"
+
+
+# --- Ambient Energy Tests ---
+
+
+def test_ambient_energy_accrues_for_npcs_on_their_own_cadence() -> None:
+    """In explore mode NPCs accrue time-driven energy over steps; the player doesn't.
+
+    A standard-speed NPC should afford one action after roughly
+    AMBIENT_ACTION_INTERVAL_SECONDS of real time, and not before.
+    """
+    controller, player, npc = make_world()
+    controller.combat_mode_active = False
+    tm = controller.turn_manager
+    assert npc.energy is not None and player.energy is not None
+
+    # Skip the one-time random phase offset so we measure accrual from zero.
+    npc.energy.accumulated_energy = 0.0
+    npc.energy.ambient_phased = True
+    player.energy.accumulated_energy = 0.0
+
+    timestep = FixedTimestep(1.0 / 60.0)
+    steps = round(config.AMBIENT_ACTION_INTERVAL_SECONDS / timestep)
+
+    # Halfway through the interval the NPC can't act yet (own cadence).
+    for _ in range(steps // 2):
+        tm.accumulate_ambient_energy(timestep)
+    assert not npc.energy.can_afford(config.ACTION_COST)
+
+    # After a full interval's worth of steps it has essentially one action's
+    # worth of energy (float accrual may land a hair under, crossing one tick
+    # later in game - the cadence is what matters, not the exact tick).
+    for _ in range(steps - steps // 2):
+        tm.accumulate_ambient_energy(timestep)
+    assert npc.energy.accumulated_energy >= config.ACTION_COST - 1
+
+    # The player never gains per-tick energy - only their own actions grant it.
+    assert player.energy.accumulated_energy == 0.0
+
+
+def test_faster_npcs_accrue_ambient_energy_faster() -> None:
+    """A faster NPC accrues more ambient energy per step than a slower one."""
+    controller, _player, _npc = make_world()
+    controller.combat_mode_active = False
+    gw = controller.gw
+    fast = NPC(1, 1, "f", colors.RED, "Fast", game_world=cast(GameWorld, gw), speed=200)
+    slow = NPC(2, 2, "s", colors.RED, "Slow", game_world=cast(GameWorld, gw), speed=50)
+    gw.add_actor(fast)
+    gw.add_actor(slow)
+    assert fast.energy is not None and slow.energy is not None
+    # Skip the one-time random phase offset so we compare raw accrual rates.
+    fast.energy.accumulated_energy = 0.0
+    fast.energy.ambient_phased = True
+    slow.energy.accumulated_energy = 0.0
+    slow.energy.ambient_phased = True
+
+    tm = controller.turn_manager
+    tm.invalidate_cache()  # pick up the newly added actors
+    # A single step, below the cap, so we compare raw accrual rates.
+    tm.accumulate_ambient_energy(FixedTimestep(1.0 / 60.0))
+
+    assert fast.energy.accumulated_energy > slow.energy.accumulated_energy
+
+
+def test_player_action_grants_npc_energy_only_in_combat() -> None:
+    """on_player_action grants NPC energy in combat but not in explore (no stacking)."""
+    controller, _player, npc = make_world()
+    tm = controller.turn_manager
+    assert npc.energy is not None
+    npc.energy.accumulated_energy = 0.0
+
+    # Explore mode: the player's action grants the NPC nothing (energy is ambient).
+    controller.combat_mode_active = False
+    tm.on_player_action()
+    assert npc.energy.accumulated_energy == 0.0
+
+    # Combat mode: the NPC accrues speed-based energy per player action (RAF).
+    controller.combat_mode_active = True
+    tm.on_player_action()
+    assert npc.energy.accumulated_energy > 0.0
+
+
+def test_no_ambient_accrual_in_combat_mode() -> None:
+    """update_logic_step accrues ambient energy in explore but skips it in combat."""
+    controller = get_controller_with_player_and_map()
+    calls = 0
+
+    def _spy(_timestep: FixedTimestep) -> None:
+        nonlocal calls
+        calls += 1
+
+    controller.turn_manager.accumulate_ambient_energy = _spy  # type: ignore[method-assign]
+
+    # Explore mode: ambient accrual runs each logic step.
+    controller.update_logic_step()
+    assert calls == 1
+
+    # Combat mode: ambient accrual is skipped.
+    controller.mode_stack.append(controller.combat_mode)
+    assert controller.is_combat_mode()
+    controller.update_logic_step()
+    assert calls == 1
+
+
+def test_idle_npc_consumes_turn_in_explore_not_combat() -> None:
+    """An affordable NPC with no action loiters (spends a turn) in explore mode,
+    but keeps its energy in combat (reactive per-tick polling)."""
+    controller, _player, npc = make_world()
+    tm = controller.turn_manager
+    assert npc.energy is not None
+    # Force the AI to decline to act, like a wander pause.
+    npc.get_next_action = lambda _controller: None  # type: ignore[method-assign]
+
+    # Explore: the idle NPC spends its turn's energy so it isn't re-polled every
+    # logic step (which would burn the wander AI's linger counters in ms).
+    controller.combat_mode_active = False
+    npc.energy.accumulated_energy = config.ACTION_COST
+    tm._try_process_npc(npc, record_timing=False)
+    assert npc.energy.accumulated_energy == 0
+
+    # Combat: the idle NPC keeps its energy, unchanged reactive behavior.
+    controller.combat_mode_active = True
+    npc.energy.accumulated_energy = config.ACTION_COST
+    tm._try_process_npc(npc, record_timing=False)
+    assert npc.energy.accumulated_energy == config.ACTION_COST
+
+
+def test_loitering_npc_on_hazard_takes_damage_in_explore() -> None:
+    """A loitering NPC (no action) on a hazard still takes damage in explore mode.
+
+    Regression: hazard was only applied on the acted branch, so an idling or
+    paused NPC standing on acid/coals consumed turns while taking no damage.
+    """
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+    npc = NPC(
+        3, 3, "r", colors.RED, "Raider", game_world=cast(GameWorld, gw), toughness=20
+    )
+    gw.add_actor(npc)
+    # Force the AI to decline to act, like a wander pause / idler.
+    npc.get_next_action = lambda _controller: None  # type: ignore[method-assign]
+    gw.game_map.tiles[3, 3] = TileTypeID.HOT_COALS
+
+    controller = DummyController(gw=gw)
+    controller.combat_mode_active = False
+    assert npc.energy is not None
+    npc.energy.accumulated_energy = config.ACTION_COST
+    initial_hp = npc.health.hp
+
+    controller.turn_manager._try_process_npc(npc, record_timing=False)
+
+    assert npc.health.hp < initial_hp
+
+
+def test_clamp_npc_energy_for_combat_zeros_npcs_not_player() -> None:
+    """Combat entry zeros NPC energy so nobody gets a free instant attack."""
+    controller, player, npc = make_world()
+    tm = controller.turn_manager
+    assert npc.energy is not None and player.energy is not None
+    npc.energy.accumulated_energy = config.ACTION_COST
+    player.energy.accumulated_energy = config.ACTION_COST
+
+    tm.clamp_npc_energy_for_combat()
+
+    assert npc.energy.accumulated_energy == 0.0
+    # The player's energy is left untouched.
+    assert player.energy.accumulated_energy == config.ACTION_COST
+
+
+def test_same_speed_npcs_desync_via_ambient_phase() -> None:
+    """Two same-speed NPCs get different one-time phase offsets on first accrual.
+
+    With equal per-step accrual, a nonzero phase gap is preserved forever, so
+    the two NPCs cross their action threshold on different ticks instead of
+    marching in lockstep.
+    """
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    a = NPC(1, 1, "a", colors.RED, "A", game_world=cast(GameWorld, gw), speed=100)
+    b = NPC(2, 2, "b", colors.RED, "B", game_world=cast(GameWorld, gw), speed=100)
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(a)
+    gw.add_actor(b)
+    controller = DummyController(gw=gw)
+    assert a.energy is not None and b.energy is not None
+
+    # Both start at 0; the first ambient accrual applies each NPC's phase offset.
+    controller.turn_manager.accumulate_ambient_energy(FixedTimestep(1.0 / 60.0))
+
+    assert a.energy.accumulated_energy != b.energy.accumulated_energy
 
 
 # --- Action Prevention Tests ---

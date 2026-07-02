@@ -14,9 +14,10 @@ energy economy (faster actors naturally get more actions over time) and
 smooth world presentation (simultaneous NPC reactions).
 
 Key Principles:
-- Energy accumulates ONLY when the player acts (turn-based, not real-time)
-- Faster actors get proportionally more energy per player action
-- No time passes when player is idle - game state is stable
+- Combat mode: energy accumulates when the player acts (turn-based, reactive)
+- Explore mode: NPC energy accrues over real time so the world keeps moving
+  while the player is idle; the player still only gains energy by acting
+- Faster actors get proportionally more energy over time
 - Action execution is distributed smoothly over frames for visual appeal
 
 Presentation Timing:
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from brileta import config
@@ -37,7 +39,8 @@ from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.game.enums import ActionBlockReason
 from brileta.game.ranges import calculate_distance
-from brileta.types import DIRECTIONS, ActorId
+from brileta.types import DIRECTIONS, ActorId, FixedTimestep
+from brileta.util import rng
 from brileta.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
@@ -50,6 +53,10 @@ if TYPE_CHECKING:
 # AdjacencyRetryKey is the key for adjacency-rewind retry counts.
 type PlanInstanceId = int
 type AdjacencyRetryKey = tuple[ActorId, PlanInstanceId]
+
+# Deterministic RNG stream for each NPC's one-time ambient-energy phase offset,
+# so same-speed NPCs don't cross their action threshold on the same tick.
+_ambient_phase_rng = rng.get("npc.energy_phase")
 
 
 class TurnManager:
@@ -181,35 +188,125 @@ class TurnManager:
         """
         self._pending_duration_ms = 0
 
-    def on_player_action(self) -> None:
-        """Handle per-turn updates when player acts.
+    def _npc_energy_actors(self) -> Iterator[Actor]:
+        """Yield each non-player actor with an energy component.
 
-        This method is called once per player action and handles:
-        1. Energy accumulation for all actors
-        2. Terrain hazard damage for all NPCs
-
-        Action processing is handled separately by process_all_npc_reactions()
-        which runs every tick to check if NPCs can afford actions.
+        Refreshes the energy-actor cache first so callers get a current view,
+        and centralizes the shared "skip the player" rule of the energy passes.
         """
-        # Update cache if needed for performance
         self._update_energy_actors_cache()
-
-        # Single pass: accumulate energy and apply terrain hazards.
-        # The cache only contains actors with non-None energy.
         for actor in self._energy_actors_cache:
             assert actor.energy is not None  # Guaranteed by cache filter
-            actor.energy.accumulate_energy(actor.energy.get_speed_based_energy_amount())
             if actor is not self.player:
-                # Cap NPC energy to prevent double-actions from accumulation.
-                # Without this, NPCs could store 200 energy (2 actions) while
-                # the player walks toward them, causing double-moves on contact.
-                actor.energy.accumulated_energy = min(
-                    actor.energy.accumulated_energy,
-                    config.ACTION_COST,
+                yield actor
+
+    @staticmethod
+    def _cap_npc_energy(actor: Actor) -> None:
+        """Cap an NPC's energy at one action's worth so it can't bank double-actions.
+
+        Without this, an NPC could store 200 energy (two actions) while the
+        player walks toward them, causing double-moves on contact.
+        """
+        assert actor.energy is not None
+        actor.energy.accumulated_energy = min(
+            actor.energy.accumulated_energy,
+            config.ACTION_COST,
+        )
+
+    def on_player_action(self) -> None:
+        """Handle per-turn updates when the player acts.
+
+        The player always gains their own speed-based energy here (autopilot
+        checks can_afford, so the player needs an income). NPC handling depends
+        on the mode:
+
+        - Combat mode: NPCs also accumulate speed-based energy and take terrain
+          hazard damage once per player action - the reactive, turn-based RAF.
+        - Explore mode: NPCs are skipped entirely. Their energy is time-driven
+          via accumulate_ambient_energy() and their hazard damage is applied at
+          their own action moment, so the two energy sources never stack.
+
+        Action processing is handled separately by process_all_npc_reactions()
+        (combat) or process_all_ready_npcs_immediately() (explore).
+        """
+        # The player always earns their own energy from acting.
+        if self.player.energy is not None:
+            self.player.energy.accumulate_energy(
+                self.player.energy.get_speed_based_energy_amount()
+            )
+
+        # Explore mode: NPC energy is purely time-driven, so player actions grant
+        # NPCs nothing - keeping the two sources from stacking. Combat keeps the
+        # reactive per-player-action RAF grant.
+        if not self.controller.is_combat_mode():
+            return
+
+        for actor in self._npc_energy_actors():
+            assert actor.energy is not None  # Narrow for the type checker
+            actor.energy.accumulate_energy(actor.energy.get_speed_based_energy_amount())
+            self._cap_npc_energy(actor)
+            # Apply terrain hazard damage (e.g. hot coals) once per player action
+            # so NPCs don't take damage every tick.
+            self._apply_terrain_hazard(actor)
+
+    def accumulate_ambient_energy(self, timestep: FixedTimestep) -> None:
+        """Accrue time-driven energy for NPCs each fixed logic step (explore mode).
+
+        Each NPC gains a slice of energy scaled by its own speed, sized so a
+        standard-speed NPC affords one action per
+        config.AMBIENT_ACTION_INTERVAL_SECONDS of real time. Faster NPCs cross
+        the action threshold sooner and slower ones later, so each acts on its
+        own cadence instead of a synchronized global pulse.
+
+        The player is skipped - the player only gains energy from their own
+        actions. NPC energy is capped at one action's worth so NPCs can't bank
+        double-actions. Terrain hazards are applied at the NPC's own action
+        moment (in _try_process_npc), not here.
+
+        Args:
+            timestep: The fixed logic step duration in seconds.
+        """
+        interval = config.AMBIENT_ACTION_INTERVAL_SECONDS
+        for actor in self._npc_energy_actors():
+            assert actor.energy is not None  # Narrow for the type checker
+
+            # On an NPC's first ambient accrual, give it a one-time random phase
+            # offset (so same-speed NPCs don't march in lockstep) and a small
+            # speed multiplier (so they stroll at slightly different paces). The
+            # wander AI's own random pauses spread them further apart.
+            if not actor.energy.ambient_phased:
+                actor.energy.ambient_phased = True
+                actor.energy.ambient_speed_multiplier = _ambient_phase_rng.uniform(
+                    0.8, 1.2
                 )
-                # Apply terrain hazard damage (e.g. hot coals) once per player
-                # action so NPCs don't take damage every tick.
-                self._apply_terrain_hazard(actor)
+                actor.energy.accumulate_energy(
+                    _ambient_phase_rng.uniform(0.0, config.ACTION_COST)
+                )
+
+            # get_speed_based_energy_amount() is ACTION_COST worth for a
+            # standard NPC, so spreading it over `interval` seconds of steps
+            # yields one action per interval at standard speed. The per-NPC
+            # multiplier varies that pace slightly.
+            per_step = (
+                actor.energy.get_speed_based_energy_amount()
+                * actor.energy.ambient_speed_multiplier
+                * timestep
+                / interval
+            )
+            actor.energy.accumulate_energy(per_step)
+            self._cap_npc_energy(actor)
+
+    def clamp_npc_energy_for_combat(self) -> None:
+        """Zero NPC accumulated energy on combat entry.
+
+        In explore mode NPCs accrue energy over real time and may wander up with
+        a full bar. Combat is player-action-driven, so this resets NPC energy on
+        entry to prevent an NPC getting a free instant attack before the player
+        has acted. The player's energy is left untouched.
+        """
+        for actor in self._npc_energy_actors():
+            assert actor.energy is not None  # Narrow for the type checker
+            actor.energy.accumulated_energy = 0.0
 
     def process_all_npc_reactions(self) -> None:
         """Process ONE NPC who can currently afford an action.
@@ -277,6 +374,16 @@ class TurnManager:
             action = self._get_intent_from_plan(actor)
 
         if action is None:
+            # Explore mode: an affordable NPC that chooses not to act (e.g. a
+            # wander pause) consumes its turn - tick its effects and spend a
+            # turn's energy - so it actually loiters for an action interval
+            # instead of being re-polled every logic step (60Hz), which would
+            # burn the wander AI's linger counters in milliseconds. Combat keeps
+            # its reactive per-tick polling unchanged.
+            if not self.controller.is_combat_mode():
+                actor.update_turn(self.controller)
+                actor.energy.spend(config.ACTION_COST)
+                self._apply_explore_turn_hazard(actor)
             return False
 
         # Check if actor is prevented from acting BEFORE update_turn
@@ -285,6 +392,7 @@ class TurnManager:
             # can't attempt again this cycle. update_turn decrements duration.
             actor.update_turn(self.controller)
             actor.energy.accumulated_energy = 0
+            self._apply_explore_turn_hazard(actor)
             return True
 
         # Actor can act - update their turn effects first
@@ -296,6 +404,8 @@ class TurnManager:
         else:
             result = self.action_router.execute_intent(action)
         actor.energy.spend(config.ACTION_COST)
+
+        self._apply_explore_turn_hazard(actor)
 
         # Handle plan advancement for NPCs with active plans
         if isinstance(actor, Character) and actor.active_plan is not None:
@@ -309,6 +419,18 @@ class TurnManager:
                 self._handle_intent_step_result(actor, result)
 
         return True
+
+    def _apply_explore_turn_hazard(self, actor: Actor) -> None:
+        """Apply terrain hazard once per NPC turn, in explore mode only.
+
+        In explore, an NPC takes hazard damage whenever it consumes a turn -
+        acting, waiting (wander pause), or being prevented - so a loitering NPC
+        standing in acid or on hot coals still gets hurt. In combat, hazard is
+        applied per player action in on_player_action() instead, so we skip it
+        here to avoid doubling it.
+        """
+        if not self.controller.is_combat_mode():
+            self._apply_terrain_hazard(actor)
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.
@@ -346,7 +468,10 @@ class TurnManager:
                 affected_coords=[(actor.x, actor.y)],
                 source_description=tile_name,
             )
-            self.execute_intent(intent)
+            # Route through the router directly, not execute_intent(), so this
+            # passive side effect never records presentation timing - hazards
+            # shouldn't overwrite the pacing state of the turn that triggered them.
+            self.action_router.execute_intent(intent)
 
     def execute_intent(self, intent: GameIntent) -> GameActionResult:
         """Execute a single GameIntent by routing it to the ActionRouter.

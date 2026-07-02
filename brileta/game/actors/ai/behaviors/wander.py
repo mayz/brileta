@@ -31,11 +31,15 @@ if TYPE_CHECKING:
 _rng = rng.get("npc.goals")
 
 # Wander tuning: sustained stroll with occasional pauses and direction changes.
+# A wander turn is now roughly one real second (explore-mode ambient energy), and
+# a pause spends the turn, so pause frequency/length translate directly into
+# real-time idle. These are tuned so NPCs mostly move with brief occasional
+# pauses (~15% idle) instead of standing around half the time.
 _WANDER_MAX_STUCK_TURNS = 2
 _WANDER_HEADING_JITTER_CHANCE = 0.15
-_WANDER_PAUSE_CHANCE = 0.20
-_WANDER_MIN_LINGER_TURNS = 2
-_WANDER_MAX_LINGER_TURNS = 6
+_WANDER_PAUSE_CHANCE = 0.10
+_WANDER_MIN_LINGER_TURNS = 1
+_WANDER_MAX_LINGER_TURNS = 3
 _WANDER_NEW_HEADING_CHANCE = 0.05
 _WANDER_SPEED_MIN = 0.60
 _WANDER_SPEED_MAX = 0.90

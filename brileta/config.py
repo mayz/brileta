@@ -208,6 +208,12 @@ VSYNC = not PERFORMANCE_PROFILING
 ACTION_COST = 100  # Energy cost for standard actions
 DEFAULT_ACTOR_SPEED = 100  # Default speed for actors (energy gained per round)
 
+# Explore-mode ambient energy: a standard-speed NPC (speed 100) accrues enough
+# time-driven energy to afford one action per this many seconds of real time, so
+# the world keeps moving while the player is idle. Faster NPCs cross their action
+# threshold sooner. Lower this to make idle NPCs act more often (move faster).
+AMBIENT_ACTION_INTERVAL_SECONDS = 0.5
+
 # Set to False to make hostile NPCs passive (won't attack or pursue)
 # NPCs will still perform reactive behaviors like escaping hazards.
 HOSTILE_AI_ENABLED = True

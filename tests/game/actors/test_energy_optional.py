@@ -237,6 +237,9 @@ class DummyController:
         self.turn_manager = TurnManager(cast(Controller, self))
         self.message_log = type("Log", (), {"add_message": lambda *a, **kw: None})()
 
+    def is_combat_mode(self) -> bool:
+        return False
+
     def update_fov(self) -> None:
         pass
 
