@@ -332,8 +332,9 @@ def _roll_standard_body_params(rng: np.random.Generator, size: int) -> BodyParam
 
 
 def _roll_belly_body_params(rng: np.random.Generator, size: int) -> BodyParams:
-    chest_ry = 1.2 + float(rng.uniform(0, 0.3))
-    belly_ry = 3.5 + float(rng.uniform(0, 1.0))
+    chest_ry = 1.1 + float(rng.uniform(0, 0.3))
+    # Rounder, wider belly so this build reads clearly heavier than standard.
+    belly_ry = 3.8 + float(rng.uniform(0, 1.0))
     return BodyParams(
         canvas_size=size,
         head_radius=3.0 + float(rng.uniform(0, 0.4)),
@@ -341,7 +342,7 @@ def _roll_belly_body_params(rng: np.random.Generator, size: int) -> BodyParams:
         torso_rx=3.2 + float(rng.uniform(0, 0.4)),
         torso_ry=chest_ry,
         torso_cy_factor=0.4,
-        belly_rx=3.8 + float(rng.uniform(0, 0.8)),
+        belly_rx=4.2 + float(rng.uniform(0, 0.8)),
         belly_ry=belly_ry,
         belly_cy_offset=chest_ry * 0.4 + belly_ry * 0.55,
         shoulder_width=0.0,
@@ -436,10 +437,12 @@ def _roll_thin_body_params(rng: np.random.Generator, size: int) -> BodyParams:
 def _roll_child_body_params(rng: np.random.Generator, size: int) -> BodyParams:
     return BodyParams(
         canvas_size=max(8, size - 5),
-        head_radius=3.5 + float(rng.uniform(0, 0.3)),
+        # Bigger head-to-body ratio: larger head over a small narrow torso is
+        # the strongest cue that reads "child" at 1x.
+        head_radius=3.9 + float(rng.uniform(0, 0.3)),
         head_top_pad=1.2,
-        torso_rx=2.5,
-        torso_ry=1.35,
+        torso_rx=2.0,
+        torso_ry=1.25,
         torso_cy_factor=0.5,
         belly_rx=0.0,
         belly_ry=0.0,

@@ -34,7 +34,7 @@ from brileta.sprites.characters import (
 )
 from brileta.sprites.primitives import paste_sprite
 
-POSE_DIAGNOSTIC_LABEL_WIDTH = 104
+POSE_DIAGNOSTIC_LABEL_WIDTH = 150
 POSE_DIAGNOSTIC_HEADER_HEIGHT = 20
 POSE_DIAGNOSTIC_COLUMN_LABELS: list[str] = [
     "Front",
@@ -161,6 +161,13 @@ def generate_front_diagnostic_sheet(
     return sheet, metadata, cell_labels
 
 
+# Fixed seed set for the judge loop. Chosen once by greedy coverage so the
+# twelve sprites span all 5 builds, all 5 hair styles, and every distinct
+# clothing type (bare/shirt/armor/robe). Never change mid-track: comparability
+# across iterations depends on rendering the exact same characters every time.
+JUDGE_SEEDS: tuple[int, ...] = (0, 1, 2, 3, 4, 8, 11, 12, 14, 19, 21, 23)
+
+
 def generate_pose_sheet(
     n_characters: int = 20,
     base_size: int = 20,
@@ -170,8 +177,18 @@ def generate_pose_sheet(
     *,
     include_labels: bool = False,
     start_id: int = 1,
+    seeds: list[int] | None = None,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
-    """Generate rows of front/back/left/right pose frames for each character."""
+    """Generate rows of front/back/left/right pose frames for each character.
+
+    When *seeds* is given, those explicit seeds are rendered (one per row) and
+    *n_characters*/*base_seed* are ignored. Otherwise rows use consecutive seeds
+    starting at *base_seed*.
+    """
+    row_seeds = (
+        seeds if seeds is not None else [base_seed + r for r in range(n_characters)]
+    )
+    n_characters = len(row_seeds)
     cell = base_size + 8 + padding
     label_width = POSE_DIAGNOSTIC_LABEL_WIDTH if include_labels else 0
     header_height = POSE_DIAGNOSTIC_HEADER_HEIGHT if include_labels else 0
@@ -186,7 +203,7 @@ def generate_pose_sheet(
     metadata: list[dict[str, object]] = []
 
     for row in range(n_characters):
-        seed = base_seed + row
+        seed = row_seeds[row]
         appearance = CharacterAppearance.from_seed(seed, base_size)
         directional_sprites = [draw_character_pose(appearance, pose) for pose in POSES]
 
@@ -204,7 +221,11 @@ def generate_pose_sheet(
 
         if include_labels:
             sprite_id = start_id + row
-            labels.append(f"{sprite_id} seed {seed}")
+            labels.append(
+                f"{sprite_id} s{seed} {appearance.build_name}/"
+                f"{HAIR_STYLE_NAMES[appearance.hair_style_idx]}/"
+                f"{CLOTHING_STYLE_NAMES[appearance.clothing_style_idx]}"
+            )
             row_meta = _appearance_metadata(row, seed, appearance)
             row_meta["id"] = sprite_id
             metadata.append(row_meta)
@@ -411,9 +432,53 @@ if __name__ == "__main__":
         default=1,
         help="Starting sprite ID used by --front-diagnostic and --diagnostic.",
     )
+    parser.add_argument(
+        "--judge-sheet",
+        action="store_true",
+        help=(
+            "Render the fixed JUDGE_SEEDS set into a snapshot dir (-o DIR): "
+            "sheet_8x.png (labeled 8x closeup), sheet_1x.png (game scale), "
+            "and params.json."
+        ),
+    )
 
     args = parser.parse_args()
     output_path = Path(args.output)
+
+    if args.judge_sheet:
+        snapshot_dir = Path(args.output)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        sheet, judge_labels, judge_meta = generate_pose_sheet(
+            base_size=args.size,
+            include_labels=True,
+            start_id=1,
+            seeds=list(JUDGE_SEEDS),
+        )
+        # 8x labeled closeup for detailed critique.
+        _save_sheet_with_labels(
+            sheet,
+            snapshot_dir / "sheet_8x.png",
+            scale=8,
+            row_labels=judge_labels,
+            column_labels=POSE_DIAGNOSTIC_COLUMN_LABELS,
+            label_width=POSE_DIAGNOSTIC_LABEL_WIDTH,
+            header_height=POSE_DIAGNOSTIC_HEADER_HEIGHT,
+            base_size=args.size,
+        )
+        # 1x game-scale strip: same layout, no text, on the dark cell background.
+        strip, _, _ = generate_pose_sheet(
+            base_size=args.size,
+            include_labels=False,
+            seeds=list(JUDGE_SEEDS),
+        )
+        _save_sheet_with_labels(
+            strip, snapshot_dir / "sheet_1x.png", scale=1, base_size=args.size
+        )
+        (snapshot_dir / "params.json").write_text(
+            json.dumps(judge_meta, indent=2), encoding="utf-8"
+        )
+        print(f"Saved judge sheets to {snapshot_dir}")
+        sys.exit(0)
 
     labels: list[str] | None = None
     cell_labels: list[tuple[int, int, str]] | None = None

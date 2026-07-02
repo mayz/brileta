@@ -13,6 +13,7 @@ from brileta.types import Facing
 from .appearance import POSE_STAND, POSES, BodyParams, CharacterAppearance, Pose
 from .body import (
     _layer_back_arm,
+    _layer_back_definition,
     _layer_belly,
     _layer_face_final,
     _layer_front_arm,
@@ -104,6 +105,7 @@ _CHARACTER_LAYER_PIPELINE: tuple[CharacterLayerStep, ...] = (
     ("neck", _layer_neck),
     ("head", _layer_head),
     ("hair", _layer_hair),
+    ("back_definition", _layer_back_definition),
     ("face", _layer_face_final),
 )
 
@@ -134,12 +136,28 @@ def _render_pose(appearance: CharacterAppearance, pose: Pose) -> np.ndarray:
     canvas_size = appearance.body_params.canvas_size
     canvas = np.zeros((canvas_size, canvas_size, 4), dtype=np.uint8)
     _draw_character(canvas, appearance, pose)
+    # Snap the soft anti-aliased silhouette to a hard 1-bit edge. Every layer
+    # stamps with alpha falloff, which leaves a mushy computed-looking rim; a
+    # clean opaque/transparent cut is what reads as deliberate pixel art.
+    _harden_alpha(canvas)
     # Side profile drawing is authored left-facing. Materialize EAST-facing
     # sprites by mirroring here so runtime only needs UV selection.
     if pose.facing is Facing.EAST:
         canvas = np.ascontiguousarray(canvas[:, ::-1, :])
     darken_rim(canvas, (35, 35, 25))
     return canvas
+
+
+# Alpha at/above this threshold becomes fully opaque; below it becomes fully
+# transparent. Chosen just under the faint-overlay band (~145) so intentional
+# semi-transparent shading strokes survive as solid pixels.
+_ALPHA_SNAP_THRESHOLD: int = 110
+
+
+def _harden_alpha(canvas: np.ndarray) -> None:
+    """Binarize the alpha channel in-place for crisp pixel-art edges."""
+    alpha = canvas[:, :, 3]
+    canvas[:, :, 3] = np.where(alpha >= _ALPHA_SNAP_THRESHOLD, 255, 0).astype(np.uint8)
 
 
 def draw_character_pose(appearance: CharacterAppearance, pose: Pose) -> np.ndarray:

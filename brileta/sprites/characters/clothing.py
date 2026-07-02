@@ -57,9 +57,22 @@ def _draw_torso_mass(
     b = PaletteBrush(canvas, palette)
     b.ellipse(cx, cy + 0.3, rx + 0.3, ry + 0.3, tone=0, alpha=240)
     b.ellipse(cx, cy, rx, ry)
+    # Single top-left light: highlight biased up-left, a matching shadow crescent
+    # low-right. Reads as a directionally-lit rounded torso instead of a flat
+    # mid fill with a centered top glint.
     b.ellipse(
-        cx,
-        cy + ry * -0.25,
+        cx + rx * 0.28,
+        cy + ry * 0.32,
+        rx * 0.6,
+        ry * 0.5,
+        tone=0,
+        alpha=185,
+        falloff=1.7,
+        hardness=0.72,
+    )
+    b.ellipse(
+        cx - rx * 0.3,
+        cy + ry * -0.28,
         highlight_rx,
         highlight_ry,
         tone=2,

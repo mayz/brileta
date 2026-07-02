@@ -11,9 +11,20 @@ from brileta.sprites.primitives import HeadBrush, Palette3
 from brileta.types import Facing
 
 from .appearance import _luma
+from .hair_masks import MASK_SETS
+from .masks import render_mask
 
 if TYPE_CHECKING:
     from .renderer import CharacterDrawContext
+
+
+def _facing_mask_key(facing: Facing) -> str:
+    """Map a facing to the hair-mask dict key (side masks are authored WEST)."""
+    if facing == Facing.NORTH:
+        return "north"
+    if facing in {Facing.EAST, Facing.WEST}:
+        return "side"
+    return "south"
 
 
 HairDrawFn = Callable[
@@ -399,6 +410,22 @@ def _layer_hair(context: CharacterDrawContext) -> None:
     hx = context.cx
     hy = context.head_cy
     hr = context.hr
+
+    # Track B: hand-authored pixel masks replace the ellipse hair layer (and its
+    # readability overlays) for every non-bald style. The masks are crisp,
+    # palette-toned, and already back-weighted on profiles, so the ellipse
+    # compensation passes below are not needed when a mask set applies.
+    mask_set = MASK_SETS.get(appearance.hair_style_idx)
+    if mask_set is not None:
+        render_mask(
+            canvas,
+            mask_set[_facing_mask_key(facing)],
+            appearance.hair_pal,
+            hx,
+            hy,
+            hr,
+        )
+        return
 
     hair_fn = HAIR_STYLES[appearance.hair_style_idx]
     hair_rng = np.random.default_rng(appearance.hair_seed)

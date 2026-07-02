@@ -16,7 +16,7 @@ from brileta.sprites.primitives import (
 from brileta.types import Facing
 
 from .clothing import _draw_armor_torso, _draw_bare_torso, _draw_belly_mass
-from .hair import HAIR_IDX_TALL
+from .hair import HAIR_IDX_LONG, HAIR_IDX_TALL
 
 if TYPE_CHECKING:
     from .renderer import CharacterDrawContext
@@ -166,7 +166,7 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
     belly_cy = context.belly_cy
 
     s_shadow, s_mid, _s_hi = appearance.skin_pal
-    c_shadow, c_mid, _c_hi = appearance.cloth_pal
+    c_shadow, _c_mid, _c_hi = appearance.cloth_pal
     shoulder_y = torso_cy - params.torso_ry * params.arm_shoulder_factor
 
     if params.arm_end_from_belly and params.belly_ry > 0:
@@ -186,16 +186,24 @@ def _build_arm_layer_state(context: CharacterDrawContext) -> ArmLayerState:
         + params.shoulder_width * params.arm_shoulder_anchor_shoulder_width_factor
     )
 
+    # Arms overlap the torso silhouette, so drawing them in the torso's own mid
+    # tone made them vanish. Draw the arm one tone darker than the torso (its
+    # main stroke uses the shadow tone) so the limb reads as a separate, shaded
+    # mass against the mid-tone torso even at 1x game scale.
     if appearance.clothing_fn is _draw_bare_torso:
-        arm_shadow_rgb = (
+        arm_shadow_rgb = s_shadow
+        arm_mid_rgb = (
             (s_shadow[0] + s_mid[0]) // 2,
             (s_shadow[1] + s_mid[1]) // 2,
             (s_shadow[2] + s_mid[2]) // 2,
         )
-        arm_mid_rgb = s_mid
     else:
-        arm_shadow_rgb = c_shadow
-        arm_mid_rgb = c_mid
+        arm_shadow_rgb = (
+            (c_shadow[0] * 3) // 4,
+            (c_shadow[1] * 3) // 4,
+            (c_shadow[2] * 3) // 4,
+        )
+        arm_mid_rgb = c_shadow
 
     return ArmLayerState(
         shoulder_y=shoulder_y,
@@ -392,6 +400,81 @@ def _layer_head(context: CharacterDrawContext) -> None:
         b.circle(hx, hy + 0.2, hr + 0.2, tone=0, alpha=240)
         b.circle(hx, hy, hr)
         b.rel_circle(0.0, -0.22, 0.6, tone=2, alpha=210, falloff=1.6, hardness=0.75)
+
+
+def _layer_back_definition(context: CharacterDrawContext) -> None:
+    """Separate head from torso on the back view.
+
+    From behind, the head (all hair or all skin) sits directly on the torso with
+    nothing between them, so a same-toned hair/body pair merges into one
+    featureless blob. Draw a nape contact shadow at the neck and top-left form
+    highlights on the shoulders (after hair, so they are not overpainted) to read
+    the head and body as two rounded masses.
+    """
+    if context.facing != Facing.NORTH:
+        return
+
+    canvas = context.canvas
+    params = context.params
+    cx = context.cx
+    appearance = context.appearance
+
+    # Long hair drapes over the whole back, covering the nape and shoulders. A
+    # nape shadow there lands inside the hair mass and reads as a dark slot cut
+    # across the hair, not a neck. For that case, skip the neck shadow and give
+    # the hair a top-left crown highlight so the drape reads as a rounded head
+    # instead of a flat pill.
+    if appearance.hair_style_idx == HAIR_IDX_LONG:
+        crown = appearance.hair_pal[2]
+        stamp_ellipse(
+            canvas,
+            cx - context.hr * 0.3,
+            context.head_cy - context.hr * 0.35,
+            context.hr * 0.5,
+            context.hr * 0.42,
+            (*crown, 200),
+            1.6,
+            0.7,
+        )
+        return
+
+    # Nape contact shadow: neck-width (not head-width) and a soft shadow tone,
+    # sitting in the neck gap just below the head so it reads as a recessed neck
+    # rather than a hard dark bar across the whole silhouette.
+    nape_y = context.head_cy + context.hr + params.neck_gap * 0.35
+    c_shadow = appearance.cloth_pal[0]
+    nape_rgb = (
+        int(c_shadow[0] * 0.6),
+        int(c_shadow[1] * 0.6),
+        int(c_shadow[2] * 0.6),
+    )
+    stamp_ellipse(
+        canvas,
+        cx,
+        nape_y,
+        max(0.7, context.hr * 0.32),
+        0.55,
+        (*nape_rgb, 205),
+        1.5,
+        0.8,
+    )
+
+    # Shoulder form highlights: light from top-left, so the left shoulder catches
+    # more light. Two small clusters flanking the neck give the upper back volume.
+    shoulder_y = context.torso_cy - params.torso_ry * 0.35
+    shoulder_dx = max(1.4, params.torso_rx * 0.62)
+    hi = appearance.cloth_pal[2]
+    for side, alpha in ((-1.0, 205), (1.0, 175)):
+        stamp_ellipse(
+            canvas,
+            cx + side * shoulder_dx,
+            shoulder_y,
+            params.torso_rx * 0.34,
+            params.torso_ry * 0.34,
+            (*hi, alpha),
+            1.5,
+            0.72,
+        )
 
 
 def _layer_face_final(context: CharacterDrawContext) -> None:
