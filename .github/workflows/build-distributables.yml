@@ -1,7 +1,10 @@
 name: Build distributables
 
 # PyInstaller does not cross-compile, so each OS builds on its own runner.
-# Produces a double-clickable bundle per platform and uploads it as an artifact.
+# Every run uploads a per-platform zip as a build artifact (for testing). Runs
+# triggered by a version tag (v*) additionally publish a permanent GitHub
+# Release with those zips attached - that's the public download surface. Plain
+# commits do nothing; push a tag when you want a release.
 on:
   workflow_dispatch:
   push:
@@ -14,22 +17,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS: BUNDLE wraps the COLLECT output into Brileta.app but leaves
-          # the source dist/Brileta/ in place, so upload only the .app to avoid
-          # packing two full copies. Windows/Linux have no .app - upload the
-          # onedir folder.
           - os: macos-latest
             artifact: Brileta-macos
-            path: dist/Brileta.app
+            asset: Brileta.app.zip
           - os: windows-latest
             artifact: Brileta-windows
-            path: dist/Brileta
+            asset: Brileta-windows.zip
           - os: ubuntu-latest
             artifact: Brileta-linux
-            path: dist/Brileta
+            asset: Brileta-linux.zip
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # wgpu/glfw need native GL/Vulkan/X11 libs present for PyInstaller's
       # analysis to import the backends cleanly on Linux runners.
@@ -43,7 +42,8 @@ jobs:
             libvulkan1 mesa-vulkan-drivers
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        # setup-uv publishes no moving v8 major tag, so pin the exact version.
+        uses: astral-sh/setup-uv@v8.2.0
 
       - name: Sync dependencies
         run: uv sync
@@ -54,11 +54,50 @@ jobs:
       - name: Build with PyInstaller
         run: uv run pyinstaller brileta.spec --noconfirm
 
-      # itch.io wants a zip of the .app (macOS) or the build folder (Win/Linux).
-      # actions/upload-artifact zips its input, so we point it at the raw output.
+      # Zip the build ourselves so the top-level folder/.app is preserved and,
+      # on macOS, so the bundle's symlinks and executable bit survive. Uploading
+      # the raw folder would strip the Brileta.app wrapper and break the app.
+      # ditto packs Brileta.app so it unzips back to a double-clickable Brileta.app.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/Brileta.app "${{ matrix.asset }}"
+
+      # -y preserves symlinks; the archive keeps the Brileta/ folder at its root.
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: cd dist && zip -ry "../${{ matrix.asset }}" Brileta
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/Brileta -DestinationPath "${{ matrix.asset }}"
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.path }}
+          path: ${{ matrix.asset }}
           if-no-files-found: error
+
+  # On a version tag, gather the three platform zips and publish them as a
+  # permanent GitHub Release. Manual runs skip this (they only make artifacts).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          artifacts/*/*.zip
+          --repo "${{ github.repository }}"
+          --title "${{ github.ref_name }}"
+          --generate-notes

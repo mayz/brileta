@@ -61,9 +61,17 @@ butler diffs against the previous push, so updates upload only what changed.
 
 ## Notes
 
-- The macOS `.app` is unsigned and not notarized. On first launch a user may
-  need to right-click → Open (or allow it in System Settings → Privacy &
-  Security). Sign/notarize later if you want to remove that step.
+- The macOS `.app` is unsigned and not notarized, so Gatekeeper blocks it on
+  first launch ("Apple could not verify..."). Players who install via the itch
+  app are fine (it strips quarantine); direct-download users need this note.
+  Put it on the itch page / GitHub Release for the macOS build:
+
+  > macOS: this build is unsigned. After unzipping, open Terminal and run
+  > `xattr -dr com.apple.quarantine Brileta.app`, then open the app. (Or:
+  > System Settings → Privacy & Security → "Open Anyway".)
+
+  Sign/notarize with an Apple Developer account later if you want to remove
+  this step.
 - Assets resolve at runtime relative to the `brileta` package's parent
   directory, which is why the spec bundles `assets/` at the bundle root - no
   code change needed. If you add a new asset directory, it's already covered
