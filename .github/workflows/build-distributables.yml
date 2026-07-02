@@ -92,6 +92,24 @@ jobs:
         with:
           path: artifacts
 
+      # Every release automatically gets the macOS Gatekeeper note, then the
+      # auto-generated commit notes appended below it. Nothing to edit by hand.
+      - name: Compose release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' \
+            '**The macOS build is unsigned.** After unzipping, run this in Terminal, then open the app:' \
+            '' \
+            '```' \
+            'xattr -dr com.apple.quarantine Brileta.app' \
+            '```' \
+            '' \
+            '(Or open it via System Settings -> Privacy & Security -> "Open Anyway".)' \
+            '' '---' '' > notes.md
+          gh api "repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="${{ github.ref_name }}" --jq '.body' >> notes.md || true
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,4 +118,4 @@ jobs:
           artifacts/*/*.zip
           --repo "${{ github.repository }}"
           --title "${{ github.ref_name }}"
-          --generate-notes
+          --notes-file notes.md
