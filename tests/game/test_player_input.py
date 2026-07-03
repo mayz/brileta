@@ -141,6 +141,62 @@ class TestAutopilotGating:
         mock_turn.assert_called_once()
 
 
+class TestPause:
+    """Pausing halts simulation but leaves the pause toggle working."""
+
+    def test_paused_skips_mode_updates(self) -> None:
+        """When paused, process_player_input generates no movement/autopilot."""
+        controller = _make_controller()
+        controller.paused = True
+
+        with patch.object(controller.explore_mode, "update") as mock_update:
+            controller.process_player_input()
+
+        mock_update.assert_not_called()
+
+    def test_paused_skips_logic_step(self) -> None:
+        """When paused, update_logic_step advances no simulation."""
+        controller = _make_controller()
+        controller.paused = True
+
+        with patch.object(controller.animation_manager, "update") as mock_anim:
+            controller.update_logic_step()
+
+        mock_anim.assert_not_called()
+
+    def test_paused_drops_queued_actions(self) -> None:
+        """A command issued while paused must not fire on resume."""
+        controller = _make_controller()
+        controller.paused = True
+
+        controller.queue_action(MagicMock())
+
+        assert not controller.turn_manager.has_pending_actions()
+
+    def test_paused_refuses_new_plans(self) -> None:
+        """A plan started while paused must not auto-run on resume."""
+        controller = _make_controller()
+        player = controller.gw.player
+        player.active_plan = None
+        controller.paused = True
+
+        started = controller.start_plan(player, MagicMock())
+
+        assert started is False
+        assert player.active_plan is None
+
+    def test_toggle_pause_flips_flag(self) -> None:
+        """toggle_pause flips the paused flag on and back off."""
+        controller = _make_controller()
+        assert controller.paused is False
+
+        controller.toggle_pause()
+        assert controller.paused is True
+
+        controller.toggle_pause()
+        assert controller.paused is False
+
+
 class TestOverlayInteraction:
     """Interactive overlays affect mode update behavior."""
 

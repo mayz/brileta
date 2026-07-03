@@ -227,6 +227,11 @@ class Controller:
         self.combat_mode = CombatMode(self)
         self.picker_mode = PickerMode(self)
         self.mode_stack: list[Mode] = [self.explore_mode]
+
+        # Global pause: halts simulation (player + NPC movement, animations)
+        # while leaving mouse hover/selection working. Toggled with SPACE.
+        self.paused: bool = False
+
         self._systems_initialized = True
 
         # Register game.seed live variable for debugging/reproducibility
@@ -551,6 +556,9 @@ class Controller:
 
         # Reset explore mode state
         self.explore_mode.movement_keys.clear()
+
+        # Never carry a paused state into a freshly generated world.
+        self.paused = False
 
         # Update frame manager's world view with new lighting system
         wv = self.frame_manager.world_view
@@ -1169,6 +1177,11 @@ class Controller:
         """
         assert self.overlay_system is not None and self.input_handler is not None
 
+        # Paused: skip all player movement generation, queued actions, autopilot.
+        # Mouse hover/selection still works (driven by input_handler, not here).
+        if self.paused:
+            return
+
         # Let all modes in the stack update (bottom-to-top)
         # This allows ExploreMode to generate movement intents even when
         # CombatMode or PickerMode is on top.
@@ -1219,6 +1232,10 @@ class Controller:
         Runs one fixed-step of game logic for animations and non-player actors.
         Called by the App's fixed-step loop.
         """
+        # Paused: freeze the whole simulation (animations, NPCs, lighting, sound).
+        if self.paused:
+            return
+
         with record_time_live_variable("time.logic_ms"):
             with record_time_live_variable("time.logic.actor_snapshot_ms"):
                 # Reset only actors that moved since the prior logic step.
@@ -1385,7 +1402,20 @@ class Controller:
         Args:
             action: The intent to queue for execution
         """
+        # Paused: drop the command instead of deferring it. Input dispatch stays
+        # ungated (so SPACE can unpause), but no player action may commit to the
+        # world while paused, otherwise it would fire the instant we resume.
+        # getattr tolerates lightweight test doubles that skip Controller.__init__.
+        if getattr(self, "paused", False):
+            return
         self.turn_manager.queue_action(action)
+
+    def toggle_pause(self) -> None:
+        """Toggle the global pause state and refresh the paused indicator."""
+        self.paused = not self.paused
+        overlay = getattr(self.frame_manager, "paused_indicator_overlay", None)
+        if overlay is not None:
+            overlay.invalidate()
 
     @property
     def active_mode(self) -> Mode:
@@ -1678,6 +1708,12 @@ class Controller:
         Returns:
             True (always succeeds in creating the plan).
         """
+        # Paused: refuse new plans so a shift-click/right-click target set while
+        # paused doesn't auto-walk the moment we resume. See queue_action.
+        # getattr tolerates lightweight test doubles that skip Controller.__init__.
+        if getattr(self, "paused", False):
+            return False
+
         from brileta.game.action_plan import ActivePlan, PlanContext
 
         context = PlanContext(

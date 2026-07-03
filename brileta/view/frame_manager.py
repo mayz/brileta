@@ -43,6 +43,7 @@ from .ui.combat_tooltip_overlay import CombatTooltipOverlay
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
+from .ui.paused_indicator_overlay import PausedIndicatorOverlay
 from .ui.zoom_indicator_overlay import ZoomIndicatorOverlay
 from .views.action_panel_view import ActionPanelView
 from .views.base import View
@@ -128,6 +129,7 @@ class FrameManager:
     dev_console_overlay: DevConsoleOverlay
     combat_tooltip_overlay: CombatTooltipOverlay
     zoom_indicator_overlay: ZoomIndicatorOverlay
+    paused_indicator_overlay: PausedIndicatorOverlay
 
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the frame manager and supporting systems."""
@@ -192,6 +194,10 @@ class FrameManager:
             self.controller, self.world_view
         )
         self.controller.overlay_system.show_overlay(self.zoom_indicator_overlay)
+        self.paused_indicator_overlay = PausedIndicatorOverlay(
+            self.controller, self.world_view
+        )
+        self.controller.overlay_system.show_overlay(self.paused_indicator_overlay)
 
         # Register live variables owned by the frame manager
         live_variable_registry.register(

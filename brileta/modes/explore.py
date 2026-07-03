@@ -135,6 +135,10 @@ class ExploreMode(Mode):
 
         # Handle UI commands
         match event:
+            case input_events.KeyDown(sym=input_events.KeySym.SPACE):
+                self.controller.toggle_pause()
+                return True
+
             case input_events.KeyDown(sym=Keys.KEY_I):
                 self._open_inventory()
                 return True
