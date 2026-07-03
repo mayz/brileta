@@ -2,6 +2,8 @@ import math
 from types import SimpleNamespace
 from unittest.mock import ANY, Mock
 
+import pytest
+
 from brileta import config
 from brileta.environment.map import MapRegion
 from brileta.game.game_world import GameWorld
@@ -98,6 +100,44 @@ def test_directional_light_create_sun_default() -> None:
     # Direction should be normalized
     magnitude = math.sqrt(sun.direction.x**2 + sun.direction.y**2)
     assert abs(magnitude - 1.0) < 1e-6
+
+
+def test_directional_light_shadow_fade_by_elevation() -> None:
+    """Cast shadows fade to nothing as the sun drops to the horizon."""
+    high = DirectionalLight.create_sun(elevation_degrees=60.0)
+    assert high.shadow_fade == 1.0  # well above the fade band: full shadows
+
+    grazing = DirectionalLight.create_sun(elevation_degrees=0.0)
+    assert grazing.shadow_fade == 0.0  # sun down: no cast shadows
+
+    # Within the fade band, strength scales linearly with elevation.
+    half = config.SUN_SHADOW_FADE_ELEVATION_DEGREES / 2.0
+    mid = DirectionalLight.create_sun(elevation_degrees=half)
+    assert math.isclose(mid.shadow_fade, 0.5)
+
+
+def test_directional_light_shadow_params() -> None:
+    """shadow_params() bundles direction, length scale, and fade in one place."""
+    # Low sun: long shadows (large length scale), cast away from the sun.
+    low = DirectionalLight.create_sun(elevation_degrees=30.0, azimuth_degrees=90.0)
+    params = low.shadow_params()
+    assert params is not None
+    assert params.length_scale > 1.0  # 1/tan(30) ~ 1.73
+    assert params.fade == 1.0
+    # Sun in the east (az 90) casts shadows toward the west (negative x).
+    assert params.dir_x < 0.0
+    # Direction is normalized.
+    assert math.isclose(math.hypot(params.dir_x, params.dir_y), 1.0)
+
+    # Length scale is clamped near the horizon rather than diverging.
+    grazing = DirectionalLight.create_sun(elevation_degrees=1.0)
+    grazing_params = grazing.shadow_params()
+    assert grazing_params is not None
+    assert grazing_params.length_scale == 8.0
+
+    # Sun straight overhead casts no directional shadow.
+    overhead = DirectionalLight.create_sun(elevation_degrees=90.0)
+    assert overhead.shadow_params() is None
 
 
 def test_directional_light_create_sun_custom_angles() -> None:
@@ -567,8 +607,8 @@ def _make_rain_controller(
     controller.gw = gw
     controller.sound_system = Mock()
     controller._rain_enabled = False
-    controller._rain_base_state = None
-    controller._rain_last_spacing = None
+    controller._atmospheric_cloud_baseline = None
+    controller._last_sky_key = None
     controller._rain_last_ambient_mix_key = None
     controller.frame_manager = SimpleNamespace(
         world_view=SimpleNamespace(
@@ -589,19 +629,23 @@ def _make_rain_controller(
     )
 
 
-def test_controller_set_rain_enabled_applies_and_restores_sun_and_cloud() -> None:
-    """Rain toggle should apply and later restore weather-driven lighting state."""
+def test_controller_set_rain_enabled_applies_and_restores_sun_and_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rain toggle should dim/cool the base sun and later restore it."""
     from brileta.controller import Controller
 
-    base_color = (255, 243, 204)
-    f = _make_rain_controller(sun_color=base_color, cloud_coverage=0.55)
+    # Disable the day/night cycle so the clear-sky base is the fixed config sun,
+    # isolating the rain modifier under test.
+    monkeypatch.setattr(config, "DAY_NIGHT_CYCLE_ENABLED", False)
+    f = _make_rain_controller(cloud_coverage=0.55)
 
     Controller._set_rain_enabled(f.controller, True)
 
     assert f.controller._rain_enabled is True
     assert f.rain_config.enabled is True
-    assert f.sun.intensity < 1.0
-    assert f.sun.color != base_color
+    assert f.sun.intensity < config.SUN_INTENSITY
+    assert f.sun.color != config.SUN_COLOR
     assert f.atmospheric_config.cloud_coverage == config.RAIN_CLOUD_COVERAGE_RANGE[0]
     f.gw.lighting_system.on_global_light_changed.assert_called_once()
 
@@ -609,17 +653,21 @@ def test_controller_set_rain_enabled_applies_and_restores_sun_and_cloud() -> Non
 
     assert f.controller._rain_enabled is False
     assert f.rain_config.enabled is False
-    assert f.sun.intensity == 1.0
-    assert f.sun.color == base_color
+    assert f.sun.intensity == config.SUN_INTENSITY
+    assert f.sun.color == config.SUN_COLOR
     assert f.atmospheric_config.cloud_coverage == 0.55
-    assert f.controller._rain_base_state is None
+    assert f.controller._atmospheric_cloud_baseline is None
     assert f.gw.lighting_system.on_global_light_changed.call_count == 2
 
 
-def test_controller_rain_weather_response_updates_with_density_changes() -> None:
-    """Active rain should continuously recompute sun/cloud response from spacing."""
+def test_controller_rain_response_updates_with_density_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Heavier rain should dim the sun further and thicken cloud cover."""
     from brileta.controller import Controller
+    from brileta.types import DeltaTime
 
+    monkeypatch.setattr(config, "DAY_NIGHT_CYCLE_ENABLED", False)
     f = _make_rain_controller()
 
     Controller._set_rain_enabled(f.controller, True)
@@ -629,47 +677,48 @@ def test_controller_rain_weather_response_updates_with_density_changes() -> None
 
     f.rain_config.stream_spacing = min(config.RAIN_PRESETS["downpour"].stream_spacing)
     f.rain_config.drop_spacing = min(config.RAIN_PRESETS["downpour"].drop_spacing)
-    Controller._update_rain_weather_response(f.controller)
+    Controller._update_global_lighting(f.controller, DeltaTime(0.0))
 
     assert f.sun.intensity < drizzle_intensity
     assert f.atmospheric_config.cloud_coverage > drizzle_cloud_coverage
     f.gw.lighting_system.on_global_light_changed.assert_called_once()
 
 
-def test_controller_rain_weather_response_rebases_for_new_world() -> None:
-    """When re-based, rain response should use the current world's sun and cloud baseline."""
+def test_controller_rain_dims_the_live_daylight_base() -> None:
+    """Rain dims whatever the clock's current sun is, not a stale snapshot."""
     from brileta.controller import Controller
+    from brileta.game.clock import compute_sky_lighting
+    from brileta.types import DeltaTime
 
+    # Day/night cycle on (default). Heavy rain for a clear signal.
     downpour = config.RAIN_PRESETS["downpour"]
     f = _make_rain_controller(
         stream_spacing=min(downpour.stream_spacing),
         drop_spacing=min(downpour.drop_spacing),
     )
-
     Controller._set_rain_enabled(f.controller, True)
-    assert f.controller._rain_base_state is not None
-    assert f.controller._rain_base_state.sun_intensity == 1.0
 
-    # Simulate new_world(): a fresh sun and atmospheric system with different
-    # baseline values than the previous world.
-    f.gw.remove_light(f.sun)
-    new_sun = DirectionalLight.create_sun(intensity=0.6, color=(240, 230, 210))
-    f.gw.add_light(new_sun)
-    f.atmospheric_config.cloud_coverage = 0.30
-    f.gw.lighting_system.on_global_light_changed.reset_mock()
+    # At noon the base sun is brightest; rain dims that live base.
+    f.gw.clock.time_of_day = 0.5
+    f.controller._last_sky_key = None
+    Controller._update_global_lighting(f.controller, DeltaTime(0.0))
+    noon_intensity = float(f.sun.intensity)
+    noon_base = compute_sky_lighting(0.5).sun_intensity
+    assert noon_intensity < noon_base  # dimmed
+    assert noon_intensity > 0.0
 
-    Controller._update_rain_weather_response(f.controller, force_rebase=True)
-
-    assert f.controller._rain_base_state is not None
-    assert f.controller._rain_base_state.sun_intensity == 0.6
-    assert f.controller._rain_base_state.cloud_coverage == 0.30
-    assert new_sun.intensity < 0.6
-    f.gw.lighting_system.on_global_light_changed.assert_called_once()
+    # Later in the afternoon the base is lower, so the rained-on sun is dimmer
+    # too - proving it tracks the current time of day, not a captured value.
+    f.gw.clock.time_of_day = 0.72
+    f.controller._last_sky_key = None
+    Controller._update_global_lighting(f.controller, DeltaTime(0.0))
+    assert f.sun.intensity < noon_intensity
 
 
-def test_controller_rain_weather_response_noop_when_density_unchanged() -> None:
-    """Repeated calls with the same spacing should not trigger relighting."""
+def test_controller_global_lighting_noop_when_unchanged() -> None:
+    """Repeated composes with an unchanged sky should not relight the scene."""
     from brileta.controller import Controller
+    from brileta.types import DeltaTime
 
     regular = config.RAIN_PRESETS["regular"]
     f = _make_rain_controller(
@@ -680,9 +729,9 @@ def test_controller_rain_weather_response_noop_when_density_unchanged() -> None:
     Controller._set_rain_enabled(f.controller, True)
     f.gw.lighting_system.on_global_light_changed.reset_mock()
 
-    # Simulate several render frames without changing spacing.
+    # dt=0 holds the clock still, so nothing about the composed sky changes.
     for _ in range(3):
-        Controller._update_rain_weather_response(f.controller)
+        Controller._update_global_lighting(f.controller, DeltaTime(0.0))
 
     f.gw.lighting_system.on_global_light_changed.assert_not_called()
 
@@ -697,8 +746,8 @@ def test_controller_set_rain_enabled_noop_when_state_unchanged() -> None:
     controller = object.__new__(Controller)
     controller.gw = gw
     controller._rain_enabled = False
-    controller._rain_base_state = None
-    controller._rain_last_spacing = None
+    controller._atmospheric_cloud_baseline = None
+    controller._last_sky_key = None
     controller.frame_manager = SimpleNamespace(
         world_view=SimpleNamespace(rain_config=SimpleNamespace(enabled=True))
     )

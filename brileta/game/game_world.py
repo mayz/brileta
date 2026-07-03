@@ -25,6 +25,7 @@ from brileta.game.actors.npc_types import (
     TROG_TYPE,
 )
 from brileta.game.actors.trees import Tree
+from brileta.game.clock import GameClock
 from brileta.game.countables import CountableType
 from brileta.game.enums import GeneratorType
 from brileta.game.item_spawner import ItemSpawner
@@ -95,6 +96,10 @@ class GameWorld:
 
         self.lights: list[LightSource] = []  # All light sources in the world
         self.lighting_system: LightingSystem | None = None
+
+        # Running day/night clock. Ticked by the controller's logic loop; read
+        # by the lighting update and (later) NUBS time-of-day considerations.
+        self.clock = GameClock()
 
         # Optional callback invoked when the actor list changes (add/remove).
         # The Controller wires this to TurnManager.invalidate_cache so that

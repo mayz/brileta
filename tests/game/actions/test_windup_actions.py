@@ -52,9 +52,11 @@ class DummyLighting:
 
 class DummyGameWorld:
     def __init__(self, w: int, h: int, **kwargs: object) -> None:
+        from brileta.game.clock import GameClock
         from brileta.util.spatial import SpatialHashGrid
 
         self.player = DummyPlayer()
+        self.clock = GameClock()
         self.lighting = DummyLighting()
         self.actors = [self.player]
         self.game_map = SimpleNamespace(transparent=[], visible=[], explored=[])

@@ -373,10 +373,30 @@ SUN_AZIMUTH_DEGREES = 135.0  # Sun direction (0=North, 90=East, 180=South, 270=W
 SUN_INTENSITY = 0.75  # Base sun intensity multiplier
 SKY_EXPOSURE_POWER = 1.5  # Non-linear sky exposure curve (higher = more contrast)
 
+# Day/night cycle. A running clock sweeps the sun across the sky, ramps the
+# ambient fill, and warms the sun color at dawn/dusk. See game/clock.py.
+DAY_NIGHT_CYCLE_ENABLED = True
+SECONDS_PER_MINUTE = 60.0
+# Real time for one full day-night cycle. DEV: 10 min for fast iteration;
+# 25 min is the long-term target. Scrub clock.day_length_seconds in the
+# console to change it live.
+DAY_LENGTH_SECONDS = 10.0 * SECONDS_PER_MINUTE
+DAY_FRACTION = 0.70  # Fraction of the cycle the sun is above the horizon (day vs night)
+DAY_START_TIME_OF_DAY = 0.35  # Where in the cycle a fresh world begins (mid-morning)
+SUN_NOON_ELEVATION_DEGREES = 72.0  # Sun elevation at noon (drives shortest shadows)
+SUN_DAWN_COLOR = (255, 158, 84)  # Warm low-sun color blended in near dawn/dusk
+NIGHT_AMBIENT_LIGHT_LEVEL = (
+    0.09  # Moonlight-level ambient floor so night stays playable
+)
+
 # Shadow system
 SHADOWS_ENABLED: bool = True  # Set to False to disable shadows
 SHADOW_INTENSITY = 0.25  # Point light shadow intensity (indoor torches, etc.)
 SUN_SHADOW_INTENSITY = 0.55  # Directional/sun shadow intensity
+# Sun shadows lengthen and then fade out as the sun nears the horizon. Above
+# this elevation they render at full strength; below it they fade to nothing by
+# the time the sun sets, so night has no cast shadows.
+SUN_SHADOW_FADE_ELEVATION_DEGREES = 12.0
 SHADOW_MAX_LENGTH = 6  # Maximum shadow march distance (accommodates tallest terrain)
 SHADOW_FALLOFF = True  # Shadows get lighter with distance
 ACTOR_SHADOW_ALPHA: float = 0.65  # Base alpha for projected actor shadow quads

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
@@ -2010,20 +2009,14 @@ class WorldView(View):
         if directional_light is None or not config.SHADOWS_ENABLED:
             return
 
-        # Shadow direction and length scale - same math as ShadowRenderer.
-        raw_dx = -directional_light.direction.x
-        raw_dy = -directional_light.direction.y
-        dir_len = math.hypot(raw_dx, raw_dy)
-        if dir_len <= 1e-6:
+        # Shared sun-shadow params: direction, length scale, and the dusk fade.
+        params = directional_light.shadow_params()
+        if params is None or params.fade <= 0.0:
             return
-        shadow_dir_x = raw_dx / dir_len
-        shadow_dir_y = raw_dy / dir_len
-
-        elevation = max(0.0, min(90.0, directional_light.elevation_degrees))
-        if elevation >= 90.0:
-            return
-        tan_elev = math.tan(math.radians(elevation))
-        length_scale = 8.0 if tan_elev <= 1e-6 else min(1.0 / tan_elev, 8.0)
+        shadow_dir_x = params.dir_x
+        shadow_dir_y = params.dir_y
+        length_scale = params.length_scale
+        shadow_fade = params.fade
 
         player_building_id, viewport_buildings = self._compute_roof_state()
         if not viewport_buildings:
@@ -2101,7 +2094,7 @@ class WorldView(View):
                 shadow_dir_x=shadow_dir_x,
                 shadow_dir_y=shadow_dir_y,
                 shadow_length_pixels=shadow_length_px,
-                shadow_alpha=float(config.TERRAIN_GLYPH_SHADOW_ALPHA),
+                shadow_alpha=float(config.TERRAIN_GLYPH_SHADOW_ALPHA) * shadow_fade,
                 scale_x=viewport_scale_x,
                 scale_y=viewport_scale_y,
                 fade_tip=True,

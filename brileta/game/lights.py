@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta import colors, config
@@ -16,6 +17,25 @@ from brileta.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
     from brileta.game.actors import Actor, Character
+
+
+@dataclass(frozen=True)
+class SunShadowParams:
+    """Everything a shadow pass needs from the sun, derived in one place.
+
+    Every sun-shadow path - GPU terrain, CPU actor, terrain-glyph, chimney -
+    reads these instead of re-deriving direction/length/fade from the light.
+
+    Fields:
+        dir_x, dir_y: Normalized direction shadows are cast (away from the sun).
+        length_scale: Shadow length multiplier, 1/tan(elevation) clamped to 8.
+        fade: Cast-shadow strength in [0, 1], fading to 0 as the sun sets.
+    """
+
+    dir_x: float
+    dir_y: float
+    length_scale: float
+    fade: float
 
 
 class Vec2:
@@ -181,6 +201,49 @@ class DirectionalLight(GlobalLight):
         self.intensity = intensity
         self.azimuth_degrees = azimuth_degrees
         self.elevation_degrees = elevation_degrees
+
+    @property
+    def shadow_fade(self) -> float:
+        """Cast-shadow strength in [0, 1], fading as the sun nears the horizon.
+
+        Shadows lengthen as the sun drops, then fade out through dusk so night
+        has none. Driven by elevation (not intensity) so it tracks the sun's
+        height and is unaffected by rain dimming. Scales both the CPU actor
+        shadows and the GPU terrain shadows.
+        """
+        fade_elevation = config.SUN_SHADOW_FADE_ELEVATION_DEGREES
+        if fade_elevation <= 0.0:
+            return 1.0
+        return max(0.0, min(1.0, self.elevation_degrees / fade_elevation))
+
+    def shadow_params(self) -> SunShadowParams | None:
+        """Derive the cast-shadow direction, length scale, and fade.
+
+        The single source for every sun-shadow pass. Returns ``None`` when the
+        sun casts no usable shadow (directly overhead, or its screen-space
+        direction is degenerate).
+        """
+        # Shadows fall away from the sun, so negate the to-sun direction.
+        cast_dx = -self.direction.x
+        cast_dy = -self.direction.y
+        length = math.hypot(cast_dx, cast_dy)
+        if length <= 1e-6:
+            return None
+
+        elevation = max(0.0, min(90.0, self.elevation_degrees))
+        if elevation >= 90.0:
+            return None
+
+        # 1/tan(elevation): low sun = long shadows. Clamp near the horizon.
+        tan_elevation = math.tan(math.radians(elevation))
+        length_scale = 8.0 if tan_elevation <= 1e-6 else min(1.0 / tan_elevation, 8.0)
+
+        return SunShadowParams(
+            dir_x=cast_dx / length,
+            dir_y=cast_dy / length,
+            length_scale=length_scale,
+            fade=self.shadow_fade,
+        )
 
     def set_angles(
         self,

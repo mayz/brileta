@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import random
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -30,6 +29,7 @@ from .game.actions.discovery import ActionDiscovery
 from .game.actions.types import AnimationType
 from .game.actors import Actor
 from .game.actors.core import Character
+from .game.clock import compute_sky_lighting
 from .game.enums import CombatEndReason
 from .game.game_world import GameWorld
 from .game.lights import DirectionalLight, DynamicLight
@@ -77,14 +77,9 @@ _RAIN_HEAVY_LAYER_MAX_LEVEL = 1.0
 _RAIN_INDOOR_VOLUME_FLOOR = 0.35
 _RAIN_AMBIENT_DISABLE_FADE_SECONDS = 0.4
 
-
-@dataclass(slots=True)
-class _RainBaseState:
-    """Snapshot of pre-rain lighting values for restoration."""
-
-    sun_intensity: float
-    sun_color: colors.Color
-    cloud_coverage: float
+# Quantized global-lighting state used to gate lightmap invalidation:
+# (sun angles or None, sun intensity, ambient, sun color, cloud coverage or None).
+_SkyKey = tuple[tuple[float, float] | None, float, float, colors.Color, float | None]
 
 
 # Controller-level metrics.
@@ -199,8 +194,15 @@ class Controller:
         # Track the current world seed for debugging/reproducibility
         self._current_seed: RandomSeed = None
         self._rain_enabled: bool = False
-        self._rain_base_state: _RainBaseState | None = None
-        self._rain_last_spacing: tuple[float, float] | None = None
+        # Global lighting is composed each logic step from the day/night clock
+        # (the clear-sky base) plus rain (a dim/cool modifier). _last_sky_key
+        # gates the write so the lightmap only re-invalidates when the composed
+        # result visibly changes.
+        self._last_sky_key: _SkyKey | None = None
+        # Clear-weather cloud level, captured while rain is active so it can be
+        # restored when rain stops (the atmospheric system carries its own
+        # non-rain baseline that the rain overcast level overrides).
+        self._atmospheric_cloud_baseline: float | None = None
         # Ambient rain audio recomputes only when spacing or player region changes.
         self._rain_last_ambient_mix_key: tuple[tuple[float, float], int] | None = None
 
@@ -260,6 +262,8 @@ class Controller:
             display_decimals=1,
             value_range=(0.0, 90.0),
         )
+
+        self._register_clock_live_variables()
 
         self._set_rain_enabled(bool(config.RAIN_ENABLED))
         self._register_rain_live_variables()
@@ -560,14 +564,23 @@ class Controller:
         # Never carry a paused state into a freshly generated world.
         self.paused = False
 
+        # A fresh world has a fresh clock and a sun at config defaults; force the
+        # day/night cycle to re-apply so the new sun matches the clock at once.
+        self._last_sky_key = None
+
         # Update frame manager's world view with new lighting system
         wv = self.frame_manager.world_view
         wv.lighting_system = self.gw.lighting_system
         self._get_rain_config().enabled = self._rain_enabled
         if self._rain_enabled:
-            # new_world() creates a fresh sun and atmospheric system; re-base
-            # rain response against the new defaults, not the previous world's.
-            self._update_rain_weather_response(force_rebase=True)
+            # new_world() creates a fresh atmospheric system; re-capture its
+            # clear-weather cloud baseline so disabling rain later restores the
+            # right value. The sun re-composes on the next logic step.
+            atmospheric = self._get_atmospheric_system()
+            if atmospheric is not None:
+                self._atmospheric_cloud_baseline = float(
+                    atmospheric.config.cloud_coverage
+                )
             self._rain_last_ambient_mix_key = None
             self._update_rain_ambient_audio()
 
@@ -607,6 +620,139 @@ class Controller:
         if self.gw.lighting_system:
             self.gw.lighting_system.on_global_light_changed()
 
+    def _register_clock_live_variables(self) -> None:
+        """Register dev-console variables for the day/night clock.
+
+        Closures resolve ``self.gw.clock`` lazily so they always target the
+        current world's clock, even after a map reload replaces the GameWorld.
+        """
+        live_variable_registry.register(
+            "clock.time",
+            getter=self._format_clock_time,
+            description="Current game time of day (HH:MM, read-only).",
+        )
+        live_variable_registry.register(
+            "clock.day_progress",
+            getter=lambda: self.gw.clock.time_of_day,
+            setter=lambda v: self._set_time_of_day(float(v)),
+            description="Progress through the day, 0-1 (0=midnight, 0.5=noon).",
+            display_decimals=3,
+            value_range=(0.0, 1.0),
+        )
+        live_variable_registry.register(
+            "clock.day_length_seconds",
+            getter=lambda: self.gw.clock.day_length_seconds,
+            setter=lambda v: setattr(
+                self.gw.clock, "day_length_seconds", max(1.0, float(v))
+            ),
+            description="Real seconds per full day-night cycle (lower = faster).",
+            display_decimals=0,
+            value_range=(1.0, 3600.0),
+        )
+
+    def _format_clock_time(self) -> str:
+        """Return the current game time as a 24-hour HH:MM string."""
+        minutes_in_day = 24 * 60
+        total = round(self.gw.clock.time_of_day * minutes_in_day) % minutes_in_day
+        return f"{total // 60:02d}:{total % 60:02d}"
+
+    def _set_time_of_day(self, value: float) -> None:
+        """Scrub the clock to a time of day and re-light immediately."""
+        self.gw.clock.time_of_day = value % 1.0
+        # Force a fresh compose so the change shows at once, even while paused.
+        self._last_sky_key = None
+        self._update_global_lighting(DeltaTime(0.0))
+
+    def _update_global_lighting(self, dt: DeltaTime) -> None:
+        """Advance the clock and compose the sun/ambient from day/night + weather.
+
+        This is the single owner of the sun's intensity and color. The day/night
+        clock supplies the clear-sky base (angles, intensity, color, ambient);
+        rain, when active, dims and cools that base and thickens cloud cover.
+        Because both flow through here, the cycle and weather layer together
+        instead of overwriting each other.
+
+        The result is quantized into a key and only written when it visibly
+        changes, so the lightmap re-invalidates a few times a second as the sun
+        sweeps - not every step, and not at all while the sky holds.
+        """
+        if config.DAY_NIGHT_CYCLE_ENABLED and config.SUN_ENABLED:
+            self.gw.clock.advance(dt)
+            sky = compute_sky_lighting(self.gw.clock.time_of_day)
+            angles: tuple[float, float] | None = (
+                sky.azimuth_degrees,
+                sky.elevation_degrees,
+            )
+            base_intensity = sky.sun_intensity
+            base_color = sky.sun_color
+            ambient = sky.ambient_light
+        else:
+            # Static sun: leave its angles (config default or dev-console)
+            # untouched and use the configured clear-sky values as the base.
+            angles = None
+            base_intensity = config.SUN_INTENSITY
+            base_color = config.SUN_COLOR
+            ambient = config.AMBIENT_LIGHT_LEVEL
+
+        # Weather modifier: rain dims/cools the base and thickens cloud cover.
+        intensity = base_intensity
+        color = base_color
+        cloud_coverage: float | None = None
+        if self._rain_enabled:
+            rain_config = self._get_rain_config()
+            if rain_config.enabled:
+                density = saturate(float(compute_rain_density(rain_config)))
+                dim = colors.lerp(
+                    config.RAIN_SUN_DIM_RANGE[0], config.RAIN_SUN_DIM_RANGE[1], density
+                )
+                intensity = base_intensity * dim
+                blend = colors.lerp(
+                    config.RAIN_SUN_COLOR_BLEND_RANGE[0],
+                    config.RAIN_SUN_COLOR_BLEND_RANGE[1],
+                    density,
+                )
+                color = colors.lerp_color(base_color, config.RAIN_SUN_COOL_COLOR, blend)
+                cloud_coverage = colors.lerp(
+                    config.RAIN_CLOUD_COVERAGE_RANGE[0],
+                    config.RAIN_CLOUD_COVERAGE_RANGE[1],
+                    density,
+                )
+
+        # Angles change continuously; round them in the key so the lightmap
+        # invalidates only when the sun has moved a perceptible amount.
+        rounded_angles = (
+            None if angles is None else (round(angles[0], 1), round(angles[1], 1))
+        )
+        sky_key: _SkyKey = (
+            rounded_angles,
+            round(intensity, 3),
+            round(ambient, 3),
+            color,
+            None if cloud_coverage is None else round(cloud_coverage, 3),
+        )
+        if sky_key == self._last_sky_key:
+            return
+        self._last_sky_key = sky_key
+
+        sun = self._get_sun()
+        if sun is not None:
+            if angles is not None:
+                sun.set_angles(azimuth=angles[0], elevation=angles[1])
+            sun.intensity = intensity
+            sun.color = color
+
+        if cloud_coverage is not None:
+            atmospheric = self._get_atmospheric_system()
+            if (
+                atmospheric is not None
+                and abs(atmospheric.config.cloud_coverage - cloud_coverage) > 1e-6
+            ):
+                atmospheric.set_cloud_coverage(cloud_coverage)
+
+        if self.gw.lighting_system is not None:
+            self.gw.lighting_system.ambient_light = ambient
+            self.gw.lighting_system.on_global_light_changed()
+
     def _get_rain_config(self) -> RainConfig:
         """Return WorldView rain config, attaching defaults when absent."""
         world_view = getattr(self.frame_manager, "world_view", None)
@@ -624,129 +770,6 @@ class Controller:
         if world_view is None:
             return None
         return getattr(world_view, "atmospheric_system", None)
-
-    def _capture_rain_base_state(
-        self,
-        sun: DirectionalLight | None,
-        atmospheric: AtmosphericLayerSystem | None,
-        *,
-        overwrite: bool = False,
-    ) -> None:
-        """Save pre-rain sun/cloud values used as the restoration baseline."""
-        if not overwrite and self._rain_base_state is not None:
-            return
-        if sun is None:
-            return
-        cloud_coverage = 0.0
-        if atmospheric is not None:
-            cloud_coverage = float(atmospheric.config.cloud_coverage)
-        self._rain_base_state = _RainBaseState(
-            sun_intensity=float(sun.intensity),
-            sun_color=sun.color,
-            cloud_coverage=cloud_coverage,
-        )
-
-    def _apply_rain_weather_response(
-        self,
-        density: float,
-        sun: DirectionalLight | None,
-        atmospheric: AtmosphericLayerSystem | None,
-    ) -> None:
-        """Apply rain-driven sun dimming/color shift and cloud overcast."""
-        base = self._rain_base_state
-        if base is None:
-            return
-        t = saturate(float(density))
-        lighting_changed = False
-        if sun is not None:
-            dim_factor = colors.lerp(
-                float(config.RAIN_SUN_DIM_RANGE[0]),
-                float(config.RAIN_SUN_DIM_RANGE[1]),
-                t,
-            )
-            target_intensity = base.sun_intensity * dim_factor
-            if abs(float(sun.intensity) - target_intensity) > 1e-6:
-                sun.intensity = target_intensity
-                lighting_changed = True
-
-            blend = colors.lerp(
-                float(config.RAIN_SUN_COLOR_BLEND_RANGE[0]),
-                float(config.RAIN_SUN_COLOR_BLEND_RANGE[1]),
-                t,
-            )
-            target_color = colors.lerp_color(
-                base.sun_color,
-                config.RAIN_SUN_COOL_COLOR,
-                blend,
-            )
-            if sun.color != target_color:
-                sun.color = target_color
-                lighting_changed = True
-
-        if atmospheric is not None:
-            target_coverage = colors.lerp(
-                float(config.RAIN_CLOUD_COVERAGE_RANGE[0]),
-                float(config.RAIN_CLOUD_COVERAGE_RANGE[1]),
-                t,
-            )
-            if abs(atmospheric.config.cloud_coverage - target_coverage) > 1e-6:
-                atmospheric.set_cloud_coverage(target_coverage)
-
-        if lighting_changed and self.gw.lighting_system is not None:
-            self.gw.lighting_system.on_global_light_changed()
-
-    def _restore_rain_base_state(self) -> None:
-        """Restore pre-rain sun/cloud values and clear stored baseline."""
-        base = self._rain_base_state
-        if base is None:
-            return
-        lighting_changed = False
-        sun = self._get_sun()
-        if sun is not None:
-            if abs(float(sun.intensity) - base.sun_intensity) > 1e-6:
-                sun.intensity = base.sun_intensity
-                lighting_changed = True
-            if sun.color != base.sun_color:
-                sun.color = base.sun_color
-                lighting_changed = True
-
-        atmospheric = self._get_atmospheric_system()
-        if (
-            atmospheric is not None
-            and abs(atmospheric.config.cloud_coverage - base.cloud_coverage) > 1e-6
-        ):
-            atmospheric.set_cloud_coverage(base.cloud_coverage)
-
-        if lighting_changed and self.gw.lighting_system is not None:
-            self.gw.lighting_system.on_global_light_changed()
-
-        self._rain_base_state = None
-        self._rain_last_spacing = None
-
-    def _update_rain_weather_response(
-        self,
-        *,
-        force_rebase: bool = False,
-    ) -> None:
-        """Recompute rain-driven sun/cloud response from current density knobs."""
-        if not self._rain_enabled:
-            return
-
-        rain_config = self._get_rain_config()
-        if not rain_config.enabled:
-            return
-
-        # Short-circuit when spacing knobs haven't changed since last frame.
-        spacing_key = (rain_config.stream_spacing, rain_config.drop_spacing)
-        if not force_rebase and spacing_key == self._rain_last_spacing:
-            return
-        self._rain_last_spacing = spacing_key
-
-        sun = self._get_sun()
-        atmospheric = self._get_atmospheric_system()
-        self._capture_rain_base_state(sun, atmospheric, overwrite=force_rebase)
-        density = compute_rain_density(rain_config)
-        self._apply_rain_weather_response(density, sun, atmospheric)
 
     def _get_player_sky_exposure(self) -> float:
         """Return sky exposure at the player's current location."""
@@ -823,23 +846,26 @@ class Controller:
             return
 
         self._rain_enabled = rain_enabled
-        self._rain_last_spacing = None
         self._rain_last_ambient_mix_key = None
+        atmospheric = self._get_atmospheric_system()
         if rain_enabled:
-            sun = self._get_sun()
-            atmospheric = self._get_atmospheric_system()
-            self._capture_rain_base_state(sun, atmospheric, overwrite=True)
-            density = compute_rain_density(rain_config)
-            self._apply_rain_weather_response(density, sun, atmospheric)
-            self._rain_last_spacing = (
-                rain_config.stream_spacing,
-                rain_config.drop_spacing,
-            )
+            # Remember the clear-weather cloud level so disabling rain restores
+            # it; the compose step overrides the atmospheric coverage while wet.
+            if atmospheric is not None:
+                self._atmospheric_cloud_baseline = float(
+                    atmospheric.config.cloud_coverage
+                )
             self._update_rain_ambient_audio()
-            return
+        else:
+            self._stop_rain_ambient_audio()
+            if atmospheric is not None and self._atmospheric_cloud_baseline is not None:
+                atmospheric.set_cloud_coverage(self._atmospheric_cloud_baseline)
+            self._atmospheric_cloud_baseline = None
 
-        self._stop_rain_ambient_audio()
-        self._restore_rain_base_state()
+        # Re-compose the sun/ambient now so the toggle takes effect immediately
+        # (dt=0 leaves the clock where it is). Resetting the key forces a write.
+        self._last_sky_key = None
+        self._update_global_lighting(DeltaTime(0.0))
 
     def _register_rain_live_variables(self) -> None:
         """Register live variables for rain rendering controls.
@@ -1246,6 +1272,8 @@ class Controller:
                 # Ensures consistent animation timing regardless of FPS
                 self.animation_manager.update(self.fixed_timestep)
 
+            self._update_global_lighting(DeltaTime(self.fixed_timestep))
+
             if self.gw.lighting_system is not None:
                 self.gw.lighting_system.update(self.fixed_timestep)
 
@@ -1278,9 +1306,6 @@ class Controller:
         """Renders one visual frame with interpolation. Called by the App."""
         assert self.frame_manager is not None
         with record_time_live_variable("time.render.cpu_ms"):
-            # Rain spacing can change live via console variables; recompute
-            # sun/cloud response each frame from the current density knobs.
-            self._update_rain_weather_response()
             # Uses alpha to smoothly blend between prev_* and current
             self.frame_manager.render_frame(alpha)
 

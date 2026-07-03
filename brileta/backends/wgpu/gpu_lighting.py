@@ -10,7 +10,6 @@ Uses fragment shaders instead of compute shaders for compatibility.
 
 from __future__ import annotations
 
-import math
 import struct
 import traceback
 from contextlib import suppress
@@ -20,7 +19,6 @@ import numpy as np
 import wgpu
 
 from brileta.config import (
-    AMBIENT_LIGHT_LEVEL,
     SKY_EXPOSURE_POWER,
     SUN_SHADOW_INTENSITY,
     TILE_EMISSION_ENABLED,
@@ -857,7 +855,7 @@ class GPULightingSystem(LightingSystem):
 
         # light_count: i32, ambient_light: f32, time: f32, tile_aligned: u32
         buffer.extend(
-            struct.pack("ifff", light_count, AMBIENT_LIGHT_LEVEL, self._time, 1.0)
+            struct.pack("ifff", light_count, self.ambient_light, self._time, 1.0)
         )  # tile_aligned = true
 
         # --- Light Arrays ---
@@ -918,15 +916,22 @@ class GPULightingSystem(LightingSystem):
             sun_r, sun_g, sun_b = [c / 255.0 for c in directional_light.color]
             sun_intensity = directional_light.intensity
 
-            # Shadow length scale: 1/tan(elevation). Low sun = longer shadows,
-            # high sun = shorter shadows. Clamped to max 8.0 near horizon.
-            elev_rad = math.radians(max(directional_light.elevation_degrees, 0.1))
-            shadow_length_scale = min(1.0 / math.tan(elev_rad), 8.0)
+            # Shared sun-shadow params: length scale (1/tan(elevation), clamped)
+            # and the dusk fade that scales shadow strength toward night.
+            params = directional_light.shadow_params()
+            if params is not None:
+                shadow_length_scale = params.length_scale
+                sun_shadow_intensity = SUN_SHADOW_INTENSITY * params.fade
+            else:
+                # Sun overhead: shadows have no length or strength.
+                shadow_length_scale = 1.0
+                sun_shadow_intensity = 0.0
         else:
             sun_dir_x, sun_dir_y = 0.0, 0.0
             sun_r, sun_g, sun_b = 0.0, 0.0, 0.0
             sun_intensity = 0.0
             shadow_length_scale = 1.0
+            sun_shadow_intensity = SUN_SHADOW_INTENSITY
 
         buffer.extend(
             struct.pack("2f2f", sun_dir_x, sun_dir_y, 0.0, 0.0)
@@ -938,7 +943,7 @@ class GPULightingSystem(LightingSystem):
             struct.pack(
                 "ffff",
                 SKY_EXPOSURE_POWER,
-                SUN_SHADOW_INTENSITY,
+                sun_shadow_intensity,
                 shadow_length_scale,
                 0.0,
             )

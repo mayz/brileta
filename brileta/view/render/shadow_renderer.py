@@ -15,7 +15,7 @@ from .viewport import ViewportSystem
 
 if TYPE_CHECKING:
     from brileta.game.actors import Actor
-    from brileta.game.lights import DirectionalLight
+    from brileta.game.lights import DirectionalLight, SunShadowParams
 
 
 def compute_actor_screen_position(
@@ -62,14 +62,6 @@ def compute_actor_screen_position(
         screen_pixel_x,
         screen_pixel_y,
     )
-
-
-class _SunShadowParams(NamedTuple):
-    """Pre-computed directional shadow geometry shared by terrain and actor passes."""
-
-    dir_x: float
-    dir_y: float
-    length_scale: float
 
 
 class _ActorBatchData(NamedTuple):
@@ -210,10 +202,10 @@ class ShadowRenderer:
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
         tile_height = float(self.graphics.tile_dimensions[1]) * viewport_scale_y
 
-        # Compute sun shadow params once for both terrain and actor passes.
-        sun_params: _SunShadowParams | None = None
+        # Derive sun shadow params once for both terrain and actor passes.
+        sun_params: SunShadowParams | None = None
         if directional_light is not None:
-            sun_params = self._compute_sun_shadow_params(directional_light)
+            sun_params = directional_light.shadow_params()
 
         # Terrain glyph shadows (boulders, etc.) - independent of actor positions.
         self._render_terrain_glyph_shadows(
@@ -253,33 +245,6 @@ class ShadowRenderer:
             lights=lights,
             batch_data=batch_data,
         )
-
-    @staticmethod
-    def _compute_sun_shadow_params(
-        directional_light: DirectionalLight,
-    ) -> _SunShadowParams | None:
-        """Derive shadow direction and length scale from a directional light.
-
-        Returns ``None`` when the light produces no usable shadow (e.g. zero
-        direction vector or sun directly overhead).
-        """
-        raw_dx = -directional_light.direction.x
-        raw_dy = -directional_light.direction.y
-        length = math.hypot(raw_dx, raw_dy)
-        if length <= 1e-6:
-            return None
-
-        dir_x = raw_dx / length
-        dir_y = raw_dy / length
-
-        elevation = max(0.0, min(90.0, directional_light.elevation_degrees))
-        if elevation >= 90.0:
-            return None
-
-        tan_elev = math.tan(math.radians(elevation))
-        length_scale = 8.0 if tan_elev <= 1e-6 else min(1.0 / tan_elev, 8.0)
-
-        return _SunShadowParams(dir_x, dir_y, length_scale)
 
     def _get_min_rendered_actor_shadow_length_tiles(self) -> float:
         """Return the minimum shadow length worth rendering at the current zoom."""
@@ -471,7 +436,7 @@ class ShadowRenderer:
         tile_height: float,
         receivers: list[Actor] | None = None,
         dynamic_receivers: list[Actor] | None = None,
-        sun_params: _SunShadowParams | None = None,
+        sun_params: SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
         batch_data: _ActorBatchData | None = None,
     ) -> None:
@@ -483,11 +448,16 @@ class ShadowRenderer:
         shadow geometry. Sprite actors use the batch sprite-shadow API
         when available, otherwise fall through to per-actor emission.
         """
+        dl = directional_light or self._frame_directional_light
+        if sun_params is None and dl is not None:
+            sun_params = dl.shadow_params()
         if sun_params is None:
-            dl = directional_light or self._frame_directional_light
-            if dl is not None:
-                sun_params = self._compute_sun_shadow_params(dl)
-        if sun_params is None:
+            return
+
+        # Fade actor shadows out as the sun sets so they vanish at night
+        # instead of freezing at their longest, horizon-grazing length.
+        shadow_fade = sun_params.fade
+        if shadow_fade <= 0.0:
             return
 
         # Use the restricted dynamic_receivers for the dimming loop when
@@ -498,7 +468,9 @@ class ShadowRenderer:
             if dynamic_receivers is not None
             else (actors if receivers is None else receivers)
         )
-        shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
+        shadow_dir_x = sun_params.dir_x
+        shadow_dir_y = sun_params.dir_y
+        shadow_length_scale = sun_params.length_scale
         min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
 
         # LOD flag: at low zoom, wall-clipping and receiver-dimming are
@@ -726,7 +698,7 @@ class ShadowRenderer:
         # ------------------------------------------------------------------
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
         shadow_length_pixels = shadow_length_tiles * float(tile_height)
-        shadow_alpha = float(config.ACTOR_SHADOW_ALPHA)
+        shadow_alpha = float(config.ACTOR_SHADOW_ALPHA) * shadow_fade
         fade_tip = bool(config.ACTOR_SHADOW_FADE_TIP)
         eligible_indices = np.flatnonzero(eligible_mask)
 
@@ -841,7 +813,7 @@ class ShadowRenderer:
         tile_height: float,
         *,
         viewport_scale: tuple[float, float] = (1.0, 1.0),
-        sun_params: _SunShadowParams | None = None,
+        sun_params: SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
     ) -> None:
         """Render projected glyph shadows for small terrain objects (boulders, etc.).
@@ -856,14 +828,20 @@ class ShadowRenderer:
         if self.viewport_zoom < config.LOD_DETAIL_ZOOM_THRESHOLD:
             return
 
-        if sun_params is None:
-            dl = directional_light or self._frame_directional_light
-            if dl is not None:
-                sun_params = self._compute_sun_shadow_params(dl)
+        dl = directional_light or self._frame_directional_light
+        if sun_params is None and dl is not None:
+            sun_params = dl.shadow_params()
         if sun_params is None:
             return
 
-        shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
+        # Fade terrain glyph shadows out through dusk, matching actor shadows.
+        shadow_fade = sun_params.fade
+        if shadow_fade <= 0.0:
+            return
+
+        shadow_dir_x = sun_params.dir_x
+        shadow_dir_y = sun_params.dir_y
+        shadow_length_scale = sun_params.length_scale
         viewport_scale_x, viewport_scale_y = viewport_scale
 
         # Get viewport bounds.
@@ -929,7 +907,7 @@ class ShadowRenderer:
                 shadow_dir_x=shadow_dir_x,
                 shadow_dir_y=shadow_dir_y,
                 shadow_length_pixels=clipped_length_tiles * tile_height,
-                shadow_alpha=config.TERRAIN_GLYPH_SHADOW_ALPHA,
+                shadow_alpha=config.TERRAIN_GLYPH_SHADOW_ALPHA * shadow_fade,
                 scale_x=viewport_scale_x,
                 scale_y=viewport_scale_y,
                 fade_tip=config.ACTOR_SHADOW_FADE_TIP,

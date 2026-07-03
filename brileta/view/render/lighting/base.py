@@ -71,6 +71,9 @@ class LightingSystem(ABC):
         """
         self.game_world = game_world
         self.revision: int = 0  # Incremented when lighting state changes
+        # Ambient fill level, ramped by the day/night clock (down to a
+        # moonlight floor at night). Subclasses read this when shading.
+        self.ambient_light: float = AMBIENT_LIGHT_LEVEL
 
     @abstractmethod
     def update(self, fixed_timestep: FixedTimestep) -> None:

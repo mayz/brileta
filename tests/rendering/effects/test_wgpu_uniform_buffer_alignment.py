@@ -13,6 +13,7 @@ from __future__ import annotations
 import struct
 from unittest.mock import Mock
 
+from brileta.config import AMBIENT_LIGHT_LEVEL
 from brileta.game.game_world import GameWorld
 
 
@@ -40,6 +41,7 @@ class TestWGPUUniformBufferAlignment:
         mock_system.game_world = self.game_world
         mock_system.MAX_LIGHTS = 32
         mock_system._time = 1.5
+        mock_system.ambient_light = AMBIENT_LIGHT_LEVEL
 
         # Bind the real method to our mock
         mock_system._pack_uniform_data = lambda *args, **kwargs: (
@@ -324,6 +326,7 @@ class TestWGPUUniformBufferEdgeCases:
         mock_system.game_world = self.game_world
         mock_system.MAX_LIGHTS = 32
         mock_system._time = 0.0
+        mock_system.ambient_light = AMBIENT_LIGHT_LEVEL
 
         mock_system._pack_uniform_data = lambda *args, **kwargs: (
             GPULightingSystem._pack_uniform_data(mock_system, *args, **kwargs)
