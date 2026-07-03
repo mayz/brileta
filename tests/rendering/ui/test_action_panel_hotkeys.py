@@ -52,7 +52,7 @@ class TestActionPanelHotkeys:
             name=f"Test {action_id}",
             description="Test action",
             category=category,
-            action_class=MagicMock(),  # ty: ignore[invalid-argument-type]
+            action_class=MagicMock(),
             static_params=static_params,
         )
 

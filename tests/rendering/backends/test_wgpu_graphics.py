@@ -665,7 +665,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.draw_mouse_cursor(mock_cursor)  # ty: ignore[invalid-argument-type]
 
         # render_particles should handle None screen_renderer gracefully
-        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())  # ty: ignore[invalid-argument-type]
+        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())
 
         # apply_environmental_effect is now implemented
         self.graphics_ctx.apply_environmental_effect(

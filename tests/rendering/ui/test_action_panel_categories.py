@@ -42,7 +42,7 @@ def make_action(action_id: str, name: str, category: ActionCategory) -> ActionOp
         name=name,
         description=f"Test action {name}",
         category=category,
-        action_class=MagicMock(),  # ty: ignore[invalid-argument-type]
+        action_class=MagicMock(),
         requirements=[],
         static_params={},
     )
