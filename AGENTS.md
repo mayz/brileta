@@ -63,6 +63,10 @@ When in doubt, write the test.
 
 - As you make changes, add docstrings and line comments to clarify to a human reader *what* the code is doing and, if needed, *why* it's doing it that way.
 
+## Committing work
+
+This worktree can be shared by parallel agents. Uncommitted changes are not safe here: a sibling session's working-tree git operation (`git restore`, `git checkout`, `git reset`, `git stash`) wipes them with no trace and no reflog entry. So when you finish a unit of work, commit it on the current feature branch - a plain WIP commit is fine. Do not leave finished work unstaged. History gets cleaned up at the end (the work is squashed), so a WIP commit costs nothing and is the only thing that protects your changes. Never commit to the default branch (branch first), and don't push unless asked.
+
 ## Design Discussions
 
 When discussing game design, architecture, or implementation trade-offs:
