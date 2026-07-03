@@ -266,7 +266,6 @@ class TurnManager:
         Args:
             timestep: The fixed logic step duration in seconds.
         """
-        interval = config.AMBIENT_ACTION_INTERVAL_SECONDS
         for actor in self._npc_energy_actors():
             assert actor.energy is not None  # Narrow for the type checker
 
@@ -283,15 +282,12 @@ class TurnManager:
                     _ambient_phase_rng.uniform(0.0, config.ACTION_COST)
                 )
 
-            # get_speed_based_energy_amount() is ACTION_COST worth for a
-            # standard NPC, so spreading it over `interval` seconds of steps
-            # yields one action per interval at standard speed. The per-NPC
-            # multiplier varies that pace slightly.
+            # Spread one action's worth of energy across the actor's expected
+            # step interval, so it affords one action per interval. The
+            # interval helper is shared with MoveExecutor's glide sizing,
+            # keeping accrual pace and glide duration locked together.
             per_step = (
-                actor.energy.get_speed_based_energy_amount()
-                * actor.energy.ambient_speed_multiplier
-                * timestep
-                / interval
+                config.ACTION_COST * timestep / actor.energy.ambient_step_interval_s()
             )
             actor.energy.accumulate_energy(per_step)
             self._cap_npc_energy(actor)

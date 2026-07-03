@@ -78,22 +78,29 @@ class MoveIntentGenerator:
         if self.is_first_move_of_burst:
             self.is_first_move_of_burst = False
             self.next_move_time = current_time + config.MOVEMENT_KEY_REPEAT_DELAY
+            # A tap (or the first step of a hold) has the full repeat delay of
+            # clear time before another step can land, so it glides longer
+            # than repeat-phase steps instead of zipping in 70ms and freezing.
             return MoveIntent(
                 self.controller,
                 self.controller.gw.player,
                 dx,
                 dy,
-                duration_ms=config.HELD_KEY_MOVE_DURATION_MS,
+                duration_ms=config.TAP_MOVE_DURATION_MS,
             )
 
         if current_time >= self.next_move_time:
             self.next_move_time = current_time + config.MOVEMENT_KEY_REPEAT_INTERVAL
+            # Repeat-phase hops use a mid-strength ease-out: enough per-hop
+            # accent to read as footsteps, without the full quadratic curve's
+            # velocity sawtooth. Tune via HELD_KEY_MOVE_EASE_POWER.
             return MoveIntent(
                 self.controller,
                 self.controller.gw.player,
                 dx,
                 dy,
                 duration_ms=config.HELD_KEY_MOVE_DURATION_MS,
+                ease_power=config.HELD_KEY_MOVE_EASE_POWER,
             )
 
         return None

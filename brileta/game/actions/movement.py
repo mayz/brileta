@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from brileta import config
+
 from .base import GameIntent
 
 if TYPE_CHECKING:
@@ -31,6 +33,7 @@ class MoveIntent(GameIntent):
         dx: int,
         dy: int,
         duration_ms: int | None = None,
+        ease_power: float = config.DEFAULT_MOVE_EASE_POWER,
     ) -> None:
         super().__init__(controller, actor)
 
@@ -43,6 +46,10 @@ class MoveIntent(GameIntent):
         # Optional duration override. Controls both animation and pacing.
         # If None, executor uses config.AUTOPILOT_MOVE_DURATION_MS.
         self.duration_ms = duration_ms
+
+        # Ease-out strength for the glide: 1.0 linear, 2.0 punchy quadratic,
+        # values between blend the two. Only consulted when duration_ms is set.
+        self.ease_power = ease_power
 
     @property
     def newx(self) -> int:

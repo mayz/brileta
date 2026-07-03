@@ -84,8 +84,14 @@ class Camera:
 
     def follow_actor(self, actor: Actor, smoothing: float = 0.15) -> None:
         """Follow an actor with dead zone to reduce jarring camera movement."""
-        target_x = float(actor.x)
-        target_y = float(actor.y)
+        # Track the in-flight render position during glides so the camera's
+        # target moves continuously instead of teleporting a tile per step.
+        if actor._animation_controlled:
+            target_x = actor.render_x
+            target_y = actor.render_y
+        else:
+            target_x = float(actor.x)
+            target_y = float(actor.y)
 
         # Calculate distance from camera center to player
         dx = target_x - self.world_x

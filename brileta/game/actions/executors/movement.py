@@ -19,16 +19,34 @@ class MoveExecutor(ActionExecutor[MoveIntent]):
         if block is not None:
             return self._blocked_result(block, intent)
 
-        # Use intent's duration, or fall back to autopilot default.
-        duration_ms = (
-            intent.duration_ms
-            if intent.duration_ms is not None
-            else config.AUTOPILOT_MOVE_DURATION_MS
-        )
+        # Use intent's duration, or derive one from how the actor is paced.
+        ease_power = config.DEFAULT_MOVE_EASE_POWER
+        if intent.duration_ms is not None:
+            duration_ms = intent.duration_ms
+            ease_power = intent.ease_power
+        elif (
+            intent.actor is not game_world.player
+            and intent.actor.energy is not None
+            and not intent.controller.is_combat_mode()
+        ):
+            # Explore-mode NPC: size the glide to fill the gap until its next
+            # ambient step, so consecutive steps chain into a continuous
+            # linear stroll instead of a 100ms zip and a freeze. Undershoot
+            # slightly (0.9) so a glide always finishes before the next
+            # step's animation takes over the actor's render position.
+            step_interval_s = intent.actor.energy.ambient_step_interval_s()
+            duration_ms = int(step_interval_s * 0.9 * 1000)
+            ease_power = 1.0
+        else:
+            duration_ms = config.AUTOPILOT_MOVE_DURATION_MS
 
         # Success! Move the actor with the specified animation duration.
         intent.actor.move(
-            intent.dx, intent.dy, intent.controller, duration=duration_ms / 1000.0
+            intent.dx,
+            intent.dy,
+            intent.controller,
+            duration=duration_ms / 1000.0,
+            ease_power=ease_power,
         )
 
         # Plan advancement is handled by TurnManager (player) and

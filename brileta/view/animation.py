@@ -11,10 +11,15 @@ from abc import ABC, abstractmethod
 from collections import deque
 from typing import TYPE_CHECKING
 
+from brileta import config
 from brileta.types import FixedTimestep
 
 if TYPE_CHECKING:
     from brileta.game.actors.core import Actor
+
+# Glides at least this long advance the walk cycle at their midpoint too;
+# below it, the per-step walk-frame flip alone is fast enough.
+_MIDSTEP_FLIP_MIN_DURATION_S = 0.25
 
 
 class Animation(ABC):
@@ -51,6 +56,7 @@ class MoveAnimation(Animation):
         start_pos: tuple[float, float],
         end_pos: tuple[float, float],
         duration: float = 0.15,
+        ease_power: float = config.DEFAULT_MOVE_EASE_POWER,
     ) -> None:
         """Initialize a movement animation.
 
@@ -60,15 +66,29 @@ class MoveAnimation(Animation):
             end_pos: Target position as (x, y) coordinates.
             duration: Animation duration in seconds. Defaults to 0.15s for
                 backward compatibility.
+            ease_power: Ease-out strength. 1.0 is linear (constant velocity,
+                good for chained ambient strolls), 2.0 is quadratic ease-out
+                (a punchy accent for single steps); values between blend the
+                two feels.
         """
         self.actor = actor
         self.start_x, self.start_y = start_pos
         self.end_x, self.end_y = end_pos
         self.duration = duration
+        self.ease_power = ease_power
         self.elapsed_time = 0.0
+        # Whether the mid-glide walk-frame flip has fired. The flip applies to
+        # any glide of at least _MIDSTEP_FLIP_MIN_DURATION_S, eased or not:
+        # skating is about how long one leg pose stays on screen, which is a
+        # function of duration, not of the easing curve.
+        self._midstep_flipped = False
 
-        # Take control of the actor's render position
+        # Take control of the actor's render position. Registering as the
+        # actor's active glide supersedes any older in-flight MoveAnimation,
+        # which will drop out silently on its next update instead of fighting
+        # this one for the render position.
         self.actor._animation_controlled = True
+        self.actor._active_move_animation = self
 
         # Set initial render position
         self.actor.render_x = self.start_x
@@ -90,6 +110,12 @@ class MoveAnimation(Animation):
         if self.actor.health is not None and not self.actor.health.is_alive():
             return True
 
+        # A newer glide has taken over this actor (rapid chained steps).
+        # Finish without snapping or releasing control so the new glide's
+        # render position and state are left untouched.
+        if self.actor._active_move_animation is not self:
+            return True
+
         self.elapsed_time += fixed_timestep
 
         if self.elapsed_time >= self.duration:
@@ -102,12 +128,28 @@ class MoveAnimation(Animation):
             self.actor.render_x = self.end_x
             self.actor.render_y = self.end_y
             self.actor._animation_controlled = False
+            self.actor._active_move_animation = None
             return True
 
         # Ease-out interpolation starts promptly and eases into the stop,
         # avoiding a perceived "hesitation" at the start of short moves.
+        # ease_power 1.0 keeps velocity constant so back-to-back tile glides
+        # (ambient NPC strolling) read as one continuous walk.
         progress = self.elapsed_time / self.duration
-        eased = 1.0 - (1.0 - progress) ** 2
+        eased = 1.0 - (1.0 - progress) ** self.ease_power
+
+        # Long glides advance the walk cycle mid-step as well as at step
+        # time; one pose held across a ~450ms slide reads as ice skating.
+        # Short chained hops (held-key repeats) are excluded - their per-step
+        # flip already runs the walk cycle plenty fast.
+        if (
+            self.duration >= _MIDSTEP_FLIP_MIN_DURATION_S
+            and not self._midstep_flipped
+            and progress >= 0.5
+        ):
+            self._midstep_flipped = True
+            self.actor.walk_frame = 1 - self.actor.walk_frame
+            self.actor._update_active_sprite_uv(moving=True)
         self.actor.render_x = self.start_x + (self.end_x - self.start_x) * eased
         self.actor.render_y = self.start_y + (self.end_y - self.start_y) * eased
 

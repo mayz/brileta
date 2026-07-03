@@ -20,6 +20,7 @@ class DummyActor:
         self.color = (255, 255, 255)
         self.render_x = float(x)
         self.render_y = float(y)
+        self._animation_controlled = False
         self.visual_effects = None
         self.blocks_movement = True
 

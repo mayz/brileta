@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from .idle_animation import IdleAnimationProfile
     from .status_effects import StatusEffect
 
-from brileta import colors
+from brileta import colors, config
 from brileta.config import DEFAULT_ACTOR_SPEED
 from brileta.constants.movement import MovementConstants
 from brileta.events import MessageEvent, publish_event
@@ -1389,6 +1389,21 @@ class EnergyComponent:
         normalized_speed = self.speed / 100.0  # Normalize speed to reasonable range
 
         return base_energy * normalized_speed * speed_multiplier * exhaustion_multiplier
+
+    def ambient_step_interval_s(self) -> float:
+        """Expected seconds between this actor's explore-mode ambient actions.
+
+        Single source of truth for ambient pacing: the time-driven accrual in
+        TurnManager.accumulate_ambient_energy and the NPC glide duration in
+        MoveExecutor both derive from this, so they can't drift apart. A
+        standard-speed actor with a 1.0 ambient multiplier acts once per
+        config.AMBIENT_ACTION_INTERVAL_SECONDS.
+        """
+        return (
+            config.AMBIENT_ACTION_INTERVAL_SECONDS
+            * config.ACTION_COST
+            / (self.get_speed_based_energy_amount() * self.ambient_speed_multiplier)
+        )
 
     def regenerate(self) -> None:
         """Legacy regeneration method (deprecated in RAF).

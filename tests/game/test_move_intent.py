@@ -18,6 +18,10 @@ from tests.helpers import DummyGameWorld
 class DummyController:
     gw: DummyGameWorld
     frame_manager: object | None = None
+    combat: bool = False
+
+    def is_combat_mode(self) -> bool:
+        return self.combat
 
 
 def make_world() -> tuple[DummyController, Character]:
@@ -135,6 +139,60 @@ def test_queued_moves_use_updated_position() -> None:
     assert result_right.step_block == StepBlock.WALL
     # Player should remain at (1, 0) because the diagonal tile is a wall.
     assert (player.x, player.y) == (1, 0)
+
+
+# --- Move duration pacing tests ---
+
+
+def make_npc(controller: DummyController, x: int, y: int) -> Character:
+    npc = Character(
+        x,
+        y,
+        "n",
+        colors.WHITE,
+        "NPC",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(npc)
+    return npc
+
+
+def test_player_move_uses_autopilot_duration() -> None:
+    """Player moves without explicit duration fall back to the autopilot default."""
+    from brileta import config
+
+    controller, player = make_world()
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = MoveExecutor().execute(intent)
+    assert result is not None and result.succeeded
+    assert result.duration_ms == config.AUTOPILOT_MOVE_DURATION_MS
+
+
+def test_explore_npc_move_glides_across_step_interval() -> None:
+    """Ambient NPC glides fill the ~0.5s gap between steps instead of 100ms."""
+    from brileta import config
+
+    controller, _player = make_world()
+    npc = make_npc(controller, 2, 2)
+    intent = MoveIntent(cast(Controller, controller), npc, dx=1, dy=0)
+    result = MoveExecutor().execute(intent)
+    assert result is not None and result.succeeded
+    # Standard speed, multiplier 1.0: 0.9 * AMBIENT_ACTION_INTERVAL_SECONDS.
+    expected_ms = int(config.AMBIENT_ACTION_INTERVAL_SECONDS * 0.9 * 1000)
+    assert result.duration_ms == expected_ms
+
+
+def test_combat_npc_move_keeps_autopilot_duration() -> None:
+    """In combat, NPC moves keep the short duration so pacing stays snappy."""
+    from brileta import config
+
+    controller, _player = make_world()
+    controller.combat = True
+    npc = make_npc(controller, 2, 2)
+    intent = MoveIntent(cast(Controller, controller), npc, dx=1, dy=0)
+    result = MoveExecutor().execute(intent)
+    assert result is not None and result.succeeded
+    assert result.duration_ms == config.AUTOPILOT_MOVE_DURATION_MS
 
 
 # --- _blocked_result mapping tests ---

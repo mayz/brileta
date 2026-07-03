@@ -102,6 +102,7 @@ class TestWorldViewBoundaryEnforcement:
         self.mock_controller.gw.game_map.height = 100
         self.mock_controller.gw.player.x = 0
         self.mock_controller.gw.player.y = 0
+        self.mock_controller.gw.player._animation_controlled = False
 
         self.mock_screen_shake = Mock()
         self.mock_screen_shake.update.return_value = (0, 0)  # No shake

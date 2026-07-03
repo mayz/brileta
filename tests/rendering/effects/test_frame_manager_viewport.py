@@ -37,6 +37,7 @@ def make_dummy_data() -> tuple[DummyController, WorldView]:
     mock_player = MagicMock()
     mock_player.x = 4  # Position doesn't matter much for this test
     mock_player.y = 4
+    mock_player._animation_controlled = False
     vs.update_camera(mock_player, map_width=20, map_height=20)
 
     # Use the real GameWorldView, but we don't need to give it a real controller

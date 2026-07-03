@@ -398,6 +398,17 @@ MOVEMENT_KEY_REPEAT_INTERVAL = 0.07
 # Unified action timing: duration controls both animation and pacing.
 # Duration for held-key movement (ms). Fast, responsive. Matches current feel.
 HELD_KEY_MOVE_DURATION_MS = 70
+# Duration for a tap / the first step of a held burst (ms). The next step
+# can't land sooner than MOVEMENT_KEY_REPEAT_DELAY, so this glide can run
+# most of that window (0.9 undershoot) without being interrupted mid-flight.
+TAP_MOVE_DURATION_MS = int(MOVEMENT_KEY_REPEAT_DELAY * 0.9 * 1000)
+# Ease-out strength for held-key repeat hops. 1.0 is linear (reads as
+# frictionless sliding), 2.0 is quadratic (reads as a 14Hz velocity
+# sawtooth); values between trade footstep accent against smoothness.
+HELD_KEY_MOVE_EASE_POWER = 1.7
+# Default ease-out strength for move glides that don't specify one
+# (taps, autopilot, combat steps): full quadratic single-step accent.
+DEFAULT_MOVE_EASE_POWER = 2.0
 # Duration for autopilot movement (ms). Slightly slower, can vary for approach.
 AUTOPILOT_MOVE_DURATION_MS = 100
 

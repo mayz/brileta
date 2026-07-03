@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from brileta import colors
+from brileta import colors, config
 from brileta.config import DEFAULT_ACTOR_SPEED
 from brileta.events import (
     FloatingTextEvent,
@@ -286,6 +286,10 @@ class Actor:
         # === Animation Control ===
         # Flag to indicate if this actor is under animation control
         self._animation_controlled: bool = False
+        # The newest MoveAnimation controlling this actor. An older in-flight
+        # glide checks this to drop out silently when superseded by a newer
+        # step (see MoveAnimation.update), keeping rapid chained steps seamless.
+        self._active_move_animation: MoveAnimation | None = None
 
         # === Final Setup & Registration ===
         # This should come last, ensuring the actor is fully constructed
@@ -303,6 +307,7 @@ class Actor:
         dy: TileCoord,
         controller: Controller | None = None,
         duration: float = 0.1,
+        ease_power: float = config.DEFAULT_MOVE_EASE_POWER,
     ) -> None:
         """Move the actor and automatically create movement animation.
 
@@ -311,6 +316,8 @@ class Actor:
             dy: Change in y coordinate
             controller: Controller to queue animation with (if available)
             duration: Animation duration in seconds. Defaults to 0.1s.
+            ease_power: Ease-out strength for the glide. 1.0 is linear
+                (chained ambient strolls), 2.0 is a punchy single-step accent.
         """
         # Store old position for animation
         old_x, old_y = self.x, self.y
@@ -354,9 +361,17 @@ class Actor:
 
         # Automatically create animation if controller available
         if controller and hasattr(controller, "animation_manager"):
-            start_pos = (float(old_x), float(old_y))
+            # If a previous glide is still in flight, chain from the current
+            # render position instead of the old tile corner, so back-to-back
+            # steps (held-key movement) stay seamless under timing jitter.
+            if self._animation_controlled:
+                start_pos = (self.render_x, self.render_y)
+            else:
+                start_pos = (float(old_x), float(old_y))
             end_pos = (float(self.x), float(self.y))
-            animation = MoveAnimation(self, start_pos, end_pos, duration=duration)
+            animation = MoveAnimation(
+                self, start_pos, end_pos, duration=duration, ease_power=ease_power
+            )
             controller.animation_manager.add(animation)
 
     def _update_active_sprite_uv(self, moving: bool) -> None:

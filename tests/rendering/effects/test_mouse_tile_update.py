@@ -13,6 +13,9 @@ class DummyActor:
     def __init__(self, x: int, y: int) -> None:
         self.x = x
         self.y = y
+        self.render_x = float(x)
+        self.render_y = float(y)
+        self._animation_controlled = False
         self.ch = "@"
         self.color = (255, 255, 255)
 

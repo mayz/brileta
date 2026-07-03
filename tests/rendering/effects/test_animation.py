@@ -18,6 +18,7 @@ class DummyActor:
         self.render_y = float(y)
         self._animation_controlled = False
         self.health: Any = None  # Optional health component for death tests
+        self.walk_frame = 0
 
     def _update_active_sprite_uv(self, moving: bool) -> None:
         """No-op stub for animation tests."""
@@ -91,6 +92,80 @@ class TestMoveAnimation:
         assert not finished
         assert actor.render_x == pytest.approx(9.375)
         assert actor.render_y == pytest.approx(18.75)
+
+    def test_linear_easing(self) -> None:
+        """With ease_power=1.0, interpolation is linear (constant velocity)."""
+        actor = DummyActor(0, 0)
+        animation = MoveAnimation(
+            cast(Any, actor), (0.0, 0.0), (10.0, 20.0), ease_power=1.0
+        )
+
+        # At 50% time, linear gives exactly 50% of distance.
+        finished = animation.update(FixedTimestep(0.075))
+        assert not finished
+        assert actor.render_x == pytest.approx(5.0)
+        assert actor.render_y == pytest.approx(10.0)
+
+    def test_linear_glide_flips_walk_frame_at_midpoint(self) -> None:
+        """Long linear glides advance the walk cycle once mid-step."""
+        actor = DummyActor(0, 0)
+        animation = MoveAnimation(
+            cast(Any, actor), (0.0, 0.0), (1.0, 0.0), duration=0.4, ease_power=1.0
+        )
+
+        # Before the midpoint, the walk frame is untouched.
+        animation.update(FixedTimestep(0.1))
+        assert actor.walk_frame == 0
+
+        # Crossing the midpoint flips it exactly once.
+        animation.update(FixedTimestep(0.1))
+        assert actor.walk_frame == 1
+        animation.update(FixedTimestep(0.05))
+        assert actor.walk_frame == 1
+
+    def test_eased_animation_does_not_flip_walk_frame(self) -> None:
+        """Short eased steps keep the per-step walk cycle unchanged."""
+        actor = DummyActor(0, 0)
+        animation = MoveAnimation(cast(Any, actor), (0.0, 0.0), (1.0, 0.0))
+        animation.update(FixedTimestep(0.1))
+        assert actor.walk_frame == 0
+
+    def test_short_linear_hop_does_not_flip_walk_frame(self) -> None:
+        """Held-key repeat hops rely on the per-step flip, never mid-glide."""
+        actor = DummyActor(0, 0)
+        animation = MoveAnimation(
+            cast(Any, actor), (0.0, 0.0), (1.0, 0.0), duration=0.07, ease_power=1.0
+        )
+        animation.update(FixedTimestep(0.05))
+        assert actor.walk_frame == 0
+
+    def test_superseded_animation_drops_out_silently(self) -> None:
+        """A newer glide takes over; the old one finishes without snapping."""
+        actor = DummyActor(0, 0)
+        old = MoveAnimation(
+            cast(Any, actor), (0.0, 0.0), (1.0, 0.0), duration=0.1, ease_power=1.0
+        )
+        old.update(FixedTimestep(0.05))  # Halfway: render_x == 0.5
+
+        # A new step arrives before the old glide finishes, chaining from
+        # the current render position (as Actor.move does).
+        new = MoveAnimation(
+            cast(Any, actor), (0.5, 0.0), (2.0, 0.0), duration=0.1, ease_power=1.0
+        )
+        assert actor.render_x == pytest.approx(0.5)
+
+        # The old animation is superseded: it finishes immediately and does
+        # not snap the actor to its own end position or release control.
+        assert old.update(FixedTimestep(0.05))
+        assert actor.render_x == pytest.approx(0.5)
+        assert actor._animation_controlled
+
+        # The new glide proceeds and completes normally.
+        assert not new.update(FixedTimestep(0.05))
+        assert actor.render_x == pytest.approx(1.25)
+        assert new.update(FixedTimestep(0.05))
+        assert actor.render_x == 2.0
+        assert not actor._animation_controlled
 
     def test_animation_completion(self) -> None:
         """Animation completes and snaps to final position."""
