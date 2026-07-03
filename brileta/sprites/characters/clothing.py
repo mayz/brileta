@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from brileta import colors
 from brileta.sprites.primitives import PaletteBrush, stamp_ellipse
 from brileta.types import Facing
 
 from .appearance import BodyParams, Palette3
+from .clothing_masks import COLLAR_MASKS
+from .masks import render_mask
 
 if TYPE_CHECKING:
     from .renderer import CharacterDrawContext
@@ -349,6 +352,73 @@ CLOTHING_DEFS: tuple[tuple[str, ClothingDrawFn, bool], ...] = (
     ("armor", _draw_armor_torso, False),
     ("robe", _draw_robe_torso, True),
 )
+
+# The collar layer indexes CLOTHING_STYLE_NAMES by the same clothing_style_idx
+# that selects CLOTHING_DEFS, so the two must stay the same length. New styles
+# must be appended to both in lockstep.
+assert len(CLOTHING_STYLE_NAMES) == len(CLOTHING_DEFS)
+
+
+def _collar_mask_key(facing: Facing) -> str:
+    """Map a facing to the collar-mask dict key (side masks authored WEST)."""
+    if facing == Facing.NORTH:
+        return "north"
+    if facing in {Facing.EAST, Facing.WEST}:
+        return "side"
+    return "south"
+
+
+_BLACK: colors.Color = (0, 0, 0)
+_WHITE: colors.Color = (255, 255, 255)
+
+
+def _collar_palette(
+    name: str,
+    key: str,
+    cloth_pal: Palette3,
+    skin_pal: Palette3,
+) -> Palette3:
+    """Pick the collar ramp so the neckline contrasts at 1x game scale.
+
+    Same-hue garment shadow is invisible at 20x20, so the neckline reads through
+    high-contrast material against what it covers: skin for the robe V-neck,
+    bright metal for the armor gorget, a plain cloth band for the shirt.
+    """
+    if name == "robe" and key in {"south", "side"}:
+        # Skin V-neck: skin showing down the chest, high contrast on a dark robe.
+        return skin_pal
+    c_shadow, _c_mid, c_hi = cloth_pal
+    if name == "armor":
+        # Metal gorget catches light: shadow base, bright body, specular lip.
+        return (c_shadow, c_hi, colors.lerp_color(c_hi, _WHITE, 0.5))
+    # Shirt crew band, and the robe's back cowl: a plain cloth ramp with a
+    # darkened recess so the seam reads where the palette value allows.
+    return (colors.lerp_color(c_shadow, _BLACK, 0.45), c_shadow, c_hi)
+
+
+def _layer_collar(context: CharacterDrawContext) -> None:
+    """Stamp the per-style neckline collar over the torso/neck junction.
+
+    Anchored to the torso-top center and scaled by ``torso_rx`` so one authored
+    collar tracks every build width. Drawn after the neck (so it wraps the neck
+    base) and before the head (which sits on top of it).
+    """
+    appearance = context.appearance
+    name = CLOTHING_STYLE_NAMES[appearance.clothing_style_idx]
+    mask_set = COLLAR_MASKS.get(name)
+    if mask_set is None:
+        return
+    params = context.params
+    key = _collar_mask_key(context.facing)
+    torso_top = context.torso_cy - params.torso_ry
+    render_mask(
+        context.canvas,
+        mask_set[key],
+        _collar_palette(name, key, appearance.cloth_pal, appearance.skin_pal),
+        context.cx,
+        torso_top,
+        params.torso_rx,
+    )
 
 
 def _layer_torso(context: CharacterDrawContext) -> None:

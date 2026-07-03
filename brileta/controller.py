@@ -367,7 +367,7 @@ class Controller:
             visual_scale_with_height_jitter as boulder_visual_scale_with_height_jitter,
         )
         from brileta.sprites.characters import (
-            CHARACTER_DIRECTIONAL_POSE_COUNT,
+            CHARACTER_POSE_COUNT,
             HUMANOID_GLYPHS,
             character_sprite_seed,
             generate_character_pose_set,
@@ -483,7 +483,7 @@ class Controller:
                         )
 
                 n_boulders = len(boulders)
-                pose_count = CHARACTER_DIRECTIONAL_POSE_COUNT
+                pose_count = CHARACTER_POSE_COUNT
                 for k, character in enumerate(characters):
                     uv_offset = n_trees + n_boulders + (k * pose_count)
                     resolved_pose_uvs: list[SpriteUV] = []
@@ -509,7 +509,7 @@ class Controller:
             self.graphics.set_sprite_atlas_texture(atlas.texture)
 
         logger.info(
-            "Sprite atlas: %dx%d (%d tree + %d boulder + %d directional character"
+            "Sprite atlas: %dx%d (%d tree + %d boulder + %d character"
             " pose sprites"
             " across %d characters,"
             " %d allocations)",
@@ -517,7 +517,7 @@ class Controller:
             atlas_side,
             len(trees),
             len(boulders),
-            len(characters) * CHARACTER_DIRECTIONAL_POSE_COUNT,
+            len(characters) * CHARACTER_POSE_COUNT,
             len(characters),
             atlas.allocated_count,
         )

@@ -93,11 +93,15 @@ class MoveAnimation(Animation):
         self.elapsed_time += fixed_timestep
 
         if self.elapsed_time >= self.duration:
-            # Animation complete - snap to final position and release control
+            # Animation complete - snap to final position and release control.
+            # The sprite is deliberately NOT reset to the standing pose here: the
+            # actor holds its last walk frame, so continuous walking never flickers
+            # to stand between tiles. The idle-settle timer (ticked by the
+            # animation manager) is what eventually settles a stopped actor to
+            # stand, only after it has been still past the idle delay.
             self.actor.render_x = self.end_x
             self.actor.render_y = self.end_y
             self.actor._animation_controlled = False
-            self.actor._update_active_sprite_uv(moving=False)
             return True
 
         # Ease-out interpolation starts promptly and eases into the stop,
@@ -116,6 +120,10 @@ class AnimationManager:
     def __init__(self) -> None:
         """Initialize an empty animation manager."""
         self._queue: deque[Animation] = deque()
+        # Actors that recently stepped and are counting down to idle. Ticked every
+        # logic step (even with an empty animation queue) so a stopped actor
+        # settles from its last walk frame to stand once the idle delay lapses.
+        self._settling_actors: set[Actor] = set()
 
     def add(self, animation: Animation) -> None:
         """Add an animation to the end of the queue.
@@ -124,6 +132,10 @@ class AnimationManager:
             animation: The animation to add to the queue.
         """
         self._queue.append(animation)
+
+    def track_idle(self, actor: Actor) -> None:
+        """Register an actor whose idle-settle timer needs ticking down."""
+        self._settling_actors.add(actor)
 
     def is_queue_empty(self) -> bool:
         """Check if the animation queue is empty.
@@ -141,6 +153,7 @@ class AnimationManager:
         finish_all_and_clear() instead to properly snap actors to positions.
         """
         self._queue.clear()
+        self._settling_actors.clear()
 
     def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update all animations simultaneously and remove finished ones.
@@ -148,6 +161,17 @@ class AnimationManager:
         Args:
             fixed_timestep: Fixed time step duration for deterministic animation timing.
         """
+        # Tick idle-settle timers first, even when the animation queue is empty:
+        # an actor that took its last step has no queued animation but must still
+        # count down and settle from its walk frame to stand once it stops.
+        if self._settling_actors:
+            settled = {
+                actor
+                for actor in self._settling_actors
+                if not actor.tick_idle_settle(fixed_timestep)
+            }
+            self._settling_actors -= settled
+
         # Process all animations simultaneously for responsive gameplay
         if not self._queue:
             return
@@ -174,9 +198,15 @@ class AnimationManager:
                 animation.actor.render_x = animation.end_x
                 animation.actor.render_y = animation.end_y
                 animation.actor._animation_controlled = False
-                animation.actor._update_active_sprite_uv(moving=False)
+
+        # A hard snap ends all motion, so settle every counting-down actor
+        # straight to its standing pose.
+        for actor in self._settling_actors:
+            actor._idle_settle_time = 0.0
+            actor._update_active_sprite_uv(moving=False)
 
         self._queue.clear()
+        self._settling_actors.clear()
 
     def interrupt_player_animations(self, player_actor: Actor) -> None:
         """Remove all animations belonging to ``player_actor`` from the queue.
@@ -188,11 +218,12 @@ class AnimationManager:
 
         for animation in self._queue:
             if isinstance(animation, MoveAnimation) and animation.actor is player_actor:
-                # Snap to end position before releasing control
+                # Snap to end position before releasing control. The sprite frame
+                # is left as-is (the last walk frame) rather than reset to stand,
+                # so an interrupted walk does not snap to a neutral pose.
                 animation.actor.render_x = animation.end_x
                 animation.actor.render_y = animation.end_y
                 animation.actor._animation_controlled = False
-                animation.actor._update_active_sprite_uv(moving=False)
             else:
                 remaining_animations.append(animation)
 

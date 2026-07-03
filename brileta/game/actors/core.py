@@ -46,9 +46,19 @@ from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
 from brileta.sprites.characters import (
-    CHARACTER_DIRECTIONAL_POSE_COUNT as _CHARACTER_DIRECTIONAL_POSE_COUNT,
+    CHARACTER_FRAMES_PER_FACING as _CHARACTER_FRAMES_PER_FACING,
 )
-from brileta.types import ActorId, Facing, SpriteUV, TileCoord, WorldTileCoord
+from brileta.sprites.characters import (
+    CHARACTER_POSE_COUNT as _CHARACTER_POSE_COUNT,
+)
+from brileta.types import (
+    ActorId,
+    Facing,
+    FixedTimestep,
+    SpriteUV,
+    TileCoord,
+    WorldTileCoord,
+)
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, disposition_label
@@ -83,6 +93,13 @@ _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
     Facing.WEST: 2,
     Facing.EAST: 3,
 }
+
+# After an actor's last step it holds that walk frame (its last footfall) for
+# this long, then settles to the neutral standing pose. Long enough that
+# continuous walking or wandering (steps with small gaps) keeps re-arming it and
+# never reaches idle; only stopping for a real beat lets it lapse to stand. Tune
+# to taste.
+_IDLE_SETTLE_DELAY_S: float = 2.0
 
 
 @dataclass
@@ -223,9 +240,14 @@ class Actor:
         self.character_sprite_uvs: tuple[SpriteUV, ...] | None = None
         # Last movement direction. Persists while standing still.
         self.facing: Facing = Facing.SOUTH
-        # Walk cycle frame (0/1) toggled on each move.
-        # Reserved for future multi-frame pose sets.
+        # Walk cycle frame (0/1) toggled on each move. The actor holds whichever
+        # walk frame it last stepped on between steps; it settles to the standing
+        # pose only after staying still past the idle-settle delay.
         self.walk_frame: int = 0
+        # Seconds remaining before an idle actor settles from its last walk frame
+        # to the standing pose. Re-armed on every step; ticked down by the
+        # animation manager. While > 0 the last walk frame is held.
+        self._idle_settle_time: float = 0.0
         # Sprite ground-anchor within the tile in [0, 1], measured from top.
         # 1.0 = tile bottom, 0.5 = tile center.
         self.sprite_ground_anchor_y = sprite_ground_anchor_y
@@ -310,7 +332,21 @@ class Actor:
             else:
                 self.facing = Facing.EAST if dx > 0 else Facing.WEST
             self.walk_frame = 1 - self.walk_frame
-        self._update_active_sprite_uv(moving=moving)
+        # The walk cycle only plays when there is an animation manager to tick the
+        # idle-settle timer back to stand; without one a walk frame would stick
+        # mid-stride, so fall back to the standing pose.
+        walking = (
+            moving
+            and controller is not None
+            and hasattr(controller, "animation_manager")
+        )
+        if walking and controller is not None:
+            # Re-arm the idle-settle timer and register with the animation manager
+            # so it gets ticked down; each step pushes idle further off, so only a
+            # real stop lets it lapse to the standing pose.
+            self._idle_settle_time = _IDLE_SETTLE_DELAY_S
+            controller.animation_manager.track_idle(self)
+        self._update_active_sprite_uv(moving=walking)
 
         if self.gw:
             self.gw.actor_spatial_index.update(self)
@@ -326,17 +362,40 @@ class Actor:
     def _update_active_sprite_uv(self, moving: bool) -> None:
         """Resolve and set the active sprite UV for the current pose state.
 
-        Pose order:
-            0: front_stand, 1: back_stand, 2: left_stand, 3: right_stand
+        The pose set is grouped by facing (S, N, W, E), each facing followed by
+        its two walk frames: ``[stand, walk_a, walk_b]``. While moving, the frame
+        alternates between the two walk frames by ``walk_frame``; when idle it is
+        the standing frame.
         """
         pose_uvs = self.character_sprite_uvs
-        if pose_uvs is None or len(pose_uvs) < _CHARACTER_DIRECTIONAL_POSE_COUNT:
+        if pose_uvs is None or len(pose_uvs) < _CHARACTER_POSE_COUNT:
             return
 
-        # Reserved for future walk-cycle reintroduction.
-        _ = moving
-        pose_idx = _CHARACTER_DIRECTIONAL_POSE_INDEX[self.facing]
-        self.sprite_uv = pose_uvs[pose_idx]
+        facing_base = (
+            _CHARACTER_DIRECTIONAL_POSE_INDEX[self.facing]
+            * _CHARACTER_FRAMES_PER_FACING
+        )
+        # Frame 0 is the standing pose; 1 and 2 are the two walk frames.
+        frame_offset = 1 + self.walk_frame if moving else 0
+        self.sprite_uv = pose_uvs[facing_base + frame_offset]
+
+    def tick_idle_settle(self, dt: FixedTimestep) -> bool:
+        """Count down the idle-settle timer; settle to stand when it lapses.
+
+        Returns ``True`` while the actor is still holding its last walk frame
+        (timer > 0) and ``False`` once it has settled to the standing pose, so
+        the animation manager can stop ticking it. The held walk frame is left
+        untouched until the timer lapses.
+        """
+        if self._idle_settle_time <= 0.0:
+            self._update_active_sprite_uv(moving=False)
+            return False
+        self._idle_settle_time -= dt
+        if self._idle_settle_time <= 0.0:
+            self._idle_settle_time = 0.0
+            self._update_active_sprite_uv(moving=False)
+            return False
+        return True
 
     def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
         """Instantly move the actor's logical and visual position."""

@@ -7,6 +7,7 @@ directional standing poses (front/back/left/right).
 
 from __future__ import annotations
 
+import colorsys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -58,7 +59,56 @@ def character_sprite_seed(
     )
 
 
-SKIN_PALETTES: list[Palette3] = [
+# ---------------------------------------------------------------------------
+# Palette hue-shifting
+# ---------------------------------------------------------------------------
+#
+# Hand-drawn pixel art rarely runs a single hue straight up a lightness ramp.
+# It bends the ramp: shadow tones lean cool (toward blue/purple) and gain a
+# little saturation, highlight tones lean warm (toward yellow/orange). We bend
+# hue at constant HLS lightness so the value spacing (and the contrast
+# guardrails downstream) survive; only the hue and saturation move.
+
+_SHADOW_HUE: float = 0.63  # blue/purple, in colorsys 0..1 hue units
+_HIGHLIGHT_HUE: float = 0.09  # warm orange
+_SHADOW_HUE_PULL: float = 0.12  # fraction of the way toward the cool hue
+_HIGHLIGHT_HUE_PULL: float = 0.10  # fraction of the way toward the warm hue
+_SHADOW_SAT_BOOST: float = 0.06  # small saturation rise in shadows
+
+
+def _bend_hue(
+    color: colors.Color,
+    target_hue: float,
+    hue_pull: float,
+    sat_delta: float,
+) -> colors.Color:
+    """Rotate ``color``'s hue toward ``target_hue`` at constant lightness.
+
+    ``hue_pull`` is the fraction of the shortest-path hue distance to travel;
+    ``sat_delta`` nudges saturation. Lightness (HLS ``l``) is untouched so the
+    ramp's value spacing is preserved.
+    """
+    r, g, b = (channel / 255.0 for channel in color)
+    h, lightness, s = colorsys.rgb_to_hls(r, g, b)
+    # Rotate along the shortest path around the hue wheel.
+    delta_h = ((target_hue - h + 0.5) % 1.0) - 0.5
+    h = (h + delta_h * hue_pull) % 1.0
+    s = min(1.0, max(0.0, s + sat_delta))
+    r, g, b = colorsys.hls_to_rgb(h, lightness, s)
+    return (round(r * 255), round(g * 255), round(b * 255))
+
+
+def _hue_shift_ramp(ramp: Palette3) -> Palette3:
+    """Bend a (shadow, mid, highlight) ramp cool-in-shadow, warm-in-highlight."""
+    shadow, mid, highlight = ramp
+    return (
+        _bend_hue(shadow, _SHADOW_HUE, _SHADOW_HUE_PULL, _SHADOW_SAT_BOOST),
+        mid,
+        _bend_hue(highlight, _HIGHLIGHT_HUE, _HIGHLIGHT_HUE_PULL, 0.0),
+    )
+
+
+_RAW_SKIN_PALETTES: list[Palette3] = [
     ((150, 105, 75), (200, 160, 125), (230, 200, 170)),
     ((140, 95, 60), (190, 140, 100), (225, 185, 150)),
     ((115, 70, 40), (165, 110, 65), (200, 150, 105)),
@@ -66,7 +116,7 @@ SKIN_PALETTES: list[Palette3] = [
     ((55, 35, 20), (95, 55, 30), (135, 90, 55)),
 ]
 
-HAIR_PALETTES: list[Palette3] = [
+_RAW_HAIR_PALETTES: list[Palette3] = [
     ((15, 12, 8), (35, 25, 18), (55, 42, 30)),
     ((50, 30, 15), (85, 55, 25), (125, 80, 40)),
     ((95, 45, 12), (155, 80, 18), (195, 125, 45)),
@@ -75,7 +125,7 @@ HAIR_PALETTES: list[Palette3] = [
     ((170, 160, 150), (210, 200, 190), (235, 225, 218)),
 ]
 
-CLOTHING_PALETTES: list[Palette3] = [
+_RAW_CLOTHING_PALETTES: list[Palette3] = [
     ((55, 25, 25), (110, 45, 45), (155, 75, 75)),
     ((25, 35, 75), (45, 65, 130), (75, 95, 170)),
     ((25, 55, 25), (45, 95, 45), (75, 135, 75)),
@@ -88,13 +138,20 @@ CLOTHING_PALETTES: list[Palette3] = [
     ((25, 50, 55), (45, 90, 100), (70, 130, 140)),
 ]
 
-PANTS_PALETTES: list[Palette3] = [
+_RAW_PANTS_PALETTES: list[Palette3] = [
     ((25, 25, 30), (50, 50, 60), (75, 75, 85)),
     ((40, 30, 20), (75, 55, 35), (110, 85, 55)),
     ((20, 25, 45), (35, 45, 80), (55, 70, 115)),
     ((18, 18, 18), (35, 35, 35), (55, 55, 55)),
     ((50, 45, 35), (90, 80, 60), (130, 120, 95)),
 ]
+
+# Hue-shifted ramps used everywhere. The transform is deterministic (no RNG),
+# so sprites stay byte-identical for a given seed.
+SKIN_PALETTES: list[Palette3] = [_hue_shift_ramp(p) for p in _RAW_SKIN_PALETTES]
+HAIR_PALETTES: list[Palette3] = [_hue_shift_ramp(p) for p in _RAW_HAIR_PALETTES]
+CLOTHING_PALETTES: list[Palette3] = [_hue_shift_ramp(p) for p in _RAW_CLOTHING_PALETTES]
+PANTS_PALETTES: list[Palette3] = [_hue_shift_ramp(p) for p in _RAW_PANTS_PALETTES]
 
 
 def _luma(color: colors.Color) -> float:
@@ -168,6 +225,116 @@ POSES: tuple[Pose, ...] = (
 )
 
 CHARACTER_DIRECTIONAL_POSE_COUNT: int = len(POSES)
+
+# ---------------------------------------------------------------------------
+# Walk cycle poses
+# ---------------------------------------------------------------------------
+#
+# A 2-frame walk per facing (walk-A / walk-B) plus the standing pose. The two
+# walk frames swap which leg leads and counter-swing the arms, so alternating
+# them while moving reads as a step. Offsets are deliberately small (~1px): at
+# 20x20 a bigger stride pops the silhouette. body_dy is left at 0 so the two
+# walk frames never jump vertically against each other (no bob popping); the
+# stride and arm swing carry the motion.
+#
+# Front/back legs stride vertically (one foot plants low, the other lifts);
+# side legs stride horizontally (front foot forward, back foot back). EAST walk
+# frames reuse the WEST-oriented offsets and rely on the renderer's canvas
+# mirror, exactly like the standing poses.
+
+_LEG_STRIDE_V = 1.6  # front/back: lifted foot rises (planted foot clamps to floor)
+_LEG_STRIDE_H = 2.1  # side horizontal foot swing
+_ARM_SWING = 1.3  # counter-swing of the hands (must be visible at 1x)
+
+POSE_FRONT_WALK_A = Pose(
+    "front_walk_a",
+    facing=Facing.SOUTH,
+    left_leg_dy=_LEG_STRIDE_V,
+    right_leg_dy=-_LEG_STRIDE_V,
+    left_arm_dy=-_ARM_SWING,
+    right_arm_dy=_ARM_SWING,
+)
+POSE_FRONT_WALK_B = Pose(
+    "front_walk_b",
+    facing=Facing.SOUTH,
+    left_leg_dy=-_LEG_STRIDE_V,
+    right_leg_dy=_LEG_STRIDE_V,
+    left_arm_dy=_ARM_SWING,
+    right_arm_dy=-_ARM_SWING,
+)
+POSE_BACK_WALK_A = Pose(
+    "back_walk_a",
+    facing=Facing.NORTH,
+    left_leg_dy=_LEG_STRIDE_V,
+    right_leg_dy=-_LEG_STRIDE_V,
+    left_arm_dy=-_ARM_SWING,
+    right_arm_dy=_ARM_SWING,
+)
+POSE_BACK_WALK_B = Pose(
+    "back_walk_b",
+    facing=Facing.NORTH,
+    left_leg_dy=-_LEG_STRIDE_V,
+    right_leg_dy=_LEG_STRIDE_V,
+    left_arm_dy=_ARM_SWING,
+    right_arm_dy=-_ARM_SWING,
+)
+POSE_LEFT_WALK_A = Pose(
+    "left_walk_a",
+    facing=Facing.WEST,
+    left_leg_dx=-_LEG_STRIDE_H,
+    right_leg_dx=_LEG_STRIDE_H,
+    left_arm_dy=_ARM_SWING,
+    right_arm_dy=-_ARM_SWING,
+)
+POSE_LEFT_WALK_B = Pose(
+    "left_walk_b",
+    facing=Facing.WEST,
+    left_leg_dx=_LEG_STRIDE_H,
+    right_leg_dx=-_LEG_STRIDE_H,
+    left_arm_dy=-_ARM_SWING,
+    right_arm_dy=_ARM_SWING,
+)
+POSE_RIGHT_WALK_A = Pose(
+    "right_walk_a",
+    facing=Facing.EAST,
+    left_leg_dx=-_LEG_STRIDE_H,
+    right_leg_dx=_LEG_STRIDE_H,
+    left_arm_dy=_ARM_SWING,
+    right_arm_dy=-_ARM_SWING,
+)
+POSE_RIGHT_WALK_B = Pose(
+    "right_walk_b",
+    facing=Facing.EAST,
+    left_leg_dx=_LEG_STRIDE_H,
+    right_leg_dx=-_LEG_STRIDE_H,
+    left_arm_dy=-_ARM_SWING,
+    right_arm_dy=_ARM_SWING,
+)
+
+# Frames per facing, in selection order: stand, walk-A, walk-B. The frame index
+# is 0 when idle and 1 + walk_frame (1 or 2) while moving.
+CHARACTER_FRAMES_PER_FACING: int = 3
+
+# The full render/atlas set: (facings x frames) poses, grouped by facing in the
+# same facing order as CHARACTER_DIRECTIONAL_POSE_INDEX (S, N, W, E), each facing
+# followed by its two walk frames. Front-stand stays at index 0 so the initial
+# resting sprite is unchanged.
+CHARACTER_POSES: tuple[Pose, ...] = (
+    POSE_FRONT_STAND,
+    POSE_FRONT_WALK_A,
+    POSE_FRONT_WALK_B,
+    POSE_BACK_STAND,
+    POSE_BACK_WALK_A,
+    POSE_BACK_WALK_B,
+    POSE_LEFT_STAND,
+    POSE_LEFT_WALK_A,
+    POSE_LEFT_WALK_B,
+    POSE_RIGHT_STAND,
+    POSE_RIGHT_WALK_A,
+    POSE_RIGHT_WALK_B,
+)
+
+CHARACTER_POSE_COUNT: int = len(CHARACTER_POSES)
 
 
 # ---------------------------------------------------------------------------

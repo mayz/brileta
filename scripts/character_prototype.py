@@ -20,6 +20,7 @@ import numpy as np
 
 from brileta.sprites.characters import (
     CARICATURE_TEMPLATES,
+    CHARACTER_POSES,
     CLOTHING_PALETTES,
     CLOTHING_STYLE_NAMES,
     HAIR_PALETTES,
@@ -32,6 +33,7 @@ from brileta.sprites.characters import (
     draw_character_pose,
     generate_character_sprite,
 )
+from brileta.sprites.characters.appearance import Pose
 from brileta.sprites.primitives import paste_sprite
 
 POSE_DIAGNOSTIC_LABEL_WIDTH = 150
@@ -43,6 +45,23 @@ POSE_DIAGNOSTIC_COLUMN_LABELS: list[str] = [
     "Right",
 ]
 POSE_DIAGNOSTIC_HEADER_NOTES: list[str] = []
+
+# Column headers for the walk filmstrip: per facing, stand then the two walk
+# frames, matching CHARACTER_POSES order (S, N, W, E).
+WALK_COLUMN_LABELS: list[str] = [
+    "Front",
+    "F-A",
+    "F-B",
+    "Back",
+    "B-A",
+    "B-B",
+    "Left",
+    "L-A",
+    "L-B",
+    "Right",
+    "R-A",
+    "R-B",
+]
 
 
 def _paste_bottom_center(
@@ -178,8 +197,12 @@ def generate_pose_sheet(
     include_labels: bool = False,
     start_id: int = 1,
     seeds: list[int] | None = None,
+    poses: tuple[Pose, ...] = POSES,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
-    """Generate rows of front/back/left/right pose frames for each character.
+    """Generate rows of pose frames for each character, one column per pose.
+
+    Defaults to the four directional standing poses. Pass *poses* to render a
+    different set (e.g. ``CHARACTER_POSES`` for a stand+walk filmstrip).
 
     When *seeds* is given, those explicit seeds are rendered (one per row) and
     *n_characters*/*base_seed* are ignored. Otherwise rows use consecutive seeds
@@ -192,7 +215,7 @@ def generate_pose_sheet(
     cell = base_size + 8 + padding
     label_width = POSE_DIAGNOSTIC_LABEL_WIDTH if include_labels else 0
     header_height = POSE_DIAGNOSTIC_HEADER_HEIGHT if include_labels else 0
-    n_cols = len(POSES)
+    n_cols = len(poses)
 
     sheet_w = label_width + n_cols * cell + padding
     sheet_h = header_height + n_characters * cell + padding
@@ -205,7 +228,7 @@ def generate_pose_sheet(
     for row in range(n_characters):
         seed = row_seeds[row]
         appearance = CharacterAppearance.from_seed(seed, base_size)
-        directional_sprites = [draw_character_pose(appearance, pose) for pose in POSES]
+        directional_sprites = [draw_character_pose(appearance, pose) for pose in poses]
 
         for col, sprite in enumerate(directional_sprites):
             _paste_bottom_center(
@@ -441,9 +464,53 @@ if __name__ == "__main__":
             "and params.json."
         ),
     )
+    parser.add_argument(
+        "--walk-sheet",
+        action="store_true",
+        help=(
+            "Render a walk-cycle filmstrip for JUDGE_SEEDS into a snapshot dir "
+            "(-o DIR): per facing, stand | walk-A | walk-B columns. Writes "
+            "walk_8x.png, walk_1x.png, and params.json."
+        ),
+    )
 
     args = parser.parse_args()
     output_path = Path(args.output)
+
+    if args.walk_sheet:
+        snapshot_dir = Path(args.output)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        sheet, walk_labels, walk_meta = generate_pose_sheet(
+            base_size=args.size,
+            include_labels=True,
+            start_id=1,
+            seeds=list(JUDGE_SEEDS),
+            poses=CHARACTER_POSES,
+        )
+        _save_sheet_with_labels(
+            sheet,
+            snapshot_dir / "walk_8x.png",
+            scale=8,
+            row_labels=walk_labels,
+            column_labels=WALK_COLUMN_LABELS,
+            label_width=POSE_DIAGNOSTIC_LABEL_WIDTH,
+            header_height=POSE_DIAGNOSTIC_HEADER_HEIGHT,
+            base_size=args.size,
+        )
+        strip, _, _ = generate_pose_sheet(
+            base_size=args.size,
+            include_labels=False,
+            seeds=list(JUDGE_SEEDS),
+            poses=CHARACTER_POSES,
+        )
+        _save_sheet_with_labels(
+            strip, snapshot_dir / "walk_1x.png", scale=1, base_size=args.size
+        )
+        (snapshot_dir / "params.json").write_text(
+            json.dumps(walk_meta, indent=2), encoding="utf-8"
+        )
+        print(f"Saved walk sheets to {snapshot_dir}")
+        sys.exit(0)
 
     if args.judge_sheet:
         snapshot_dir = Path(args.output)

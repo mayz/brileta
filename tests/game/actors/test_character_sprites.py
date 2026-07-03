@@ -9,6 +9,8 @@ import numpy as np
 
 from brileta.sprites.characters import (
     CHARACTER_DIRECTIONAL_POSE_COUNT,
+    CHARACTER_FRAMES_PER_FACING,
+    CHARACTER_POSE_COUNT,
     POSE_BACK_STAND,
     POSE_LEFT_STAND,
     POSE_RIGHT_STAND,
@@ -45,16 +47,39 @@ def _pose_set_digest(pose_set: list[np.ndarray]) -> str:
 
 
 def test_generate_character_pose_set_returns_directional_rgba_sprites() -> None:
-    """Pose generation should produce the 4 non-empty directional RGBA images."""
+    """Pose generation should produce the full (facings x frames) sprite set."""
     pose_set = generate_character_pose_set(42)
 
-    assert len(pose_set) == CHARACTER_DIRECTIONAL_POSE_COUNT
+    assert len(pose_set) == CHARACTER_POSE_COUNT
     for sprite in pose_set:
         assert sprite.ndim == 3
         assert sprite.shape[2] == 4
         assert sprite.shape[0] > 0
         assert sprite.shape[1] > 0
         assert int(np.count_nonzero(sprite[:, :, 3])) > 0
+
+
+def test_pose_set_has_facings_times_frames_layout() -> None:
+    """The pose set is (facings x frames), grouped by facing, front-stand first."""
+    assert CHARACTER_POSE_COUNT == (
+        CHARACTER_DIRECTIONAL_POSE_COUNT * CHARACTER_FRAMES_PER_FACING
+    )
+    pose_set = generate_character_pose_set(2024)
+    assert len(pose_set) == CHARACTER_POSE_COUNT
+    # Index 0 must stay the front standing pose (the resting sprite).
+    appearance = CharacterAppearance.from_seed(2024, 20)
+    assert np.array_equal(pose_set[0], draw_character_pose(appearance, POSE_STAND))
+
+
+def test_walk_frames_differ_from_standing_for_leg_showing_build() -> None:
+    """Walk frames must actually change pixels vs the stand, else motion is dead."""
+    # Seed 8 is a thin/shirt build whose legs are visible (not a robe).
+    pose_set = generate_character_pose_set(8)
+    front_stand = pose_set[0]
+    front_walk_a = pose_set[1]
+    front_walk_b = pose_set[2]
+    assert not np.array_equal(front_stand, front_walk_a)
+    assert not np.array_equal(front_walk_a, front_walk_b)
 
 
 def test_generate_character_pose_set_is_deterministic() -> None:
@@ -477,3 +502,56 @@ def test_thin_front_pose_has_upper_leg_mass_between_legs() -> None:
     y2 = min(params.canvas_size, y + 1)
     patch = alpha[y1:y2, x1:x2]
     assert int(np.count_nonzero(patch)) > 0
+
+
+def test_collar_masks_cover_all_clothed_styles() -> None:
+    """Every clothed style has a non-empty collar mask per facing key.
+
+    Guards the ragged/typo class of authoring bug (a stray space or short row
+    would parse to an empty or malformed grid that silently draws nothing).
+    """
+    from brileta.sprites.characters.clothing_masks import COLLAR_MASKS
+
+    for style in ("shirt", "armor", "robe"):
+        assert style in COLLAR_MASKS
+        for key in ("south", "north", "side"):
+            mask = COLLAR_MASKS[style][key]
+            assert mask.tones.ndim == 2
+            assert mask.tones.shape[0] > 0 and mask.tones.shape[1] > 0
+            # At least a few opaque cells, else the mask draws nothing.
+            assert int(np.count_nonzero(mask.tones >= 0)) >= 4
+
+
+def test_robe_front_shows_skin_vneck_on_chest() -> None:
+    """The robe neckline exposes skin on the upper chest, below the neck.
+
+    The V-neck is rendered in the skin palette over the cloth torso, so the chest
+    band just below the neck should read closer to skin than to cloth (a plain
+    cloth torso would not). This is what makes the robe collar read at 1x.
+    """
+    appearance = CharacterAppearance.from_seed(11, 20)  # standard/robe
+    sprite = draw_character_pose(appearance, POSE_STAND)  # front stand
+    params = appearance.body_params
+
+    center_x = round(params.canvas_size / 2.0)
+    torso_top = (
+        params.head_radius
+        + params.head_top_pad
+        + params.head_radius
+        + params.neck_gap
+        + params.torso_ry * params.torso_cy_factor
+        - params.torso_ry
+    )
+    # Sample a small band a little below the torso top, where the skin V sits.
+    y = min(params.canvas_size - 1, int(torso_top + 1))
+    patch = sprite[max(0, y - 1) : y + 2, center_x - 1 : center_x + 2, :]
+    alpha_mask = patch[:, :, 3] > 0
+    assert bool(alpha_mask.any())
+
+    rgb = patch[:, :, :3][alpha_mask].astype(np.float64)
+    skin_mid = np.array(appearance.skin_pal[1], dtype=np.float64)
+    cloth_mid = np.array(appearance.cloth_pal[1], dtype=np.float64)
+    skin_like = np.count_nonzero(
+        np.linalg.norm(rgb - skin_mid, axis=1) < np.linalg.norm(rgb - cloth_mid, axis=1)
+    )
+    assert skin_like > 0

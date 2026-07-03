@@ -10,7 +10,13 @@ import numpy as np
 from brileta.sprites.primitives import darken_rim
 from brileta.types import Facing
 
-from .appearance import POSE_STAND, POSES, BodyParams, CharacterAppearance, Pose
+from .appearance import (
+    CHARACTER_POSES,
+    POSE_STAND,
+    BodyParams,
+    CharacterAppearance,
+    Pose,
+)
 from .body import (
     _layer_back_arm,
     _layer_back_definition,
@@ -21,7 +27,7 @@ from .body import (
     _layer_legs,
     _layer_neck,
 )
-from .clothing import _layer_torso
+from .clothing import _layer_collar, _layer_torso
 from .hair import _layer_hair
 
 
@@ -103,6 +109,7 @@ _CHARACTER_LAYER_PIPELINE: tuple[CharacterLayerStep, ...] = (
     ("back_arm", _layer_back_arm),
     ("front_arm", _layer_front_arm),
     ("neck", _layer_neck),
+    ("collar", _layer_collar),
     ("head", _layer_head),
     ("hair", _layer_hair),
     ("back_definition", _layer_back_definition),
@@ -178,9 +185,14 @@ def generate_character(
 
 
 def generate_character_pose_set(seed: int, size: int = 20) -> list[np.ndarray]:
-    """Generate front/back/left/right standing poses for one seed."""
+    """Generate the full pose set for one seed.
+
+    Order is (facings x frames): per facing (S, N, W, E) a standing frame
+    followed by two walk frames, matching ``CHARACTER_POSES``. Front-stand is
+    index 0.
+    """
     appearance = roll_character_appearance(seed, size)
-    return [_render_pose(appearance, pose) for pose in POSES]
+    return [_render_pose(appearance, pose) for pose in CHARACTER_POSES]
 
 
 def generate_character_sprite(seed: int, size: int = 20) -> np.ndarray:
