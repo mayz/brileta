@@ -223,7 +223,14 @@ class ActionRouter:
             self.execute_intent(new_intent)  # Recursive call
 
         elif result.step_block == StepBlock.BLOCKED_BY_CONTAINER and result.blocked_by:
-            # Rule: Bumping into a container means you try to search it.
+            # Rule: Bumping into a container means you try to search it - but only
+            # for the player. Searching opens the player-facing loot menu, so an
+            # NPC bumping a container (e.g. a resident pathing to its routine
+            # anchor walks into a bookcase) must not open it. Like the
+            # actor-bump case above, the NPC just waits and the AI reroutes next
+            # tick.
+            if intent.actor is not self.controller.gw.player:
+                return
             container = cast(Container, result.blocked_by)
             new_intent = SearchContainerIntent(self.controller, intent.actor, container)
             self.execute_intent(new_intent)  # Recursive call

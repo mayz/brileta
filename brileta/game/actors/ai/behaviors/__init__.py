@@ -6,6 +6,7 @@ corresponding goal (the multi-turn state machine).
 
 from .flee import FleeAction, FleeGoal
 from .patrol import PatrolAction, PatrolGoal
+from .routine import RoutineAction, RoutineGoal
 from .wander import WanderAction, WanderGoal
 
 __all__ = [
@@ -13,6 +14,8 @@ __all__ = [
     "FleeGoal",
     "PatrolAction",
     "PatrolGoal",
+    "RoutineAction",
+    "RoutineGoal",
     "WanderAction",
     "WanderGoal",
 ]

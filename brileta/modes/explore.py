@@ -605,12 +605,20 @@ class ExploreMode(Mode):
 
         # Check for actor at click location
         # Use spatial index to find all actors, since get_actor_at_location
-        # prioritizes blocking actors (player) over non-blocking (ItemPile)
+        # prioritizes blocking actors (player) over non-blocking (ItemPile).
+        # Other actors under the player's tile (e.g. an item pile) win over the
+        # player so they stay selectable, but the player is selectable too when
+        # nothing else is there.
         actor_at_click = None
         for actor in self.gw.actor_spatial_index.get_at_point(world_x, world_y):
             if actor is not self.player:
                 actor_at_click = actor
                 break
+        if actor_at_click is None and (self.player.x, self.player.y) == (
+            world_x,
+            world_y,
+        ):
+            actor_at_click = self.player
         if actor_at_click is not None:
             # Skip dead characters
             if (

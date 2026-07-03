@@ -31,6 +31,7 @@ from brileta.util import rng
 
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
 from .behaviors.flee import FleeAction, collect_flee_candidates
+from .behaviors.routine import RoutineAction
 from .behaviors.wander import WanderAction
 from .perception import PerceivedActor, PerceptionComponent
 from .utility import (
@@ -322,6 +323,8 @@ class AIComponent:
         if isinstance(action, FleeAction):
             return action.get_intent_with_goal(context, actor)
         if isinstance(action, WanderAction):
+            return action.get_intent_with_goal(context, actor)
+        if isinstance(action, RoutineAction):
             return action.get_intent_with_goal(context, actor)
         return action.get_intent(context)
 

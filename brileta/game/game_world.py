@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors, config
@@ -66,6 +67,19 @@ if TYPE_CHECKING:
 _npc_rng = rng.get("world.npc_placement")
 _container_rng = rng.get("world.containers")
 
+# Daily-routine assignment tuning.
+# Fraction of routine-capable residents given a home + workplace anchor. The
+# rest stay unanchored and keep the ambient wander behavior, so the town reads
+# as "most people have somewhere to be, some are drifting" rather than a
+# regimented crowd that all marches to work at once.
+_ROUTINE_ANCHORED_FRACTION = 0.75
+# Max residents that may share a single anchor tile, so workplaces spread out
+# instead of piling everyone onto one doorstep.
+_ROUTINE_ANCHOR_TILE_CAP = 2
+# Radius (tiles) around the settlement center searched for open plaza/market
+# tiles when building the anchor pool.
+_ROUTINE_PLAZA_RADIUS = 12
+
 
 class GameWorld:
     """
@@ -116,6 +130,9 @@ class GameWorld:
         # Generator-specific decoration placement caches.
         self.buildings: list[Building] = []
         self.streets: list[Rect] = []
+        # Public feature tiles anchored NPCs may briefly visit on a mid-workday
+        # errand. Filled during settlement routine assignment; empty otherwise.
+        self.routine_errand_pool: list[WorldTilePos] = []
         self.tree_positions: list[WorldTilePos] = []
         self.boulder_positions: list[WorldTilePos] = []
 
@@ -421,13 +438,59 @@ class GameWorld:
         return game_map, room_rects
 
     def _position_player(self, room: Rect) -> None:
-        """Place the player at a valid spawn point within the room.
+        """Place the player at a valid spawn point.
 
-        Attempts to find a location with at least 3x3 walkable tiles around it.
-        Falls back to the room center if no such location exists.
+        In a settlement the player starts just outside the door of the building
+        containing ``room`` (so play opens on the street, not indoors). Other
+        map types, and settlements where no outdoor spot is found, fall back to
+        a 3x3-walkable spawn inside the room.
         """
+        if self.generator_type == GeneratorType.SETTLEMENT:
+            outside = self._find_outside_building_spawn(room)
+            if outside is not None:
+                self.player.teleport(*outside)
+                return
         spawn_point = self._get_spawn_point(room)
         self.player.teleport(*spawn_point)
+
+    def _find_outside_building_spawn(self, room: Rect) -> WorldTilePos | None:
+        """Return an outdoor walkable tile just outside the room's building.
+
+        Looks at tiles adjacent to the building's doors, keeping only outdoor
+        walkable ones outside the building footprint. Prefers a tile with a 3x3
+        open area so the player isn't wedged against a wall. Returns None when
+        the room isn't part of a building or no such tile exists.
+        """
+        from brileta.types import DIRECTIONS
+
+        center_x, center_y = room.center()
+        building = next(
+            (b for b in self.buildings if b.contains_point(center_x, center_y)),
+            None,
+        )
+        if building is None:
+            return None
+
+        candidates: list[WorldTilePos] = []
+        for door_x, door_y in building.door_positions:
+            for dx, dy in DIRECTIONS:
+                ox, oy = door_x + dx, door_y + dy
+                if (
+                    0 <= ox < self.game_map.width
+                    and 0 <= oy < self.game_map.height
+                    and self.game_map.walkable[ox, oy]
+                    and not building.contains_point(ox, oy)
+                    and self._is_outdoor_tile(ox, oy)
+                ):
+                    candidates.append((ox, oy))
+
+        if not candidates:
+            return None
+        # Prefer a roomy spot; otherwise take the first tile just outside a door.
+        return next(
+            (c for c in candidates if self._has_3x3_walkable(c[0], c[1])),
+            candidates[0],
+        )
 
     def _get_spawn_point(self, room: Rect) -> WorldTilePos:
         """Find a spawn point with at least 3x3 walkable tiles around it.
@@ -802,6 +865,11 @@ class GameWorld:
         spawn_plan = self._build_npc_spawn_plan(total_npcs)
         spawn_name_counts: dict[str, int] = {}
 
+        # Routine-capable NPCs are collected during placement and given
+        # homes/workplaces in one batch afterward, so anchor spreading and the
+        # anchored-vs-wandering split can be decided across the whole population.
+        self._pending_routine_npcs: list[NPC] = []
+
         npc_index = 0
 
         # 1. Place indoor NPCs in building rooms
@@ -830,6 +898,9 @@ class GameWorld:
             spawn_plan,
             spawn_name_counts,
         )
+
+        # 4. Assign homes and workplace anchors to the routine-capable NPCs.
+        self._assign_settlement_routines(self._pending_routine_npcs)
 
     def _place_indoor_npcs(
         self,
@@ -1063,7 +1134,195 @@ class GameWorld:
         """
         npc_type = spawn_plan[index] if index < len(spawn_plan) else RESIDENT_TYPE
         npc_name = self._next_spawn_name(npc_type, spawn_name_counts)
-        return npc_type.create(x, y, npc_name, game_world=self)
+        npc = npc_type.create(x, y, npc_name, game_world=self)
+        if "routine" in npc_type.tags:
+            self._pending_routine_npcs.append(npc)
+        return npc
+
+    def _assign_settlement_routines(self, residents: list[NPC]) -> None:
+        """Give a fraction of residents a home + spread-out workplace anchor.
+
+        Homes are interior tiles of a building. Workplace anchors are drawn from
+        a settlement-wide, priority-ordered pool (other buildings' interiors and
+        doorfronts first, then a central plaza, then streets) so a worker reads
+        as having a job somewhere other than its own doorstep. Anchors are
+        capped per tile so workplaces don't crowd. Roughly
+        _ROUTINE_ANCHORED_FRACTION of residents are anchored; the rest keep the
+        ambient wander behavior. Each anchored NPC also gets a jittered schedule.
+        """
+        from brileta.game.actors.ai.behaviors.routine import ROUTINE_SCHEDULE_JITTER
+
+        # Feature tiles for mid-workday errands (available even if nobody ends
+        # up anchored, e.g. for NPCs spawned/anchored later).
+        self.routine_errand_pool = self._build_errand_destinations()
+
+        home_slots = self._build_home_slots()
+        anchor_pool = self._build_work_anchor_pool()
+        if not home_slots or not anchor_pool:
+            return  # Nothing to anchor to; everyone falls back to wandering.
+
+        # Shuffle so the anchored subset is a random slice of the population.
+        _npc_rng.shuffle(residents)
+        anchored_count = round(len(residents) * _ROUTINE_ANCHORED_FRACTION)
+
+        usage: Counter[WorldTilePos] = Counter()
+        cursor = 0
+        for npc in residents[:anchored_count]:
+            home_building, home_tiles = _npc_rng.choice(home_slots)
+            npc.home_pos = _npc_rng.choice(home_tiles)
+            anchor, cursor = self._pick_anchor(
+                anchor_pool, usage, cursor, exclude_building=home_building
+            )
+            npc.anchor_pos = anchor
+            usage[anchor] += 1
+            npc.routine_offset = _npc_rng.uniform(
+                -ROUTINE_SCHEDULE_JITTER, ROUTINE_SCHEDULE_JITTER
+            )
+
+    def _pick_anchor(
+        self,
+        pool: list[tuple[WorldTilePos, int]],
+        usage: Counter[WorldTilePos],
+        cursor: int,
+        *,
+        exclude_building: int,
+    ) -> tuple[WorldTilePos, int]:
+        """Pick the next anchor tile, spreading round-robin under a per-tile cap.
+
+        Scans the priority-ordered pool from ``cursor`` so successive picks fan
+        out across tiles rather than piling onto the first. Prefers tiles that
+        are under the occupancy cap and not in the NPC's own home building;
+        relaxes each of those constraints in turn if nothing else is available.
+        Returns the chosen tile and the advanced cursor.
+        """
+        n = len(pool)
+        # Preferred: under cap and not the NPC's own home building.
+        for k in range(n):
+            idx = (cursor + k) % n
+            tile, building = pool[idx]
+            if building != exclude_building and usage[tile] < _ROUTINE_ANCHOR_TILE_CAP:
+                return tile, (idx + 1) % n
+        # Relax the own-building exclusion, keep the cap.
+        for k in range(n):
+            idx = (cursor + k) % n
+            tile, _building = pool[idx]
+            if usage[tile] < _ROUTINE_ANCHOR_TILE_CAP:
+                return tile, (idx + 1) % n
+        # Last resort: the least-crowded tile, cap be damned.
+        tile, _building = min(pool, key=lambda entry: usage[entry[0]])
+        return tile, cursor
+
+    def _build_home_slots(self) -> list[tuple[int, list[WorldTilePos]]]:
+        """Return (building index, interior tiles) for each habitable building."""
+        slots: list[tuple[int, list[WorldTilePos]]] = []
+        for index, building in enumerate(self.buildings):
+            tiles = [
+                (x, y)
+                for rect in building.interior_rects
+                for x in range(rect.x1, rect.x2)
+                for y in range(rect.y1, rect.y2)
+                if self.game_map.walkable[x, y]
+            ]
+            if tiles:
+                slots.append((index, tiles))
+        return slots
+
+    def _build_work_anchor_pool(self) -> list[tuple[WorldTilePos, int]]:
+        """Build a priority-ordered pool of (tile, building index) work anchors.
+
+        Priority tiers, highest first:
+          1. Building interiors and doorfronts (a worker inside or in front of a
+             building reads as employed there). Tagged with the building index
+             so a worker can be kept out of its own home building.
+          2. Open plaza/market tiles near the settlement center.
+          3. Street tiles, as a catch-all fallback.
+        Wells and fires would slot between tiers 2 and 3, but none exist yet at
+        NPC-placement time, so they are omitted. Each tier is shuffled so picks
+        fan out; tiers are then concatenated to preserve the priority order.
+        """
+        buildings_tier: list[tuple[WorldTilePos, int]] = []
+        for index, building in enumerate(self.buildings):
+            # Interior floor tiles - a worker standing inside reads as employed.
+            buildings_tier.extend(
+                ((x, y), index)
+                for rect in building.interior_rects
+                for x in range(rect.x1, rect.x2)
+                for y in range(rect.y1, rect.y2)
+                if self.game_map.walkable[x, y]
+            )
+        # Outdoor tiles just in front of a door - a worker at the storefront.
+        buildings_tier.extend(self._building_doorfront_anchors())
+
+        plaza_tier = self._collect_plaza_anchors()
+
+        street_tier: list[tuple[WorldTilePos, int]] = [
+            ((x, y), -1)
+            for street in self.streets
+            for x in range(max(0, street.x1), min(self.game_map.width, street.x2))
+            for y in range(max(0, street.y1), min(self.game_map.height, street.y2))
+            if self.game_map.walkable[x, y]
+        ]
+
+        _npc_rng.shuffle(buildings_tier)
+        _npc_rng.shuffle(plaza_tier)
+        _npc_rng.shuffle(street_tier)
+        return buildings_tier + plaza_tier + street_tier
+
+    def _collect_plaza_anchors(self) -> list[tuple[WorldTilePos, int]]:
+        """Return open outdoor tiles near the settlement center (building -1)."""
+        if not self.buildings:
+            return []
+        centers = [b.bounding_rect for b in self.buildings]
+        cx = sum((r.x1 + r.x2) // 2 for r in centers) // len(centers)
+        cy = sum((r.y1 + r.y2) // 2 for r in centers) // len(centers)
+
+        radius = _ROUTINE_PLAZA_RADIUS
+        return [
+            ((x, y), -1)
+            for x in range(
+                max(0, cx - radius), min(self.game_map.width, cx + radius + 1)
+            )
+            for y in range(
+                max(0, cy - radius), min(self.game_map.height, cy + radius + 1)
+            )
+            if self.game_map.walkable[x, y]
+            and self._is_outdoor_tile(x, y)
+            and not any(b.contains_point(x, y) for b in self.buildings)
+        ]
+
+    def _building_doorfront_anchors(self) -> list[tuple[WorldTilePos, int]]:
+        """Return outdoor walkable tiles just outside each building's doors.
+
+        Tagged with the building index (shared by the work-anchor pool). A tile
+        in front of a door reads as a storefront / doorstep.
+        """
+        from brileta.types import DIRECTIONS
+
+        anchors: list[tuple[WorldTilePos, int]] = []
+        for index, building in enumerate(self.buildings):
+            anchors.extend(
+                ((door_x + dx, door_y + dy), index)
+                for door_x, door_y in building.door_positions
+                for dx, dy in DIRECTIONS
+                if 0 <= door_x + dx < self.game_map.width
+                and 0 <= door_y + dy < self.game_map.height
+                and self.game_map.walkable[door_x + dx, door_y + dy]
+                and self._is_outdoor_tile(door_x + dx, door_y + dy)
+            )
+        return anchors
+
+    def _build_errand_destinations(self) -> list[WorldTilePos]:
+        """Public feature tiles an anchored NPC may briefly visit mid-workday.
+
+        Deliberately the feature-y spots only - doorfronts and the central
+        plaza (wells/fires would belong here too, but none exist yet) - so an
+        errand reads as "went to the market / knocked on a door" rather than
+        wandering to an arbitrary tile. Streets and building interiors are
+        excluded on purpose.
+        """
+        return [tile for tile, _ in self._building_doorfront_anchors()] + [
+            tile for tile, _ in self._collect_plaza_anchors()
+        ]
 
     def _build_npc_spawn_plan(self, total_npcs: int) -> list[NPCType]:
         """Build a resident-heavy spawn plan with low hostile pressure.

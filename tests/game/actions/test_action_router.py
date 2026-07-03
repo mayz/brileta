@@ -253,6 +253,40 @@ def test_router_searches_container_on_bump() -> None:
         assert (player.x, player.y) == (0, 0)
 
 
+def test_npc_bumping_container_does_not_search() -> None:
+    """An NPC bumping a container must not open the player's loot menu.
+
+    Regression: routine-driven residents pathfind across town and walk into
+    bookcases. Searching opens a player-facing menu, so only the player's bump
+    may trigger it; an NPC just stays put and reroutes.
+    """
+    controller, _player = _make_world()
+
+    crate = create_bookcase(x=2, y=0, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(crate)
+    npc = NPC(
+        1,
+        0,
+        "N",
+        colors.WHITE,
+        "Resident",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(npc)
+
+    with patch(
+        "brileta.game.actions.executors.containers.SearchContainerExecutor.execute",
+        return_value=GameActionResult(),
+    ) as mock_execute:
+        router = ActionRouter(cast(Controller, controller))
+        intent = MoveIntent(cast(Controller, controller), npc, 1, 0)
+        router.execute_intent(intent)
+
+        assert not mock_execute.called
+        # NPC stayed put (blocked by the container).
+        assert (npc.x, npc.y) == (1, 0)
+
+
 def test_bump_into_container_opens_search_menu() -> None:
     """Integration test: bumping container calls show_overlay (not show)."""
     controller, player = _make_world()

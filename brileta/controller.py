@@ -957,11 +957,13 @@ class Controller:
         """Register live variables for inspecting NPC utility scoring.
 
         Registers ai.debug (toggle), ai.hovered.action, ai.hovered.scores,
-        ai.hovered.goal, ai.hovered.disposition_to_player,
+        ai.hovered.goal, ai.hovered.routine, ai.hovered.disposition_to_player,
         ai.hovered.disposition_to_target, and ai.hovered.threat_level.
-        When ai.debug is toggled on, the display variables are automatically
-        watched so they appear in the debug stats overlay. When toggled off,
-        they are unwatched.
+        The display variables report on the click-selected NPC only (it stays
+        pinned as it moves); hovering has no effect. When ai.debug is toggled on
+        they are watched so they appear in the debug stats overlay; toggled off,
+        they are unwatched. The variables keep the ``ai.hovered.*`` names for
+        continuity even though the subject is now the selected NPC.
         """
         from brileta.game.actors.ai import AIComponent
         from brileta.game.actors.core import NPC
@@ -970,17 +972,28 @@ class Controller:
             "ai.hovered.action",
             "ai.hovered.scores",
             "ai.hovered.goal",
+            "ai.hovered.routine",
             "ai.hovered.disposition_to_player",
             "ai.hovered.disposition_to_target",
             "ai.hovered.threat_level",
         )
 
+        def _debug_subject() -> Actor | None:
+            """The NPC the debug overlay reports on: the click-selected one.
+
+            Driven solely by the sticky click selection (selected_target), so
+            the readout stays pinned to one NPC as it and others move around.
+            Hovering deliberately has no effect - otherwise an NPC wandering
+            under the cursor would hijack the display.
+            """
+            return self.selected_target
+
         def _get_ai() -> AIComponent | None:
-            """Get the AI component for the hovered actor, if applicable.
+            """Get the AI component for the debug subject, if applicable.
 
             Returns None for dead actors (stale cached scores are irrelevant).
             """
-            actor = self.hovered_actor
+            actor = _debug_subject()
             if not isinstance(actor, NPC):
                 return None
             if not actor.health.is_alive():
@@ -1002,7 +1015,7 @@ class Controller:
             getter=lambda: self._ai_debug_enabled,
             setter=_set_ai_debug,
             formatter=lambda v: "on" if v else "off",
-            description="Toggle AI debug overlay for hovered NPC.",
+            description="Toggle AI debug overlay for the click-selected NPC.",
         )
 
         # -- ai.force_hostile toggle --
@@ -1030,7 +1043,7 @@ class Controller:
         live_variable_registry.register(
             "ai.hovered.action",
             getter=_get_action,
-            description="Action the hovered NPC chose this tick.",
+            description="Action the selected NPC chose this tick.",
         )
 
         # -- ai.hovered.scores --
@@ -1060,7 +1073,7 @@ class Controller:
         live_variable_registry.register(
             "ai.hovered.scores",
             getter=_get_scores,
-            description="All action scores for the hovered NPC, sorted descending.",
+            description="All action scores for the selected NPC, sorted descending.",
         )
 
         # -- ai.hovered.goal --
@@ -1068,7 +1081,7 @@ class Controller:
         def _get_goal() -> str:
             if not self._ai_debug_enabled:
                 return "---"
-            actor = self.hovered_actor
+            actor = _debug_subject()
             if not isinstance(actor, NPC):
                 return "---"
             goal = actor.current_goal
@@ -1081,7 +1094,38 @@ class Controller:
         live_variable_registry.register(
             "ai.hovered.goal",
             getter=_get_goal,
-            description="Active goal of the hovered NPC.",
+            description="Active goal of the selected NPC.",
+        )
+
+        # -- ai.hovered.routine --
+
+        def _get_routine() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            actor = _debug_subject()
+            if not isinstance(actor, NPC):
+                return "---"
+            # An NPC with neither anchor nor home has no routine: creatures,
+            # hostiles, and the unanchored fraction of residents that wander.
+            if actor.anchor_pos is None and actor.home_pos is None:
+                return "none (wanders)"
+            from brileta.game.actors.ai.behaviors.routine import routine_target
+
+            target = routine_target(self.gw.clock.time_of_day, actor)
+            at_work = actor.anchor_pos is not None and target == actor.anchor_pos
+            phase = "work" if at_work else "home"
+            return (
+                f"{phase} -> {target} | anchor={actor.anchor_pos} "
+                f"home={actor.home_pos} off={actor.routine_offset:+.2f}"
+            )
+
+        live_variable_registry.register(
+            "ai.hovered.routine",
+            getter=_get_routine,
+            description=(
+                "Daily-routine state: current phase, target tile, "
+                "anchor/home, and schedule offset."
+            ),
         )
 
         # -- ai.hovered.disposition_to_player --
@@ -1140,7 +1184,7 @@ class Controller:
             getter=_get_threat_level,
             description=(
                 "Relationship-aware threat level (proximity * hostility) "
-                "for hovered NPC's current AI target."
+                "for the selected NPC's current AI target."
             ),
         )
 

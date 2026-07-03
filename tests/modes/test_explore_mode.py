@@ -515,3 +515,37 @@ def test_right_click_explored_not_visible_tile_with_actor_only_walks() -> None:
     assert target == (5, 5)
     # No talk/interaction action should have been queued
     assert len(controller.queued_actions) == 0
+
+
+def test_left_click_on_player_tile_selects_player() -> None:
+    """Clicking the player's own tile selects the player."""
+    mode, controller, gw, _calls = make_explore_mode_with_mocks()
+    mode._fm = None  # skip the equipment-view hit test
+    controller.select_target = MagicMock()
+    controller.selected_target = None
+
+    # Player is at (0, 0); make that tile visible/explored.
+    gw.game_map.visible[0, 0] = True
+    gw.game_map.explored[0, 0] = True
+
+    result = mode._handle_left_click(root_tile_pos=(0, 0), world_tile_pos=(0, 0))
+
+    assert result is True
+    controller.select_target.assert_called_once_with(gw.player)
+
+
+def test_left_click_empty_tile_still_deselects() -> None:
+    """The player fallback only fires on the player's tile, not empty ground."""
+    mode, controller, gw, _calls = make_explore_mode_with_mocks()
+    mode._fm = None
+    controller.select_target = MagicMock()
+
+    # Empty visible tile away from the player at (0, 0).
+    gw.game_map.visible[5, 5] = True
+    gw.game_map.explored[5, 5] = True
+
+    result = mode._handle_left_click(root_tile_pos=(5, 5), world_tile_pos=(5, 5))
+
+    assert result is True
+    controller.deselect_target.assert_called_once()
+    controller.select_target.assert_not_called()

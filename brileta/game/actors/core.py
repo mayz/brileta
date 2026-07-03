@@ -58,6 +58,7 @@ from brileta.types import (
     SpriteUV,
     TileCoord,
     WorldTileCoord,
+    WorldTilePos,
 )
 from brileta.view.animation import MoveAnimation
 
@@ -932,6 +933,20 @@ class NPC(Character):
         # every tick, so goals are naturally interrupted when something more
         # urgent arises.
         self.current_goal: Goal | None = None
+
+        # Daily-routine anchors, assigned during settlement generation for a
+        # fraction of NPCs with the "routine" tag. home_pos is an indoor tile
+        # the NPC retreats to at night; anchor_pos is a workplace elsewhere in
+        # the settlement it staffs by day. Both None for NPCs without a routine
+        # (creatures, hostiles, and the unanchored fraction of residents), which
+        # makes RoutineAction score zero and fall back to wandering.
+        self.home_pos: WorldTilePos | None = None
+        self.anchor_pos: WorldTilePos | None = None
+        # Per-NPC shift (in time-of-day units) applied to the workday's start
+        # and end, so residents don't all migrate in lockstep. Personality will
+        # later replace this random jitter with trait-driven timing (a
+        # conscientious NPC leaves early). See routine.py.
+        self.routine_offset: float = 0.0
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:
         """Handle damage, clearing the active goal on death."""

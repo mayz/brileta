@@ -17,6 +17,7 @@ from brileta.game.actors.ai.actions import (
     WatchAction,
 )
 from brileta.game.actors.ai.behaviors.flee import FleeAction
+from brileta.game.actors.ai.behaviors.routine import RoutineAction
 from brileta.game.actors.ai.behaviors.wander import WanderAction
 from brileta.game.actors.ai.perception import PerceptionComponent
 from brileta.game.actors.ai.utility import (
@@ -110,6 +111,10 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
             ],
         ),
     ],
+    # Daily-routine package: home/workplace schedule for settlement dwellers.
+    # Outscores wander so residents pursue their routine by default; shares
+    # wander's no-threat preconditions so combat/flee always win over it.
+    "routine": [RoutineAction(0.4)],
     # Skittish package: flee from nearby entities regardless of disposition.
     "skittish": [
         FleeAction(
