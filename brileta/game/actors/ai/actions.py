@@ -41,6 +41,13 @@ class AttackAction(UtilityAction):
         Consideration("threat_level", ResponseCurve(ResponseCurveType.LINEAR)),
         # Within the hostile band, more hostile values score higher.
         Consideration("disposition", ResponseCurve(ResponseCurveType.INVERSE)),
+        # Agreeableness dampens aggression: a cooperative NPC is slow to attack
+        # (high agreeableness -> below-1.0 multiplier), a confrontational one
+        # escalates (above-1.0). Centered so an average-agreeableness NPC scores
+        # attack exactly as it did before personality existed.
+        Consideration(
+            "agreeableness", ResponseCurve(ResponseCurveType.CENTERED, gain=-0.8)
+        ),
     ]
 
     def __init__(
@@ -179,6 +186,13 @@ class IdleAction(UtilityAction):
                 peak=0.45,
                 width=0.35,
             ),
+        ),
+        # Introverts idle in place; extraverts prefer to be up and moving
+        # (high extraversion -> below-1.0 idle multiplier). Half of the ambient
+        # movement-mix expression, paired with openness biasing wander. Centered
+        # so an average-extraversion NPC idles exactly as it did pre-personality.
+        Consideration(
+            "extraversion", ResponseCurve(ResponseCurveType.CENTERED, gain=-0.8)
         ),
     ]
 

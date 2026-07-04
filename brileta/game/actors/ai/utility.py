@@ -24,6 +24,7 @@ class ResponseCurveType(Enum):
     INVERSE = "inverse"
     STEP = "step"
     BELL = "bell"
+    CENTERED = "centered"
 
 
 @dataclass(slots=True)
@@ -33,6 +34,10 @@ class ResponseCurve:
     threshold: float = 0.5
     peak: float = 0.5
     width: float = 0.5
+    # Slope for the CENTERED curve. Positive means above-midpoint inputs raise
+    # the multiplier above 1.0 and below-midpoint inputs pull it under 1.0;
+    # negative reverses that direction.
+    gain: float = 1.0
 
     def evaluate(self, value: float) -> float:
         value = _clamp(value)
@@ -49,6 +54,13 @@ class ResponseCurve:
                 if self.width <= 0:
                     return 0.0
                 return _clamp(1.0 - abs(value - self.peak) / self.width)
+            case ResponseCurveType.CENTERED:
+                # A multiplier centered on 1.0 at the midpoint input (0.5).
+                # Unlike the other curves this can exceed 1.0, so a consideration
+                # using it *boosts* the score for above-average inputs and damps
+                # it for below-average ones, leaving the exact midpoint (a trait
+                # of 5, normalized to 0.5) with an unchanged score of x1.0.
+                return max(0.0, 1.0 + self.gain * (value - 0.5))
         return 0.0
 
 
@@ -97,6 +109,24 @@ class UtilityContext:
     # Scans all perceived actors for hostility toward this NPC, returns the
     # strongest signal. 0.0 means no perceived incoming danger.
     incoming_threat: float = 0.0
+    # OCEAN personality traits, normalized to 0-1 (raw 0-10 trait / 10, so the
+    # human average of 5 maps to 0.5). Exposed as considerations inputs the same
+    # way disposition is. Default 0.5 keeps trait-less test contexts neutral.
+    openness: float = 0.5
+    conscientiousness: float = 0.5
+    extraversion: float = 0.5
+    agreeableness: float = 0.5
+    neuroticism: float = 0.5
+
+    def conscientiousness_persistence_scale(self) -> float:
+        """Scale factor a goal's persistence bonus is multiplied by.
+
+        Conscientiousness drives how tenaciously an NPC sticks to an active
+        goal. Maps the normalized trait to [0.5, 1.5]: the average NPC (0.5)
+        gets the unchanged bonus (1.0), a disciplined NPC (1.0) holds goals
+        50% harder, an erratic one (0.0) abandons them twice as easily.
+        """
+        return 0.5 + self.conscientiousness
 
     def get_input(self, key: str) -> float | None:
         match key:
@@ -114,6 +144,16 @@ class UtilityContext:
                 return self.disposition
             case "incoming_threat":
                 return self.incoming_threat
+            case "openness":
+                return self.openness
+            case "conscientiousness":
+                return self.conscientiousness
+            case "extraversion":
+                return self.extraversion
+            case "agreeableness":
+                return self.agreeableness
+            case "neuroticism":
+                return self.neuroticism
             case "max_threat":
                 # Combined danger signal: the stronger of outgoing threat
                 # (I'm hostile toward the target) and incoming threat
@@ -307,15 +347,13 @@ class UtilityBrain:
 
         # Score "continue current goal" alongside atomic actions
         if current_goal is not None and not current_goal.is_complete:
-            from .goals import (
-                PERSISTENCE_MINIMUM,
-                PERSISTENCE_WEIGHT,
-                ContinueGoalAction,
-            )
+            from .goals import ContinueGoalAction, persistence_bonus
 
             continue_action = ContinueGoalAction(current_goal)
             final = continue_action.score(context)
-            persist = PERSISTENCE_MINIMUM + current_goal.progress * PERSISTENCE_WEIGHT
+            # Same shared helper ContinueGoalAction.score uses, so the debug
+            # breakdown can never drift from the real scoring.
+            persist = persistence_bonus(current_goal.progress, context)
             scored.append(
                 ScoredAction(
                     display_name=f"ContinueGoal({current_goal.goal_id.title()})",

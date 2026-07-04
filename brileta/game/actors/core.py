@@ -63,6 +63,7 @@ from brileta.types import (
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, disposition_label
+from .ai.personality import PersonalityComponent
 from .components import (
     CharacterInventory,
     ConditionsComponent,
@@ -879,6 +880,7 @@ class NPC(Character):
         speed: int = DEFAULT_ACTOR_SPEED,
         can_open_doors: bool = False,
         ai: AIComponent | None = None,
+        personality: PersonalityComponent | None = None,
         **kwargs,
     ) -> None:
         """Instantiate NPC.
@@ -898,6 +900,9 @@ class NPC(Character):
                 should be False.
             ai: Optional pre-configured AI component. When omitted, a default
                 AIComponent is created.
+            personality: Optional OCEAN personality traits. When omitted, an
+                average-in-every-trait PersonalityComponent is used, so utility
+                scoring stays neutral for NPCs spawned without a type.
             **kwargs: Additional Actor parameters
         """
         super().__init__(
@@ -923,6 +928,11 @@ class NPC(Character):
 
         # Type narrowing: NPC always has AI.
         self.ai: AIComponent
+
+        # OCEAN personality traits. Stable per-NPC tendencies that bias utility
+        # scoring so two NPCs of the same type at the same disposition still
+        # behave differently. Defaults to all-average when unspecified.
+        self.personality: PersonalityComponent = personality or PersonalityComponent()
 
         # Whether this NPC can plan routes through closed doors and open them.
         # Humanoid NPCs can open doors; animals and creatures cannot.
@@ -953,9 +963,9 @@ class NPC(Character):
         self.home_pos: WorldTilePos | None = None
         self.anchor_pos: WorldTilePos | None = None
         # Per-NPC shift (in time-of-day units) applied to the workday's start
-        # and end, so residents don't all migrate in lockstep. Personality will
-        # later replace this random jitter with trait-driven timing (a
-        # conscientious NPC leaves early). See routine.py.
+        # and end, so residents don't all migrate in lockstep. Set from
+        # Conscientiousness (a conscientious NPC leaves early) plus a residual
+        # random jitter by schedule_offset() during settlement generation.
         self.routine_offset: float = 0.0
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:

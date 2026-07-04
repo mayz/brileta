@@ -957,8 +957,9 @@ class Controller:
         """Register live variables for inspecting NPC utility scoring.
 
         Registers ai.debug (toggle), ai.hovered.action, ai.hovered.scores,
-        ai.hovered.goal, ai.hovered.routine, ai.hovered.disposition_to_player,
-        ai.hovered.disposition_to_target, and ai.hovered.threat_level.
+        ai.hovered.goal, ai.hovered.routine, ai.hovered.personality,
+        ai.hovered.disposition_to_player, ai.hovered.disposition_to_target,
+        and ai.hovered.threat_level.
         The display variables report on the click-selected NPC only (it stays
         pinned as it moves); hovering has no effect. When ai.debug is toggled on
         they are watched so they appear in the debug stats overlay; toggled off,
@@ -973,6 +974,7 @@ class Controller:
             "ai.hovered.scores",
             "ai.hovered.goal",
             "ai.hovered.routine",
+            "ai.hovered.personality",
             "ai.hovered.disposition_to_player",
             "ai.hovered.disposition_to_target",
             "ai.hovered.threat_level",
@@ -1125,6 +1127,32 @@ class Controller:
             description=(
                 "Daily-routine state: current phase, target tile, "
                 "anchor/home, and schedule offset."
+            ),
+        )
+
+        # -- ai.hovered.personality --
+
+        def _get_personality() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            actor = _debug_subject()
+            if not isinstance(actor, NPC):
+                return "---"
+            p = actor.personality
+            # Compact OCEAN readout: each trait on the 0-10 scale (5 = average),
+            # in canonical O-C-E-A-N order so it reads left to right.
+            return (
+                f"O{p.openness} C{p.conscientiousness} E{p.extraversion} "
+                f"A{p.agreeableness} N{p.neuroticism}"
+            )
+
+        live_variable_registry.register(
+            "ai.hovered.personality",
+            getter=_get_personality,
+            description=(
+                "OCEAN personality of the selected NPC (0-10, 5=average): "
+                "Openness, Conscientiousness, Extraversion, Agreeableness, "
+                "Neuroticism."
             ),
         )
 

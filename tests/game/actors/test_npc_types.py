@@ -114,7 +114,10 @@ def test_dog_is_skittish_and_never_attacks() -> None:
     flee = actions["flee"]
     assert isinstance(flee, FleeAction)
     assert flee.preconditions == [is_target_nearby, has_escape_route]
-    assert [c.input_key for c in flee.considerations] == ["target_proximity"]
+    assert [c.input_key for c in flee.considerations] == [
+        "target_proximity",
+        "neuroticism",
+    ]
 
 
 def test_dog_flees_from_nearby_actor_even_when_friendly() -> None:
@@ -182,7 +185,10 @@ def test_resident_action_pool_is_combatant_sapient_profile() -> None:
     flee = _actions_by_id(npc)["flee"]
     assert isinstance(flee, FleeAction)
     assert flee.preconditions == [is_any_threat_perceived, has_escape_route]
-    assert [c.input_key for c in flee.considerations] == ["sapient_flee_urgency"]
+    assert [c.input_key for c in flee.considerations] == [
+        "sapient_flee_urgency",
+        "neuroticism",
+    ]
 
 
 def test_brigand_adjacent_at_full_health_attacks_instead_of_fleeing() -> None:

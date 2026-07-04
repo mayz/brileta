@@ -20,6 +20,12 @@ from brileta.game.actors.ai.behaviors.flee import FleeAction
 from brileta.game.actors.ai.behaviors.routine import RoutineAction
 from brileta.game.actors.ai.behaviors.wander import WanderAction
 from brileta.game.actors.ai.perception import PerceptionComponent
+from brileta.game.actors.ai.personality import (
+    TRAIT_AVERAGE,
+    TRAIT_MAX,
+    TRAIT_MIN,
+    PersonalityComponent,
+)
 from brileta.game.actors.ai.utility import (
     Consideration,
     ResponseCurve,
@@ -39,6 +45,9 @@ if TYPE_CHECKING:
     from brileta.game.game_world import GameWorld
 
 _npc_type_rng = rng.get("npc.types")
+# Personality sampling draws from its own stream so adding it does not shift the
+# stat stream's draw sequence, keeping existing worlds' stats reproducible.
+_npc_personality_rng = rng.get("npc.personality")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +67,26 @@ class StatDistribution:
         """Sample a stat value from a Gaussian distribution, clamped to range."""
         sampled = round(random_stream.gauss(self.mean, self.std_dev))
         return max(self.min_val, min(self.max_val, int(sampled)))
+
+
+def personality_trait(
+    mean: int = TRAIT_AVERAGE, spread: float = 1.5
+) -> StatDistribution:
+    """Build a 0-10 personality-trait distribution centered on ``mean``.
+
+    Thin wrapper over StatDistribution with the trait scale baked in, so NPC
+    type definitions read as ``personality_trait(mean=8, spread=1.5)`` rather
+    than repeating the 0-10 bounds each time.
+    """
+    return StatDistribution(
+        mean=mean, std_dev=spread, min_val=TRAIT_MIN, max_val=TRAIT_MAX
+    )
+
+
+# Shared default personality distribution (human-average, moderate spread) used
+# for NPCType trait fields a type does not override. Safe to share because
+# StatDistribution is frozen/immutable.
+_DEFAULT_TRAIT_DIST = personality_trait()
 
 
 # Semantic alias for NPC behavior tags.
@@ -91,6 +120,13 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
                     "sapient_flee_urgency",
                     ResponseCurve(ResponseCurveType.LINEAR),
                 ),
+                # Neuroticism sets the flight threshold: anxious sapients panic
+                # and run sooner, steady ones hold their ground longer. Centered
+                # on 1.0 so an average-neuroticism sapient flees unchanged.
+                Consideration(
+                    "neuroticism",
+                    ResponseCurve(ResponseCurveType.CENTERED, gain=0.8),
+                ),
             ],
         ),
     ],
@@ -115,7 +151,14 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
     # Outscores wander so residents pursue their routine by default; shares
     # wander's no-threat preconditions so combat/flee always win over it.
     "routine": [RoutineAction(0.4)],
-    # Skittish package: flee from nearby entities regardless of disposition.
+    # Skittish package: flee from nearby entities, with the flight threshold
+    # set by personality. The tag still supplies the flee-from-proximity
+    # mechanism, but Neuroticism now drives *whether* an individual actually
+    # bolts (Phase 5 reinterpretation of the old stand-in tag): a nervous animal
+    # runs from anyone close, a bold one lets its wander/idle win and stays near.
+    # A future Extraversion-driven approach action (Phase 6 social) would let
+    # gregarious animals close the distance instead; for now high Extraversion
+    # simply reads as a calmer, stay-put animal via reduced flee competition.
     "skittish": [
         FleeAction(
             base_score=1.2,
@@ -125,6 +168,13 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
                     "target_proximity",
                     ResponseCurve(ResponseCurveType.LINEAR),
                     weight=2.0,
+                ),
+                # Centered on 1.0 with a strong slope so a skittish (high
+                # neuroticism) animal bolts and a bold one stays, while an
+                # average dog flees exactly as the plain proximity rule did.
+                Consideration(
+                    "neuroticism",
+                    ResponseCurve(ResponseCurveType.CENTERED, gain=1.5),
                 ),
             ],
         ),
@@ -174,6 +224,15 @@ class NPCType:
     intelligence_dist: StatDistribution = StatDistribution()
     demeanor_dist: StatDistribution = StatDistribution()
     weirdness_dist: StatDistribution = StatDistribution()
+    # OCEAN personality distributions, sampled at spawn (Phase 5). Each defaults
+    # to the human average (mean 5) with a moderate spread, so a type that does
+    # not care about a trait produces middling, varied individuals. The shared
+    # frozen default instance is safe because StatDistribution is immutable.
+    openness_dist: StatDistribution = _DEFAULT_TRAIT_DIST
+    conscientiousness_dist: StatDistribution = _DEFAULT_TRAIT_DIST
+    extraversion_dist: StatDistribution = _DEFAULT_TRAIT_DIST
+    agreeableness_dist: StatDistribution = _DEFAULT_TRAIT_DIST
+    neuroticism_dist: StatDistribution = _DEFAULT_TRAIT_DIST
 
     def __post_init__(self) -> None:
         # Derive display_name from id if not explicitly provided.
@@ -199,6 +258,15 @@ class NPCType:
         starting_weapon = (
             self.starting_weapon.create() if self.starting_weapon is not None else None
         )
+        # Sample personality from the type's per-trait distributions using the
+        # dedicated seeded stream, so worlds stay reproducible.
+        personality = PersonalityComponent(
+            openness=self.openness_dist.sample(_npc_personality_rng),
+            conscientiousness=self.conscientiousness_dist.sample(_npc_personality_rng),
+            extraversion=self.extraversion_dist.sample(_npc_personality_rng),
+            agreeableness=self.agreeableness_dist.sample(_npc_personality_rng),
+            neuroticism=self.neuroticism_dist.sample(_npc_personality_rng),
+        )
 
         return NPC(
             x=x,
@@ -219,4 +287,5 @@ class NPCType:
             speed=self.speed,
             creature_size=self.creature_size,
             can_open_doors=self.can_open_doors,
+            personality=personality,
         )

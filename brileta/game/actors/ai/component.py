@@ -33,6 +33,7 @@ from .behaviors.flee import FleeAction, collect_flee_candidates
 from .behaviors.routine import RoutineAction
 from .behaviors.wander import WanderAction
 from .perception import PerceivedActor, PerceptionComponent
+from .personality import normalize_trait
 from .utility import (
     ScoredAction,
     UtilityAction,
@@ -473,6 +474,10 @@ class AIComponent:
             else None
         )
 
+        # Personality traits feed the same scoring layer as disposition and
+        # distance: normalize the 0-10 traits to 0-1 so each action's curves
+        # can bias on them (neuroticism -> flee, agreeableness -> attack, etc.).
+        personality = actor.personality
         return UtilityContext(
             controller=controller,
             actor=actor,
@@ -489,6 +494,11 @@ class AIComponent:
             disposition=disposition_to_normalized(effective_disposition),
             target_proximity=target_proximity,
             incoming_threat=incoming_threat,
+            openness=normalize_trait(personality.openness),
+            conscientiousness=normalize_trait(personality.conscientiousness),
+            extraversion=normalize_trait(personality.extraversion),
+            agreeableness=normalize_trait(personality.agreeableness),
+            neuroticism=normalize_trait(personality.neuroticism),
         )
 
     def _compute_outgoing_threat(

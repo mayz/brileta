@@ -1,9 +1,10 @@
 """Concrete NPC archetypes used by world generation and spawning.
 
-Each type defines a creature kind - its physical properties, capabilities,
-and stat distributions. Behavioral variation within a type will come from
-personality traits (Phase 5). For now, tags approximate behavioral profiles
-that personality will eventually replace.
+Each type defines a creature kind - its physical properties, capabilities, and
+stat distributions. Behavioral variation within a type comes from OCEAN
+personality traits (Phase 5): every type samples five traits at spawn from its
+own per-trait distributions, so two NPCs of the same type at the same
+disposition still behave differently.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from brileta.game.items.item_types import (
     SLEDGEHAMMER_TYPE,
 )
 
-from .npc_core import NPCType, StatDistribution
+from .npc_core import NPCType, StatDistribution, personality_trait
 
 # Large mutant humanoid. Charges into melee, hits hard, slow and stupid.
 # No sapient tag - attacks or flees without the Watch/Avoid social reasoning.
@@ -40,6 +41,12 @@ TROG_TYPE = NPCType(
     intelligence_dist=StatDistribution(mean=-3, std_dev=0.7),
     demeanor_dist=StatDistribution(mean=-1, std_dev=1.0),
     weirdness_dist=StatDistribution(mean=3, std_dev=0.8),
+    # Fearless, aggressive brute: low neuroticism (rarely flees), low
+    # agreeableness (attacks readily), incurious and undisciplined.
+    openness_dist=personality_trait(mean=3),
+    conscientiousness_dist=personality_trait(mean=3),
+    agreeableness_dist=personality_trait(mean=2),
+    neuroticism_dist=personality_trait(mean=2),
 )
 
 # Armed human raider. Hostile on sight (disposition -75). Slightly faster
@@ -65,6 +72,12 @@ BRIGAND_TYPE = NPCType(
     intelligence_dist=StatDistribution(mean=2, std_dev=1.0),
     demeanor_dist=StatDistribution(mean=-1, std_dev=1.0),
     weirdness_dist=StatDistribution(mean=1, std_dev=1.0),
+    # Hostile and confrontational, but individuals vary in nerve: a wide
+    # neuroticism spread means some brigands break and run early while others
+    # hold the line, which is the core "same type, different behavior" showcase.
+    conscientiousness_dist=personality_trait(mean=4),
+    agreeableness_dist=personality_trait(mean=3),
+    neuroticism_dist=personality_trait(mean=5, spread=2.5),
 )
 
 # Hostile wildlife. Attacks based on proximity rather than disposition - the
@@ -90,12 +103,18 @@ GIANT_SCORPION_TYPE = NPCType(
     intelligence_dist=StatDistribution(mean=-4, std_dev=0.5),
     demeanor_dist=StatDistribution(mean=-3, std_dev=0.8),
     weirdness_dist=StatDistribution(mean=2, std_dev=1.0),
+    # Aggressive ambush predator: very low neuroticism (does not flee) and low
+    # agreeableness (strikes on proximity). Narrow spreads - little individual
+    # variation in an instinct-driven creature.
+    openness_dist=personality_trait(mean=3, spread=1.0),
+    agreeableness_dist=personality_trait(mean=1, spread=1.0),
+    neuroticism_dist=personality_trait(mean=1, spread=1.0),
 )
 
-# Domestic dog. Fast, small, can't open doors. Currently uses the skittish
-# tag as a stand-in: flees when anything gets close. Once personality traits
-# land (Phase 5), the skittish tag should be replaced by personality-driven
-# scoring - high-Neuroticism dogs flee, high-Extraversion dogs approach.
+# Domestic dog. Fast, small, can't open doors. Uses the skittish tag for its
+# flee-from-proximity mechanism, but the flight threshold is now personality-
+# driven (Phase 5): high-Neuroticism dogs bolt, low-Neuroticism dogs stay near.
+# The wide neuroticism spread below makes both kinds show up in one litter.
 DOG_TYPE = NPCType(
     id="dog",
     display_name="Dog",
@@ -115,6 +134,13 @@ DOG_TYPE = NPCType(
     intelligence_dist=StatDistribution(mean=-2, std_dev=1.0),
     demeanor_dist=StatDistribution(mean=2, std_dev=1.0),
     weirdness_dist=StatDistribution(mean=0, std_dev=1.0),
+    # Wide neuroticism spread is the whole point of retiring the stand-in tag:
+    # a skittish dog (high neuroticism) bolts from anyone close, a bold dog (low
+    # neuroticism) lets its wander/idle win and stays near people. High
+    # extraversion and openness keep dogs generally roaming and inquisitive.
+    openness_dist=personality_trait(mean=6),
+    extraversion_dist=personality_trait(mean=7),
+    neuroticism_dist=personality_trait(mean=5, spread=3.0),
 )
 
 # Unarmed settlement human. Neutral toward strangers. Watches and avoids
@@ -137,6 +163,15 @@ RESIDENT_TYPE = NPCType(
     intelligence_dist=StatDistribution(mean=0, std_dev=1.0),
     demeanor_dist=StatDistribution(mean=1, std_dev=1.0),
     weirdness_dist=StatDistribution(mean=0, std_dev=1.0),
+    # Ordinary townsfolk: average in every trait but with wide spreads, so a
+    # crowd shows the full behavioral range - some residents roam and run
+    # errands (high openness/extraversion), others stand about (low), some
+    # startle easily (high neuroticism), some are unflappable (low).
+    openness_dist=personality_trait(spread=2.5),
+    conscientiousness_dist=personality_trait(spread=2.5),
+    extraversion_dist=personality_trait(spread=2.5),
+    agreeableness_dist=personality_trait(spread=2.0),
+    neuroticism_dist=personality_trait(spread=2.5),
 )
 
 # Lookup table for the dev console ``spawn`` command and other systems

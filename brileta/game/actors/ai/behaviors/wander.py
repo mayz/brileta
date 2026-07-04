@@ -56,6 +56,11 @@ class WanderAction(UtilityAction):
     CONSIDERATIONS: ClassVar[list[Consideration]] = [
         Consideration("threat_level", ResponseCurve(ResponseCurveType.INVERSE)),
         Consideration("disposition", ResponseCurve(ResponseCurveType.LINEAR)),
+        # Openness is the exploration drive: a curious NPC (high openness ->
+        # above-1.0 multiplier) roams, an incurious one (low openness ->
+        # below-1.0) suppresses wander and defaults to idling in place. Centered
+        # so an average-openness NPC wanders exactly as it did pre-personality.
+        Consideration("openness", ResponseCurve(ResponseCurveType.CENTERED, gain=0.8)),
     ]
 
     def __init__(
@@ -194,6 +199,12 @@ class WanderGoal(Goal):
             Consideration(
                 "disposition",
                 ResponseCurve(ResponseCurveType.LINEAR),
+            ),
+            # Mirror WanderAction: openness (centered on 1.0) keeps the stroll
+            # going for curious NPCs and lets incurious ones lapse back to idling.
+            Consideration(
+                "openness",
+                ResponseCurve(ResponseCurveType.CENTERED, gain=0.8),
             ),
         ]
 

@@ -55,6 +55,19 @@ PERSISTENCE_MINIMUM = 0.01
 PERSISTENCE_WEIGHT = 0.3
 
 
+def persistence_bonus(progress: float, context: UtilityContext) -> float:
+    """Bonus added to a goal continuation's score so it resists interruption.
+
+    A baseline minimum plus a progress-scaled term, the whole scaled by the
+    NPC's conscientiousness (a disciplined NPC sticks to goals harder). Shared
+    by the real scoring path (ContinueGoalAction.score) and the UtilityBrain
+    debug breakdown so the two can never drift apart.
+    """
+    return (
+        PERSISTENCE_MINIMUM + progress * PERSISTENCE_WEIGHT
+    ) * context.conscientiousness_persistence_scale()
+
+
 class GoalState(Enum):
     """Lifecycle states for a Goal.
 
@@ -209,10 +222,10 @@ class ContinueGoalAction(UtilityAction):
         if any(not pre(context) for pre in self.preconditions):
             return 0.0
         base = super().score(context)
-        persistence_bonus = (
-            PERSISTENCE_MINIMUM + self.goal.progress * PERSISTENCE_WEIGHT
-        )
-        return base + persistence_bonus
+        # Conscientiousness scales how hard the goal resists interruption:
+        # a disciplined NPC sticks to a patrol/flee/routine goal more
+        # tenaciously than an erratic one at the same progress.
+        return base + persistence_bonus(self.goal.progress, context)
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
         # Intent generation is handled by the goal itself, not this action.

@@ -33,7 +33,9 @@ from brileta.util import rng
 if TYPE_CHECKING:
     from brileta.controller import Controller
     from brileta.game.actions.base import GameIntent
+    from brileta.game.actors.ai.personality import PersonalityComponent
     from brileta.game.actors.core import NPC
+    from brileta.util.rng import RNG
 
 _rng = rng.get("npc.goals")
 
@@ -49,8 +51,8 @@ _WORK_END = _DUSK - 0.10
 
 # Per-NPC leave/return times are jittered by up to this much (time-of-day units,
 # ~10% of a full day) so residents don't migrate as a synchronized flash mob.
-# Sampled once per NPC at assignment and stored on npc.routine_offset.
-# Personality will later replace this with trait-driven timing.
+# Sampled once per NPC at assignment and stored on npc.routine_offset via
+# schedule_offset(), which biases the mean by Conscientiousness.
 ROUTINE_SCHEDULE_JITTER = 0.10
 
 # How close (Chebyshev tiles) counts as "at" the current target. Within this the
@@ -73,6 +75,40 @@ _ERRAND_LINGER_MAX = 5
 # returning to its routine. A moving NPC resets the counter every step, so
 # legitimate long walks (and brief traffic jams) are unaffected.
 _ERRAND_MAX_STUCK_TICKS = 4
+
+
+def schedule_offset(personality: PersonalityComponent, rng_stream: RNG) -> float:
+    """Return a per-NPC workday shift biased by Conscientiousness.
+
+    A disciplined NPC (high Conscientiousness) arrives and leaves early - a
+    small negative shift - while an erratic one drifts late. The residual random
+    jitter keeps same-trait NPCs from moving in lockstep and spans the full
+    band, so an average-Conscientiousness NPC draws the same offset distribution
+    it did before personality existed (trait_shift is zero at the average).
+    """
+    from brileta.game.actors.ai.personality import TRAIT_AVERAGE
+
+    # Map Conscientiousness deviation from average onto [-1, 1]; punctual NPCs
+    # (above average) get a negative (earlier) bias.
+    bias = -(personality.conscientiousness - TRAIT_AVERAGE) / TRAIT_AVERAGE
+    trait_shift = bias * (ROUTINE_SCHEDULE_JITTER / 2.0)
+    jitter = rng_stream.uniform(-ROUTINE_SCHEDULE_JITTER, ROUTINE_SCHEDULE_JITTER)
+    return trait_shift + jitter
+
+
+def errand_chance_multiplier(personality: PersonalityComponent) -> float:
+    """Scale the base errand chance by Extraversion and Conscientiousness.
+
+    Gregarious NPCs (high Extraversion) slip out on errands more often; diligent
+    NPCs (high Conscientiousness) stay on task and leave less. Each factor spans
+    roughly [0.5, 1.5] around the average, so the average NPC keeps the base
+    rate and the extremes differ ~3x.
+    """
+    from brileta.game.actors.ai.personality import normalize_trait
+
+    extraversion = 0.5 + normalize_trait(personality.extraversion)
+    diligence = 1.5 - normalize_trait(personality.conscientiousness)
+    return extraversion * diligence
 
 
 def has_routine(context: UtilityContext) -> bool:
@@ -223,7 +259,9 @@ class RoutineGoal(Goal):
         pool = getattr(controller.gw, "routine_errand_pool", None)
         if not pool:
             return False
-        if _rng.random() >= _ERRAND_START_CHANCE:
+        # Extraverted, less-diligent NPCs slip out on errands more often.
+        errand_chance = _ERRAND_START_CHANCE * errand_chance_multiplier(npc.personality)
+        if _rng.random() >= errand_chance:
             return False
 
         destination = _rng.choice(pool)

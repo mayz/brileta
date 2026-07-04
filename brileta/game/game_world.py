@@ -1150,7 +1150,7 @@ class GameWorld:
         _ROUTINE_ANCHORED_FRACTION of residents are anchored; the rest keep the
         ambient wander behavior. Each anchored NPC also gets a jittered schedule.
         """
-        from brileta.game.actors.ai.behaviors.routine import ROUTINE_SCHEDULE_JITTER
+        from brileta.game.actors.ai.behaviors.routine import schedule_offset
 
         # Feature tiles for mid-workday errands (available even if nobody ends
         # up anchored, e.g. for NPCs spawned/anchored later).
@@ -1175,9 +1175,7 @@ class GameWorld:
             )
             npc.anchor_pos = anchor
             usage[anchor] += 1
-            npc.routine_offset = _npc_rng.uniform(
-                -ROUTINE_SCHEDULE_JITTER, ROUTINE_SCHEDULE_JITTER
-            )
+            npc.routine_offset = schedule_offset(npc.personality, _npc_rng)
 
     def _pick_anchor(
         self,

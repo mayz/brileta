@@ -118,6 +118,14 @@ class FleeAction(UtilityAction):
         Consideration("has_escape_route", ResponseCurve(ResponseCurveType.STEP)),
         # Flee scores higher when hostile (in danger of combat).
         Consideration("disposition", ResponseCurve(ResponseCurveType.INVERSE)),
+        # Neuroticism sets the flight threshold: an anxious NPC (high
+        # neuroticism -> above-1.0 multiplier) breaks and runs at higher health,
+        # while a steady one (low neuroticism -> below-1.0) holds its ground
+        # longer before flee outscores attack. Centered so an average-neuroticism
+        # NPC flees exactly as it did before personality existed.
+        Consideration(
+            "neuroticism", ResponseCurve(ResponseCurveType.CENTERED, gain=0.8)
+        ),
     ]
 
     def __init__(
