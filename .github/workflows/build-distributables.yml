@@ -92,23 +92,40 @@ jobs:
         with:
           path: artifacts
 
-      # Every release automatically gets the macOS Gatekeeper note, then the
-      # auto-generated commit notes appended below it. Nothing to edit by hand.
+      # Full history so we can list commits since the previous tag.
+      - name: Check out repo
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The "what changed" commit list goes first so the feed preview shows the
+      # changelog. We build it from git log (this repo commits to main, so
+      # GitHub's PR-based auto-notes would be empty). The first tag has no
+      # predecessor, so it just links to the full commit history instead. The
+      # macOS Gatekeeper note is demoted to a footer - kept for downloaders, but
+      # never the headline. Nothing to edit by hand.
       - name: Compose release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ github.ref_name }}"
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            printf '## What changed\n\n' > notes.md
+            git log --no-merges --pretty='- %s' "${PREV}..${TAG}" >> notes.md
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+              "${{ github.repository }}" "$PREV" "$TAG" >> notes.md
+          else
+            printf '**Full Changelog**: https://github.com/%s/commits/%s\n' \
+              "${{ github.repository }}" "$TAG" > notes.md
+          fi
           printf '%s\n' \
+            '' '---' '' \
             '**The macOS build is unsigned.** After unzipping, run this in Terminal, then open the app:' \
             '' \
             '```' \
             'xattr -dr com.apple.quarantine Brileta.app' \
             '```' \
             '' \
-            '(Or open it via System Settings -> Privacy & Security -> "Open Anyway".)' \
-            '' '---' '' > notes.md
-          gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="${{ github.ref_name }}" --jq '.body' >> notes.md || true
+            '(Or open it via System Settings -> Privacy & Security -> "Open Anyway".)' >> notes.md
 
       - name: Publish GitHub Release
         env:
