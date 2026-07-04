@@ -168,7 +168,7 @@ def test_neutral_predator_attacks_on_proximity() -> None:
 
 
 def test_resident_action_pool_is_combatant_sapient_profile() -> None:
-    """Residents can fight, flee, use social awareness, and follow a routine."""
+    """Residents can fight, flee, use social awareness, follow a routine, and ask."""
     npc = RESIDENT_TYPE.create(0, 0, "Resident")
     action_ids = set(_actions_by_id(npc))
 
@@ -180,6 +180,8 @@ def test_resident_action_pool_is_combatant_sapient_profile() -> None:
         "idle",
         "wander",
         "routine",
+        "request_help",
+        "trade",
     }
 
     flee = _actions_by_id(npc)["flee"]

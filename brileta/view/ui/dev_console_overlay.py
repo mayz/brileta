@@ -183,6 +183,15 @@ class DevConsoleOverlay(TextOverlay):
                 execute=self._handle_spawn_command,
                 tab_complete=self._complete_spawn_types,
             ),
+            "give_need": ConsoleCommand(
+                help_entries=(
+                    (
+                        "give_need",
+                        "Give the nearest NPC a random urgent need (NUBS 6 test stub).",
+                    ),
+                ),
+                execute=self._handle_give_need_command,
+            ),
             "world": ConsoleCommand(
                 help_entries=(
                     (
@@ -971,6 +980,68 @@ class DevConsoleOverlay(TextOverlay):
             self.history.append("Could not find a walkable tile near the player.")
         else:
             self.history.append(f"Spawned {npc.name}.")
+
+    def _handle_give_need_command(self, parts: list[str]) -> None:
+        """Give a nearby help-capable NPC a random urgent need (Generated Needs stub).
+
+        A stand-in for the future need-generation system: it attaches a random
+        Need so the RequestHelp behavior is playable now. Only NPCs that can act
+        on a need (the ``social`` tag, e.g. Residents) are eligible - creatures
+        like dogs are skipped. Prefers the nearest eligible NPC that can already
+        see the player, so it will approach *you* rather than another NPC.
+        """
+        _ = parts
+        from brileta.game import ranges
+        from brileta.game.actors.core import NPC
+        from brileta.game.actors.needs import Need, NeedType
+        from brileta.util import rng
+
+        gw = self.controller.gw
+        player = gw.player
+        nearby = gw.actor_spatial_index.get_in_radius(player.x, player.y, 20)
+        # Only NPCs whose brain includes the RequestHelp action can do anything
+        # with a need. This filters out dogs, scorpions, and other creatures.
+        candidates = [
+            a
+            for a in nearby
+            if isinstance(a, NPC)
+            and a is not player
+            and a.health.is_alive()
+            and any(action.action_id == "request_help" for action in a.ai.brain.actions)
+        ]
+        if not candidates:
+            self.history.append("No help-capable NPC (e.g. Resident) nearby.")
+            return
+
+        def sees_player(npc: NPC) -> bool:
+            distance = ranges.calculate_distance(npc.x, npc.y, player.x, player.y)
+            return distance < npc.ai.perception.awareness_radius and (
+                ranges.has_line_of_sight(gw.game_map, npc.x, npc.y, player.x, player.y)
+            )
+
+        def sort_key(npc: NPC) -> tuple[int, int]:
+            # Prefer NPCs that can already see the player, then the nearest.
+            distance = max(abs(npc.x - player.x), abs(npc.y - player.y))
+            return (0 if sees_player(npc) else 1, distance)
+
+        candidates.sort(key=sort_key)
+        target = candidates[0]
+        need_rng = rng.get("dev.console")
+        need_type = need_rng.choice(list(NeedType))
+        target.needs.append(Need(type=need_type, urgency=0.9))
+
+        # Report where the NPC is relative to the player so it can be found.
+        dx = target.x - player.x
+        dy = target.y - player.y
+        distance = max(abs(dx), abs(dy))
+        vertical = "N" if dy < 0 else ("S" if dy > 0 else "")
+        horizontal = "E" if dx > 0 else ("W" if dx < 0 else "")
+        compass = (vertical + horizontal) or "here"
+        note = "" if sees_player(target) else " - CANNOT see you (blocked/too far)"
+        self.history.append(
+            f"Gave {target.name} a {need_type.value} need: "
+            f"{distance} tiles {compass}{note}"
+        )
 
     def _complete_spawn_types(self, prefix: str) -> list[str]:
         """Tab-complete NPC type ids for the ``spawn`` command."""

@@ -88,6 +88,7 @@ if TYPE_CHECKING:
     from brileta.game.actions.discovery import ActionOption
     from brileta.game.actors.ai.goals import Goal
     from brileta.game.actors.indicators import IndicatorKind
+    from brileta.game.actors.needs import Need
     from brileta.game.game_world import GameWorld
 
 _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
@@ -937,6 +938,11 @@ class NPC(Character):
         # Whether this NPC can plan routes through closed doors and open them.
         # Humanoid NPCs can open doors; animals and creatures cannot.
         self.can_open_doors = can_open_doors
+
+        # Social needs (NUBS 6): unmet wants that drive help-seeking. Empty for
+        # most NPCs; populated by the dev console or a future need-generation
+        # system. The most urgent need feeds RequestHelp scoring.
+        self.needs: list[Need] = []
 
         # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
         # Goals sit above ActionPlans and manage behavioral state transitions.

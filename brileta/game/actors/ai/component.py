@@ -30,6 +30,7 @@ from brileta.util import rng
 
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
 from .behaviors.flee import FleeAction, collect_flee_candidates
+from .behaviors.request_help import RequestHelpAction
 from .behaviors.routine import RoutineAction
 from .behaviors.wander import WanderAction
 from .perception import PerceivedActor, PerceptionComponent
@@ -156,6 +157,10 @@ class AIComponent:
         # Per-relationship disposition values keyed by ``target.actor_id``.
         # Unknown actors default to self.default_disposition.
         self._dispositions: dict[ActorId, int] = {}
+        # Per-target count of ignored help requests (NUBS 6). Keyed by the
+        # helper's actor_id so being ignored by one target (e.g. the player)
+        # never suppresses asking a different helper.
+        self._failed_help_attempts: dict[ActorId, int] = {}
         self.aggro_radius = aggro_radius
         self.default_disposition = default_disposition
         # Perception gates awareness behind range + LOS checks. When None,
@@ -236,6 +241,17 @@ class AIComponent:
     def is_hostile_toward(self, target: Actor) -> bool:
         """Return True if disposition toward target is at or below hostile threshold."""
         return self.disposition_toward(target) <= HOSTILE_UPPER
+
+    def record_failed_help_attempt(self, target: Actor) -> None:
+        """Record that ``target`` ignored a help request from this NPC."""
+        actor_id = target.actor_id
+        self._failed_help_attempts[actor_id] = (
+            self._failed_help_attempts.get(actor_id, 0) + 1
+        )
+
+    def failed_help_attempts_toward(self, target: Actor) -> int:
+        """Return how many times ``target`` has ignored this NPC's help requests."""
+        return self._failed_help_attempts.get(target.actor_id, 0)
 
     def notify_attacked(self, attacker: Actor) -> None:
         """Record attacker for combat awareness.
@@ -324,10 +340,17 @@ class AIComponent:
                 actor.current_goal = None
             return intent
 
-        # A different action won - abandon the current goal if active
+        # A different action won - abandon the current goal if active.
         if actor.current_goal is not None and not actor.current_goal.is_complete:
             actor.current_goal.abandon()
             actor.current_goal = None
+            # The abandoned goal may have left a movement plan running (a routine
+            # walking to its workplace, an attack chase, etc.). current_goal and
+            # active_plan are separate state - the TurnManager drives the plan on
+            # its own - so an orphaned plan would otherwise keep steering the NPC
+            # toward the *old* intent while the new goal thinks it is in control.
+            # Cancelling here gives the incoming action a clean slate.
+            controller.stop_plan(actor)
 
         # Flee/Wander actions create goals instead of returning a single
         # move step.
@@ -336,6 +359,8 @@ class AIComponent:
         if isinstance(action, WanderAction):
             return action.get_intent_with_goal(context, actor)
         if isinstance(action, RoutineAction):
+            return action.get_intent_with_goal(context, actor)
+        if isinstance(action, RequestHelpAction):
             return action.get_intent_with_goal(context, actor)
         return action.get_intent(context)
 
@@ -474,6 +499,15 @@ class AIComponent:
             else None
         )
 
+        # Social help-seeking (NUBS 6): the strongest unmet need and the helper
+        # RequestHelp would approach, resolved here so scoring and the goal agree.
+        max_need_urgency = max((n.urgency for n in actor.needs), default=0.0)
+        help_target, failed_help_attempts = (
+            self._select_help_target(controller, actor, perceived)
+            if max_need_urgency > 0.0
+            else (None, 0)
+        )
+
         # Personality traits feed the same scoring layer as disposition and
         # distance: normalize the 0-10 traits to 0-1 so each action's curves
         # can bias on them (neuroticism -> flee, agreeableness -> attack, etc.).
@@ -499,6 +533,9 @@ class AIComponent:
             extraversion=normalize_trait(personality.extraversion),
             agreeableness=normalize_trait(personality.agreeableness),
             neuroticism=normalize_trait(personality.neuroticism),
+            max_need_urgency=max_need_urgency,
+            help_target=help_target,
+            failed_help_attempts=failed_help_attempts,
         )
 
     def _compute_outgoing_threat(
@@ -691,6 +728,74 @@ class AIComponent:
             return perceived[0].actor
 
         return None
+
+    def _is_help_candidate(
+        self, actor: NPC, other: Character, *, is_player: bool
+    ) -> bool:
+        """Whether ``other`` can serve as a help target for ``actor``.
+
+        The player always qualifies. Any other actor must be a *help-capable*
+        NPC - one whose brain includes the RequestHelp action, i.e. a social
+        settlement NPC, not a creature (dog, scorpion) or raider - and neither
+        party may be hostile toward the other. Both hostility directions matter:
+        an NPC should not walk up to ask a favor of something that is hostile
+        toward it (a not-yet-provoked Trog/brigand), nor of someone it is itself
+        hostile toward. This mirrors the give_need dev command's capability gate
+        so runtime selection can't pick a helper that could never help.
+        """
+        if is_player:
+            return True
+        other_ai = getattr(other, "ai", None)
+        if other_ai is None:
+            return False
+        if not any(a.action_id == "request_help" for a in other_ai.brain.actions):
+            return False
+        # Neither party hostile toward the other.
+        return (
+            self.disposition_toward(other) >= 0
+            and other_ai.disposition_toward(actor) >= 0
+        )
+
+    def _select_help_target(
+        self,
+        controller: Controller,
+        actor: NPC,
+        perceived: list[PerceivedActor],
+    ) -> tuple[Character | None, int]:
+        """Pick the helper this NPC should ask, and its ignored-attempt count.
+
+        Candidates are the perceived player and any perceived help-capable,
+        non-hostile NPC (see _is_help_candidate). We prefer the candidate with
+        the fewest prior failed attempts so an ignored NPC naturally switches to
+        someone new; ties break toward the player, then the nearest. Returns
+        (None, 0) when nothing suitable is perceived.
+        """
+        player = controller.gw.player
+        best: Character | None = None
+        best_attempts = 0
+        best_is_player = False
+        best_distance = float("inf")
+
+        for p in perceived:
+            other = p.actor
+            is_player = other is player
+            if not self._is_help_candidate(actor, other, is_player=is_player):
+                continue
+
+            attempts = self.failed_help_attempts_toward(other)
+            # Rank: fewer attempts first, then player, then nearer.
+            better = best is None or (
+                attempts,
+                0 if is_player else 1,
+                p.distance,
+            ) < (best_attempts, 0 if best_is_player else 1, best_distance)
+            if better:
+                best = other
+                best_attempts = attempts
+                best_is_player = is_player
+                best_distance = float(p.distance)
+
+        return best, best_attempts
 
     def _select_attack_destination(
         self, controller: Controller, actor: NPC, target: Character

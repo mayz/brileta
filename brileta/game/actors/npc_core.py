@@ -17,6 +17,10 @@ from brileta.game.actors.ai.actions import (
     WatchAction,
 )
 from brileta.game.actors.ai.behaviors.flee import FleeAction
+from brileta.game.actors.ai.behaviors.request_help import (
+    RequestHelpAction,
+    TradeAction,
+)
 from brileta.game.actors.ai.behaviors.routine import RoutineAction
 from brileta.game.actors.ai.behaviors.wander import WanderAction
 from brileta.game.actors.ai.perception import PerceptionComponent
@@ -147,6 +151,10 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
             ],
         ),
     ],
+    # Social package: help-seeking and (Phase 7 stub) trade for settlement
+    # NPCs. RequestHelp lets an NPC with an urgent unmet need approach a nearby
+    # helper and ask; Trade is registered but scored 0 until the conversation UI.
+    "social": [RequestHelpAction(0.9), TradeAction(0.0)],
     # Daily-routine package: home/workplace schedule for settlement dwellers.
     # Outscores wander so residents pursue their routine by default; shares
     # wander's no-threat preconditions so combat/flee always win over it.

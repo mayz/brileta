@@ -117,6 +117,15 @@ class UtilityContext:
     extraversion: float = 0.5
     agreeableness: float = 0.5
     neuroticism: float = 0.5
+    # Social help-seeking (NUBS 6). max_need_urgency is the strongest unmet-need
+    # urgency the NPC carries (0.0 when it has no needs). help_target is the
+    # helper RequestHelp would approach - the player when perceived, else the
+    # best friendly candidate - selected in _build_context so scoring and the
+    # goal agree. failed_help_attempts is how many times this NPC has already
+    # been ignored by that specific helper, driving the score decay.
+    max_need_urgency: float = 0.0
+    help_target: Character | None = None
+    failed_help_attempts: int = 0
 
     def conscientiousness_persistence_scale(self) -> float:
         """Scale factor a goal's persistence bonus is multiplied by.
@@ -154,6 +163,14 @@ class UtilityContext:
                 return self.agreeableness
             case "neuroticism":
                 return self.neuroticism
+            case "max_need_urgency":
+                return self.max_need_urgency
+            case "help_attempt_decay":
+                # Per-target patience decay: halve the score for each prior
+                # ignored request to this helper. 0 -> 1.0, 1 -> 0.5, 2 -> 0.25,
+                # 3 -> 0.125 (near zero), so an ignored NPC stops re-approaching
+                # the same target while a fresh helper still scores full.
+                return 0.5**self.failed_help_attempts
             case "max_threat":
                 # Combined danger signal: the stronger of outgoing threat
                 # (I'm hostile toward the target) and incoming threat
@@ -195,6 +212,19 @@ def is_threat_present(context: UtilityContext) -> bool:
 def is_no_threat(context: UtilityContext) -> bool:
     """Precondition: returns True when relationship-aware threat is zero."""
     return context.threat_level <= 0.0
+
+
+def is_no_threat_perceived(context: UtilityContext) -> bool:
+    """Precondition: returns True when NO threat is perceived at all.
+
+    Stronger than is_no_threat: also requires zero incoming_threat (nothing
+    hostile approaching this NPC). is_no_threat only covers outgoing threat_level
+    - our own hostility toward a target - so a healthy NPC would pass it even
+    with a hostile creature closing in. Non-urgent, self-directed behaviors
+    (e.g. asking a neighbor for help) use this so danger overrides them instead
+    of the NPC calmly walking off while something hostile approaches.
+    """
+    return context.threat_level <= 0.0 and context.incoming_threat <= 0.0
 
 
 def is_target_nearby(context: UtilityContext) -> bool:
