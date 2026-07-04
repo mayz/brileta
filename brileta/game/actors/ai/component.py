@@ -14,18 +14,17 @@ AIComponent:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import (
     CombatInitiatedEvent,
-    FloatingTextEvent,
-    FloatingTextValence,
     MessageEvent,
     publish_event,
 )
 from brileta.game import ranges
+from brileta.game.actors.indicators import IndicatorKind
 from brileta.types import DIRECTIONS, ActorId, Direction, WorldTilePos, saturate
 from brileta.util import rng
 
@@ -50,6 +49,16 @@ if TYPE_CHECKING:
     from brileta.game.actors import NPC, Actor, Character
 
 _rng = rng.get("npc.ai")
+
+# Maps a winning action/goal id to the presence indicator shown above the NPC.
+# Only genuinely notable, non-clutter states are flagged (attacking, fleeing);
+# routine/idle actions are absent so an indicator always means "exceptional now."
+# NUBS 6/8 extend this by setting NPC.indicator to REQUEST/INVESTIGATE from their
+# goals - no change needed here.
+_INDICATOR_FOR_ACTION: dict[str, IndicatorKind] = {
+    "attack": IndicatorKind.ATTACK,
+    "flee": IndicatorKind.FLEE,
+}
 
 # ---------------------------------------------------------------------------
 # Disposition: a continuous numeric value (-100 to +100).
@@ -292,16 +301,17 @@ class AIComponent:
         else:
             self.last_chosen_action = action.action_id.title()
 
-        # Detect action transitions and emit visual indicators for
-        # combat-relevant switches (attack, flee). Continuing the same
-        # goal counts as the same action, so no indicator fires mid-flee.
+        # Set the NPC's persistent presence indicator from its current action.
+        # The indicator hovers above the NPC (see IndicatorRenderer) for as long
+        # as the state holds and clears when it switches to an unflagged action.
+        # Continuing the same goal counts as the same action, so a fleeing NPC
+        # keeps its bubble across ticks.
         current_action_id = (
             action.goal.goal_id
             if isinstance(action, ContinueGoalAction)
             else action.action_id
         )
-        if current_action_id != self._last_action_id:
-            self._emit_action_transition_indicator(controller, actor, current_action_id)
+        actor.indicator = _INDICATOR_FOR_ACTION.get(current_action_id)
         self._last_action_id = current_action_id
 
         # ContinueGoalAction won - delegate to the goal for the next intent
@@ -327,43 +337,6 @@ class AIComponent:
         if isinstance(action, RoutineAction):
             return action.get_intent_with_goal(context, actor)
         return action.get_intent(context)
-
-    # Action IDs that get a floating-text indicator on transition.
-    # Maps action_id -> (text, color).
-    _ACTION_TRANSITION_INDICATORS: ClassVar[dict[str, tuple[str, colors.Color]]] = {
-        "attack": ("!", colors.RED),
-        "flee": ("!", (255, 255, 150)),
-    }
-
-    def _emit_action_transition_indicator(
-        self, controller: Controller, actor: NPC, action_id: str
-    ) -> None:
-        """Emit a floating text indicator when switching to a notable action.
-
-        Only emits for combat-relevant transitions (attack, flee) and only
-        when the NPC is within the player's field of view.
-        """
-        indicator = self._ACTION_TRANSITION_INDICATORS.get(action_id)
-        if indicator is None:
-            return
-
-        # Only show indicators for NPCs the player can actually see.
-        game_map = controller.gw.game_map
-        if not game_map.visible[actor.x, actor.y]:
-            return
-
-        text, color = indicator
-        publish_event(
-            FloatingTextEvent(
-                text=text,
-                target_actor_id=actor.actor_id,
-                valence=FloatingTextValence.NEGATIVE,
-                duration=1.4,
-                color=color,
-                world_x=actor.x,
-                world_y=actor.y,
-            )
-        )
 
     def _try_escape_hazard(
         self, controller: Controller, actor: NPC

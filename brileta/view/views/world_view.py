@@ -27,6 +27,7 @@ from brileta.view.render.effects.decals import DecalSystem
 from brileta.view.render.effects.effects import EffectLibrary
 from brileta.view.render.effects.environmental import EnvironmentalEffectSystem
 from brileta.view.render.effects.floating_text import FloatingTextManager
+from brileta.view.render.effects.indicators import IndicatorRenderer
 from brileta.view.render.effects.particles import (
     ParticleLayer,
     SubTileParticleSystem,
@@ -372,6 +373,7 @@ class WorldView(View):
         ] = {}
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
+        self.indicator_renderer = IndicatorRenderer()
         self._gpu_actor_lightmap_texture: Any | None = None
         self._gpu_actor_lightmap_viewport_origin: WorldTilePos | None = None
         # Note: No on_evict callback here because _active_background_texture keeps
@@ -790,7 +792,10 @@ class WorldView(View):
         with record_time_live_variable("time.render.draw_updates_ms"):
             self.particle_system.update(delta_time)
             self.environmental_system.update(delta_time)
-            self.floating_text_manager.update(delta_time)
+            # Freeze floating text (barks, damage numbers) while paused so it
+            # stays readable - a pause is a snapshot. Ambient VFX keep animating.
+            if not getattr(self.controller, "paused", False):
+                self.floating_text_manager.update(delta_time)
             self.atmospheric_system.update(delta_time)
             self.rain_animation.update(delta_time, self.rain_config)
             # Update decals for age-based cleanup
@@ -1165,6 +1170,12 @@ class WorldView(View):
 
         with record_time_live_variable("time.render.floating_text_ms"):
             self.floating_text_manager.render(
+                graphics,
+                self.viewport_system,
+                view_offset,
+                self.controller.gw,
+            )
+            self.indicator_renderer.render(
                 graphics,
                 self.viewport_system,
                 view_offset,

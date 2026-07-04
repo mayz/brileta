@@ -7,16 +7,8 @@ pattern. It is the single point of entry for all game actions.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
-from brileta import colors
-from brileta.events import (
-    FloatingTextEvent,
-    FloatingTextSize,
-    FloatingTextValence,
-    publish_event,
-)
 from brileta.game.actions.area_effects import AreaEffectIntent
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.game.actions.combat import AttackIntent, ReloadIntent
@@ -84,10 +76,9 @@ from brileta.game.actions.stunts import (
     TripIntent,
 )
 from brileta.game.actors import NPC, Character
-from brileta.game.actors.barks import pick_bump_bark
+from brileta.game.actors.barks import emit_bark, pick_bump_bark
 from brileta.game.actors.container import Container
 from brileta.game.enums import ActionBlockReason, StepBlock
-from brileta.types import ActorId
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -113,8 +104,6 @@ class ActionRouter:
 
     def __init__(self, controller: Controller):
         self.controller = controller
-        self._bark_block_until: dict[ActorId, float] = {}
-        self._bark_cooldown_seconds = 0.25
         # This registry is the heart of the dispatcher.
         self._executor_registry: dict[type[GameIntent], ActionExecutor[Any]] = {
             MoveIntent: MoveExecutor(),
@@ -240,36 +229,10 @@ class ActionRouter:
         if not isinstance(target, NPC):
             return
 
-        now = time.perf_counter()
-        target_id = target.actor_id
-        block_until = self._bark_block_until.get(target_id)
-        if block_until is not None:
-            if now < block_until:
-                return
-            # Expired - clean up the stale entry.
-            del self._bark_block_until[target_id]
-
         player = self.controller.gw.player
         if player is None:
             return
 
         bark = pick_bump_bark(target, player)
-        if not bark:
-            return
-
-        duration = 1.1
-        self._bark_block_until[target_id] = now + duration + self._bark_cooldown_seconds
-
-        publish_event(
-            FloatingTextEvent(
-                text=bark,
-                target_actor_id=target.actor_id,
-                valence=FloatingTextValence.NEUTRAL,
-                size=FloatingTextSize.NORMAL,
-                duration=duration,
-                color=colors.LIGHT_GREY,
-                world_x=target.x,
-                world_y=target.y,
-                bubble=True,
-            )
-        )
+        if bark:
+            emit_bark(target, bark)

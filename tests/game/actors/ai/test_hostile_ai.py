@@ -18,7 +18,7 @@ from typing import cast
 import pytest
 
 from brileta import colors
-from brileta.events import FloatingTextEvent, reset_event_bus_for_testing
+from brileta.events import reset_event_bus_for_testing
 from brileta.game import ranges
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.movement import MoveIntent
@@ -27,6 +27,7 @@ from brileta.game.actors.ai import HOSTILE_UPPER, disposition_label, escalate_ho
 from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
 from brileta.game.actors.ai.behaviors.wander import WanderGoal
 from brileta.game.actors.ai.goals import GoalState
+from brileta.game.actors.indicators import IndicatorKind
 from brileta.game.game_world import GameWorld
 from brileta.types import DIRECTIONS, DIRECTIONS_AND_CENTER
 from tests.helpers import DummyController, DummyGameWorld, make_ai_world
@@ -668,113 +669,70 @@ def test_combat_awareness_clears_when_attacker_dies() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Action Transition Indicator Tests
+# Presence Indicator Tests
+#
+# The AI sets NPC.indicator each tick from the winning action; a renderer draws
+# it (FOV-gated) elsewhere. These tests cover the derivation, not the drawing.
 # ---------------------------------------------------------------------------
 
 
-def _collect_floating_texts() -> list[FloatingTextEvent]:
-    """Subscribe to FloatingTextEvent and return a list that accumulates events."""
-    from brileta.events import subscribe_to_event
-
-    collected: list[FloatingTextEvent] = []
-    subscribe_to_event(FloatingTextEvent, collected.append)
-    return collected
-
-
-def test_attack_transition_emits_red_exclamation() -> None:
-    """Switching to attack should emit a red '!' floating text."""
+def test_attack_sets_attack_indicator() -> None:
+    """An attacking NPC carries the ATTACK indicator."""
     reset_event_bus_for_testing()
-    events = _collect_floating_texts()
 
     controller, _player, npc = make_ai_world(npc_x=1, npc_y=0)
 
     npc.ai.get_action(controller, npc)
 
-    attack_events = [e for e in events if e.text == "!"]
-    assert len(attack_events) == 1
-    event = attack_events[0]
-    assert event.color == colors.RED
-    assert event.target_actor_id == npc.actor_id
+    assert npc.ai._last_action_id == "attack"
+    assert npc.indicator is IndicatorKind.ATTACK
 
 
-def test_flee_transition_emits_pale_yellow_exclamation() -> None:
-    """Switching to flee should emit a pale-yellow '!' floating text."""
+def test_flee_sets_flee_indicator() -> None:
+    """A fleeing NPC carries the FLEE indicator."""
     reset_event_bus_for_testing()
-    events = _collect_floating_texts()
 
     controller, _player, npc = make_ai_world(npc_x=1, npc_y=0, npc_hp_damage=4)
 
     npc.ai.get_action(controller, npc)
 
-    # Both attack and flee use "!" but with different colors. The flee
-    # indicator should be pale yellow, not red.
-    flee_events = [e for e in events if e.text == "!" and e.color == (255, 255, 150)]
-    assert len(flee_events) == 1
-    assert flee_events[0].target_actor_id == npc.actor_id
+    assert npc.ai._last_action_id == "flee"
+    assert npc.indicator is IndicatorKind.FLEE
 
 
-def test_continuing_same_action_does_not_re_emit_indicator() -> None:
-    """Staying in the same action across ticks should not fire the indicator again."""
+def test_indicator_persists_while_fleeing() -> None:
+    """Continuing the same flee goal keeps the indicator set across ticks."""
     reset_event_bus_for_testing()
-    events = _collect_floating_texts()
 
     controller, _player, npc = make_ai_world(npc_x=1, npc_y=0, npc_hp_damage=4)
 
-    # First tick: transition to flee emits pale-yellow "!"
     action = npc.ai.get_action(controller, npc)
     if isinstance(action, MoveIntent):
         npc.move(action.dx, action.dy)
+    assert npc.indicator is IndicatorKind.FLEE
 
-    # Second tick: continuing flee should not emit again
     npc.ai.get_action(controller, npc)
-
-    flee_events = [e for e in events if e.text == "!" and e.color == (255, 255, 150)]
-    assert len(flee_events) == 1
+    assert npc.indicator is IndicatorKind.FLEE
 
 
-def test_transition_indicator_not_emitted_when_npc_not_visible() -> None:
-    """Indicators should be suppressed when the NPC is outside the player's FOV."""
+def test_switching_attack_to_flee_updates_indicator() -> None:
+    """The indicator follows the winning action: attack, then flee."""
     reset_event_bus_for_testing()
-    events = _collect_floating_texts()
 
     controller, _player, npc = make_ai_world(npc_x=1, npc_y=0)
 
-    # Mark the NPC's tile as not visible (outside player FOV)
-    controller.gw.game_map.visible[npc.x, npc.y] = False
-
     npc.ai.get_action(controller, npc)
+    assert npc.indicator is IndicatorKind.ATTACK
 
-    # The NPC should still attack, but no floating text should appear
-    assert npc.ai.last_chosen_action == "Attack"
-    assert len(events) == 0
-
-
-def test_switching_between_tracked_actions_emits_both_indicators() -> None:
-    """Transitioning attack -> flee should emit both a red and pale-yellow '!'."""
-    reset_event_bus_for_testing()
-    events = _collect_floating_texts()
-
-    # Start with a full-health hostile NPC adjacent to the player so attack wins.
-    controller, _player, npc = make_ai_world(npc_x=1, npc_y=0)
-
-    npc.ai.get_action(controller, npc)
-    assert npc.ai._last_action_id == "attack"
-
-    # Now drop health so flee wins on the next tick.
+    # Drop health so flee wins on the next tick.
     npc.take_damage(4)
     npc.ai.get_action(controller, npc)
-    assert npc.ai._last_action_id == "flee"
-
-    red_events = [e for e in events if e.color == colors.RED]
-    yellow_events = [e for e in events if e.color == (255, 255, 150)]
-    assert len(red_events) == 1
-    assert len(yellow_events) == 1
+    assert npc.indicator is IndicatorKind.FLEE
 
 
-def test_mundane_action_transition_emits_no_indicator() -> None:
-    """Switching to wander/idle/watch/avoid should not emit any floating text."""
+def test_mundane_action_leaves_no_indicator() -> None:
+    """Wander/idle and other unflagged actions clear the indicator."""
     reset_event_bus_for_testing()
-    events = _collect_floating_texts()
 
     # Neutral NPC far from player - should pick wander (no threat).
     controller, player, npc = make_ai_world(disposition=0)
@@ -784,4 +742,18 @@ def test_mundane_action_transition_emits_no_indicator() -> None:
     npc.ai.get_action(controller, npc)
 
     assert isinstance(npc.current_goal, WanderGoal)
-    assert len(events) == 0
+    assert npc.indicator is None
+
+
+def test_indicator_cleared_on_death() -> None:
+    """A killed NPC drops its indicator so corpses show no bubble."""
+    reset_event_bus_for_testing()
+
+    controller, _player, npc = make_ai_world(npc_x=1, npc_y=0)
+
+    npc.ai.get_action(controller, npc)
+    assert npc.indicator is IndicatorKind.ATTACK
+
+    npc.take_damage(9999)
+    assert not npc.health.is_alive()
+    assert npc.indicator is None

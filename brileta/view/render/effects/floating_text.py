@@ -39,6 +39,63 @@ VALENCE_COLORS: dict[FloatingTextValence, colors.Color] = {
 # Default duration for floating text (in seconds)
 DEFAULT_DURATION: float = 0.7
 
+# Speech/indicator panel styling: an aged-parchment scrap with a worn brown
+# border. Warmer and softer than the stark UI panels, which suits a floating
+# world element. Text drawn on it must be dark ink or a darkened/saturated
+# signal color (see barks.emit_bark and indicators.INDICATOR_STYLES); bright
+# colors wash out on the cream fill.
+BUBBLE_FILL: tuple[int, int, int, int] = (222, 205, 170, 250)
+BUBBLE_BORDER: tuple[int, int, int, int] = (120, 96, 62, 255)
+
+
+def build_text_texture(
+    graphics: GraphicsContext,
+    font: ImageFont.FreeTypeFont,
+    text: str,
+    color: colors.Color,
+    bubble: bool,
+) -> tuple[Any, int, int]:
+    """Rasterize text (optionally inside a parchment panel) to a GPU texture.
+
+    Shared by floating text and by persistent presence indicators. When
+    ``bubble`` is set, the text sits in an aged-parchment panel with rounded
+    corners and a worn brown border. Returns (texture, width_px, height_px).
+    """
+    # Measure text to create appropriately sized image
+    bbox = font.getbbox(text)
+    text_width = int(bbox[2] - bbox[0])
+    text_height = int(bbox[3] - bbox[1])
+
+    # Bubbles get generous padding so the text breathes (the cramped look was
+    # the complaint); plain floating text stays tight.
+    padding_x = 11 if bubble else 4
+    padding_y = 8 if bubble else 4
+    img_width = max(1, text_width + padding_x * 2)
+    img_height = max(1, text_height + padding_y * 2)
+
+    # Create RGBA image with transparent background
+    image = PILImage.new("RGBA", (img_width, img_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    if bubble:
+        draw.rounded_rectangle(
+            (0, 0, img_width - 1, img_height - 1),
+            radius=10,
+            fill=BUBBLE_FILL,
+            outline=BUBBLE_BORDER,
+            width=2,
+        )
+
+    # Draw text centered in image
+    text_x = padding_x - int(bbox[0])  # Adjust for glyph offset
+    text_y = padding_y - int(bbox[1])
+    draw.text((text_x, text_y), text, font=font, fill=(*color, 255))
+
+    # Convert to numpy and create texture
+    pixels = np.ascontiguousarray(np.array(image, dtype=np.uint8))
+    texture = graphics.texture_from_numpy(pixels, transparent=True)
+    return texture, img_width, img_height
+
 
 @dataclass
 class FloatingText:
@@ -120,65 +177,9 @@ class FloatingText:
         if self._texture is not None:
             return
 
-        color = self.get_color()
-
-        # Measure text to create appropriately sized image
-        bbox = font.getbbox(self.text)
-        text_width = int(bbox[2] - bbox[0])
-        text_height = int(bbox[3] - bbox[1])
-
-        # Add padding
-        padding_x = 6 if self.bubble else 4
-        padding_y = 4
-        tail_height = 6 if self.bubble else 0
-        img_width = text_width + padding_x * 2
-        img_height = text_height + padding_y * 2 + tail_height
-
-        # Ensure minimum size
-        img_width = max(1, img_width)
-        img_height = max(1, img_height)
-
-        # Create RGBA image with transparent background
-        image = PILImage.new("RGBA", (img_width, img_height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(image)
-
-        if self.bubble:
-            bubble_fill = (20, 20, 20, 210)
-            bubble_outline = (235, 235, 235, 230)
-            corner_radius = 4
-            bubble_rect = (0, 0, img_width - 1, img_height - tail_height - 1)
-            draw.rounded_rectangle(
-                bubble_rect,
-                radius=corner_radius,
-                fill=bubble_fill,
-                outline=bubble_outline,
-                width=1,
-            )
-            tail_center_x = img_width // 2
-            tail_base_y = img_height - tail_height - 1
-            tail_tip_y = img_height - 1
-            draw.polygon(
-                [
-                    (tail_center_x - 4, tail_base_y),
-                    (tail_center_x + 4, tail_base_y),
-                    (tail_center_x, tail_tip_y),
-                ],
-                fill=bubble_fill,
-                outline=bubble_outline,
-            )
-
-        # Draw text centered in image
-        text_x = padding_x - int(bbox[0])  # Adjust for glyph offset
-        text_y = padding_y - int(bbox[1])
-        draw.text((text_x, text_y), self.text, font=font, fill=(*color, 255))
-
-        # Convert to numpy and create texture
-        pixels = np.array(image, dtype=np.uint8)
-        pixels = np.ascontiguousarray(pixels)
-
-        self._texture = graphics.texture_from_numpy(pixels, transparent=True)
-        self._texture_width = img_width
-        self._texture_height = img_height
+        self._texture, self._texture_width, self._texture_height = build_text_texture(
+            graphics, font, self.text, self.get_color(), self.bubble
+        )
 
     def cleanup_texture(self, graphics: GraphicsContext) -> None:
         """Release texture resources via the graphics context.

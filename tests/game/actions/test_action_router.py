@@ -105,8 +105,8 @@ def test_player_bump_npc_emits_bark() -> None:
 
     with (
         patch("brileta.game.action_router.pick_bump_bark", return_value="Hey"),
-        patch("brileta.game.action_router.publish_event") as mock_publish,
-        patch("brileta.game.action_router.time.perf_counter", return_value=1.0),
+        patch("brileta.game.actors.barks.publish_event") as mock_publish,
+        patch("brileta.game.actors.barks.time.perf_counter", return_value=1.0),
     ):
         router = ActionRouter(cast(Controller, controller))
         intent = MoveIntent(cast(Controller, controller), player, 1, 0)
@@ -133,8 +133,8 @@ def test_bark_respects_cooldown() -> None:
 
     with (
         patch("brileta.game.action_router.pick_bump_bark", return_value="Hey"),
-        patch("brileta.game.action_router.publish_event") as mock_publish,
-        patch("brileta.game.action_router.time.perf_counter", side_effect=[1.0, 1.2]),
+        patch("brileta.game.actors.barks.publish_event") as mock_publish,
+        patch("brileta.game.actors.barks.time.perf_counter", side_effect=[1.0, 1.2]),
     ):
         router = ActionRouter(cast(Controller, controller))
         intent = MoveIntent(cast(Controller, controller), player, 1, 0)

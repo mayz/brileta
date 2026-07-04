@@ -1,7 +1,21 @@
-"""NPC bump barks: short phrases for speech bubbles when bumped by the player."""
+"""NPC barks: short phrases shown in speech bubbles for moment-to-moment reactions.
+
+Barks cover the player bumping an NPC (pick_bump_bark) and an NPC being shoved
+(pick_shove_bark). emit_bark() is the shared, throttled entry point that any
+system can call to raise a bubble without spamming the same NPC.
+"""
 
 from __future__ import annotations
 
+import time
+
+from brileta import colors
+from brileta.events import (
+    FloatingTextEvent,
+    FloatingTextSize,
+    FloatingTextValence,
+    publish_event,
+)
 from brileta.game.actors.ai import disposition_label
 from brileta.game.actors.conditions import Injury
 from brileta.util import rng
@@ -9,6 +23,15 @@ from brileta.util import rng
 from .core import NPC, Character
 
 _rng = rng.get("npc.barks")
+
+# A bark bubble lingers this long, and a given NPC stays quiet for a short beat
+# after so back-to-back triggers (repeated bumps/shoves) don't stack bubbles.
+BARK_DURATION = 1.1
+BARK_COOLDOWN_SECONDS = 0.25
+
+# Bark dialogue is drawn as dark ink on the parchment bubble (see
+# floating_text.BUBBLE_FILL); a light color would wash out on the cream.
+BARK_INK: colors.Color = (56, 42, 28)
 
 BARKS_BY_DISPOSITION: dict[str, tuple[str, ...]] = {
     "Hostile": (
@@ -48,6 +71,18 @@ BARKS_BY_DISPOSITION: dict[str, tuple[str, ...]] = {
         "All set.",
     ),
 }
+
+# Reactions to being shoved. Punchier than a bump: the NPC was physically
+# displaced, so these read as annoyed/rattled regardless of disposition. A
+# wounded/injured NPC still prefers its state bark (see pick_shove_bark).
+SHOVE_BARKS: tuple[str, ...] = (
+    "Hey!",
+    "Get off!",
+    "Hands off!",
+    "Watch it!",
+    "Don't shove me!",
+    "Back off!",
+)
 
 BARKS_BY_STATE: dict[str, tuple[str, ...]] = {
     "wounded": (
@@ -99,3 +134,42 @@ def pick_bump_bark(npc: NPC, player: Character) -> str | None:
         return None
 
     return _rng.choice(candidates)
+
+
+def pick_shove_bark(npc: NPC) -> str | None:
+    """Pick a short bark when this NPC is shoved (Push stunt)."""
+    state = _get_bark_state(npc)
+    if state is not None:
+        candidates = BARKS_BY_STATE.get(state)
+        if candidates:
+            return _rng.choice(candidates)
+
+    return _rng.choice(SHOVE_BARKS)
+
+
+def emit_bark(npc: NPC, text: str) -> bool:
+    """Raise a throttled speech-bubble bark above an NPC.
+
+    Returns False (and does nothing) if the NPC barked too recently, so callers
+    can fire on every trigger without stacking bubbles. The throttle window is
+    the bubble's own lifetime plus a short cooldown.
+    """
+    now = time.perf_counter()
+    if now < npc.bark_block_until:
+        return False
+
+    npc.bark_block_until = now + BARK_DURATION + BARK_COOLDOWN_SECONDS
+    publish_event(
+        FloatingTextEvent(
+            text=text,
+            target_actor_id=npc.actor_id,
+            valence=FloatingTextValence.NEUTRAL,
+            size=FloatingTextSize.NORMAL,
+            duration=BARK_DURATION,
+            color=BARK_INK,
+            world_x=npc.x,
+            world_y=npc.y,
+            bubble=True,
+        )
+    )
+    return True

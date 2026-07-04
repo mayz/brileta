@@ -86,6 +86,7 @@ if TYPE_CHECKING:
     from brileta.game.actions.base import GameIntent
     from brileta.game.actions.discovery import ActionOption
     from brileta.game.actors.ai.goals import Goal
+    from brileta.game.actors.indicators import IndicatorKind
     from brileta.game.game_world import GameWorld
 
 _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
@@ -934,6 +935,15 @@ class NPC(Character):
         # urgent arises.
         self.current_goal: Goal | None = None
 
+        # Persistent presence indicator (a hovering bubble glyph). Set by the AI
+        # each tick from the NPC's current state and drawn by IndicatorRenderer
+        # only while the player can see this NPC. None means no indicator.
+        self.indicator: IndicatorKind | None = None
+
+        # perf_counter timestamp before which emit_bark() stays silent for this
+        # NPC, so repeated triggers (bumps, shoves) don't stack speech bubbles.
+        self.bark_block_until: float = 0.0
+
         # Daily-routine anchors, assigned during settlement generation for a
         # fraction of NPCs with the "routine" tag. home_pos is an indoor tile
         # the NPC retreats to at night; anchor_pos is a workplace elsewhere in
@@ -953,6 +963,7 @@ class NPC(Character):
         super().take_damage(amount, damage_type)
         if not self.health.is_alive():
             self.current_goal = None
+            self.indicator = None
 
     def get_next_action(self, controller: Controller) -> GameIntent | None:
         """Return the next action for this NPC, including autopilot goals."""

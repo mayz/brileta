@@ -26,7 +26,8 @@ from brileta.game.actions.stunts import (
     TripIntent,
 )
 from brileta.game.actors.ai import escalate_hostility
-from brileta.game.actors.core import Character
+from brileta.game.actors.barks import emit_bark, pick_shove_bark
+from brileta.game.actors.core import NPC, Character
 from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     StaggeredEffect,
@@ -191,6 +192,13 @@ class PushExecutor(ActionExecutor[PushIntent]):
                         colors.ORANGE,
                     )
                 )
+
+        # A shoved NPC snaps an annoyed bark (throttled). Only when the shove
+        # actually landed - a failed push didn't displace them.
+        if succeeded and isinstance(intent.defender, NPC):
+            bark = pick_shove_bark(intent.defender)
+            if bark:
+                emit_bark(intent.defender, bark)
 
         escalate_hostility(intent.attacker, intent.defender, intent.controller)
         return GameActionResult(

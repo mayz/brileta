@@ -1742,6 +1742,7 @@ class TestAtmosphericViewportSizing:
         view.environmental_system.render_effects = Mock()
         view.decal_system = Mock()
         view.floating_text_manager = Mock()
+        view.indicator_renderer = Mock()
         view.map_glyph_buffer = Mock()
         view.light_source_glyph_buffer = Mock()
 
@@ -1861,6 +1862,7 @@ class TestAtmosphericViewportSizing:
         view.environmental_system.render_effects = Mock()
         view.decal_system = Mock()
         view.floating_text_manager = Mock()
+        view.indicator_renderer = Mock()
         view.map_glyph_buffer = Mock()
         view.light_source_glyph_buffer = Mock()
 
