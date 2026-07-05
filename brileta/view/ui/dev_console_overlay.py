@@ -309,9 +309,14 @@ class DevConsoleOverlay(TextOverlay):
                 # Unique match - nothing more to show.
                 return
 
-            # Ambiguous: show candidates so the user can see what's available.
+            # Ambiguous: show candidates with descriptions so the user can see
+            # what each one is, mirroring the ``list`` command's layout.
             for name in candidates:
-                self.history.append(f"  {name}")
+                desc = self._candidate_description(name)
+                if desc:
+                    self.history.append(f"  {name:<35} {desc}")
+                else:
+                    self.history.append(f"  {name}")
             return
 
         # Subsequent press: cycle forward or backward.
@@ -323,6 +328,21 @@ class DevConsoleOverlay(TextOverlay):
         completion = self.tab_completion_candidates[self.tab_completion_index]
         start = self.input_buffer.rfind(self.tab_completion_prefix)
         self.input_buffer = self.input_buffer[:start] + completion
+
+    def _candidate_description(self, name: str) -> str:
+        """Return a description for a tab-completion candidate, if one exists.
+
+        Candidates may be live variable names or command names (spawn type ids
+        and the like have no description). Live vars use their registered
+        description; commands use the description of their first help entry.
+        """
+        var = live_variable_registry.get_variable(name)
+        if var is not None:
+            return var.description
+        cmd = self._commands.get(name)
+        if cmd is not None and cmd.help_entries:
+            return cmd.help_entries[0][1]
+        return ""
 
     def _build_tab_candidates(self, prefix: str) -> list[str]:
         """Return tab-completion candidates for the current input context.
