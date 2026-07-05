@@ -163,6 +163,14 @@ class WGPUGraphicsContext(GraphicsContext):
     _CONTENT_SCALE_RELOCK_STABLE_SAMPLES = 4
     _PRESENT_FAILURE_LOG_INTERVAL = 120
 
+    # Below this |dir_y| a sheared shadow quad collapses toward a zero-height
+    # line, so we fall back to a thin horizontal "band" instead. Kept small so
+    # the band only covers near-horizon shadows (which are already faded to
+    # near-nothing); above it, the connected sheared silhouette is used so the
+    # shadow stays attached to its caster. A larger value re-introduces a
+    # visible pop where the shadow detaches from trees at low sun angles.
+    _HORIZONTAL_SHADOW_DIR_Y_THRESHOLD = 0.05
+
     def __init__(self, window: GlfwWindow, *, _defer_init: bool = False) -> None:
         """Initialize WGPU graphics context.
 
@@ -919,7 +927,7 @@ class WGPUGraphicsContext(GraphicsContext):
         uv_batch = uv_rects.astype(np.float32, copy=True)
         vertex_colors: np.ndarray | None = None
 
-        if abs(dir_y) < 0.2:
+        if abs(dir_y) < self._HORIZONTAL_SHADOW_DIR_Y_THRESHOLD:
             u1_raw = uv_batch[:, 0].copy()
             v1_raw = uv_batch[:, 1].copy()
             u2_raw = uv_batch[:, 2].copy()
@@ -1043,7 +1051,7 @@ class WGPUGraphicsContext(GraphicsContext):
         base_left = (glyph_x, glyph_y + scaled_h)
         base_right = (glyph_x + scaled_w, glyph_y + scaled_h)
 
-        if abs(dir_y) < 0.2:
+        if abs(dir_y) < self._HORIZONTAL_SHADOW_DIR_Y_THRESHOLD:
             # Horizontal shadow: project from the glyph's side edge using a
             # subtle band anchored to the glyph's base. Keep the band thinner
             # than full glyph height and overlap slightly into the glyph so the
