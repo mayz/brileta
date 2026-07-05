@@ -162,6 +162,13 @@ DEBUG_DISABLE_LIGHT_OVERLAY = False  # Show only dark/unlit background
 
 BACKEND = BackendConfig.WGPU
 
+# Whether to build the real GPU lighting system when a world is created.
+# The GPU pipeline (adapter request, shader compilation) costs a few hundred ms
+# and renders pixels, so headless runs skip it. Off by default under pytest, the
+# same way the audio backend is gated; the sim harness forces it off explicitly
+# so agent-driven (non-pytest) runs stay fast too.
+GPU_LIGHTING_ENABLED = not IS_TEST_ENVIRONMENT
+
 # ============================================================================
 # PERFORMANCE CONFIGURATION
 # =============================================================================
@@ -234,9 +241,9 @@ PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 # MAP GENERATION
 # =============================================================================
 
-# Map size
-MAP_WIDTH = 120
-MAP_HEIGHT = 80
+# Map size (overridable, e.g. by the sim harness, so annotated as plain int).
+MAP_WIDTH: int = 120
+MAP_HEIGHT: int = 80
 
 # Generator type: DUNGEON (legacy rooms+corridors) or SETTLEMENT (pipeline-based)
 # TODO: Add WILDERNESS once CellularAutomataTerrainLayer is implemented

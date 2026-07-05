@@ -291,6 +291,7 @@ class Controller:
                 a new random seed.
         """
         from .backends.wgpu.gpu_lighting import GPULightingSystem
+        from .view.render.lighting.noop import NoOpLightingSystem
 
         # Determine the seed to use
         if seed is None:
@@ -327,8 +328,12 @@ class Controller:
             self.gw.on_actors_changed = self.turn_manager.invalidate_cache
             self.gw.on_actor_removed = self.turn_manager.on_actor_removed
 
-        # Initialize GPU lighting system
-        self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
+        # Initialize the lighting system. Headless runs (tests, sim harness) use
+        # a no-op so world creation doesn't build a real GPU render pipeline.
+        if config.GPU_LIGHTING_ENABLED:
+            self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
+        else:
+            self.gw.lighting_system = NoOpLightingSystem(self.gw)
 
         # Generate procedural sprites for trees and boulders; upload to GPU atlas.
         self._generate_environmental_sprites()

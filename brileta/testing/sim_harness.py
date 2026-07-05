@@ -52,7 +52,12 @@ from brileta.game.actions.combat import MeleeAttackPlan
 from brileta.game.actors import NPC, Actor, Character
 from brileta.game.actors.npc_core import NPCType
 from brileta.input_handler import InputHandler
-from brileta.types import RandomSeed, WorldTileCoord, WorldTilePos
+from brileta.types import (
+    RandomSeed,
+    WorldTileCoord,
+    WorldTileDimensions,
+    WorldTilePos,
+)
 from brileta.util import rng
 
 if TYPE_CHECKING:
@@ -61,6 +66,13 @@ if TYPE_CHECKING:
 # Default Chebyshev radius for "near the player" queries. FOV_RADIUS is the
 # player's sight range, so it's the natural scope for "NPCs the player can see".
 _NEARBY_RADIUS = config.FOV_RADIUS
+
+# Default map size for scenarios, in tiles. Smaller than the full game map
+# (config.MAP_WIDTH x MAP_HEIGHT) because a behavior scenario needs room to move
+# and clear line of sight, not a full city. A smaller map generates faster and
+# spawns far fewer stray actors to filter. Scenarios that need more space pass a
+# larger ``map_size`` to :class:`SimHarness`.
+_DEFAULT_MAP_SIZE: WorldTileDimensions = (48, 32)
 
 
 class SimHarness:
@@ -72,14 +84,24 @@ class SimHarness:
     :meth:`tick` / :meth:`wait`.
     """
 
-    def __init__(self, seed: RandomSeed = None) -> None:
-        """Boot a headless world for ``seed``.
+    def __init__(
+        self,
+        seed: RandomSeed = None,
+        map_size: WorldTileDimensions = _DEFAULT_MAP_SIZE,
+    ) -> None:
+        """Boot a headless world for ``seed`` at ``map_size`` tiles.
 
         Seeding wires all three determinism sources the engine reads: the
         ``config.RANDOM_SEED`` that ``Controller.new_world`` consumes, the global
         ``random`` state (reseeded inside ``new_world``), and the isolated
         per-domain RNG streams (``rng.init``). A given seed therefore reproduces
         the world exactly.
+
+        ``map_size`` overrides ``config.MAP_WIDTH``/``MAP_HEIGHT`` for this boot;
+        scenarios that need long paths or long sight lines can pass a larger one.
+        Booting also forces ``config.GPU_LIGHTING_ENABLED`` off so no real GPU
+        render pipeline is built - this harness drives semantic state, not pixels
+        - which keeps boot fast even when run outside pytest.
         """
         # Import here so importing this module doesn't pull in test-only helpers
         # (and their heavy graphics stubs) unless a harness is actually built.
@@ -91,6 +113,9 @@ class SimHarness:
         # Reseed every determinism source before the world is built.
         config.RANDOM_SEED = seed
         rng.init(seed)
+        # Size the world and skip the GPU lighting pipeline for this headless boot.
+        config.MAP_WIDTH, config.MAP_HEIGHT = map_size
+        config.GPU_LIGHTING_ENABLED = False
         # Fresh actor-id numbering so ids are reproducible across harnesses.
         reset_actor_id_counter()
 

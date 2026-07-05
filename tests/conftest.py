@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from brileta import config
 from brileta.game import consequences
 from brileta.game.resolution import d20_system
 from brileta.util import dice, rng
@@ -163,6 +164,32 @@ def reset_rng_for_tests() -> Iterator[None]:
     """
     rng.init(0)
     yield
+
+
+@pytest.fixture(autouse=True)
+def restore_harness_config_globals() -> Iterator[None]:
+    """Restore the module-global config values that ``SimHarness`` mutates.
+
+    ``SimHarness.__init__`` writes ``config.RANDOM_SEED``, ``MAP_WIDTH``,
+    ``MAP_HEIGHT``, and ``GPU_LIGHTING_ENABLED`` directly on the config module and
+    has no teardown. Without this, a scenario test's shrunken map size would leak
+    into later tests that read ``config.MAP_WIDTH``/``MAP_HEIGHT`` to build a world
+    (e.g. tests/game/actors/ai/test_routine.py), making them order-dependent and
+    fragile under random ordering or xdist. Snapshot and restore around each test.
+    """
+    saved = (
+        config.RANDOM_SEED,
+        config.MAP_WIDTH,
+        config.MAP_HEIGHT,
+        config.GPU_LIGHTING_ENABLED,
+    )
+    yield
+    (
+        config.RANDOM_SEED,
+        config.MAP_WIDTH,
+        config.MAP_HEIGHT,
+        config.GPU_LIGHTING_ENABLED,
+    ) = saved
 
 
 @pytest.fixture(autouse=True)

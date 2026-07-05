@@ -56,6 +56,7 @@ type FootprintOffset = tuple[int, int]  # Example: (3, 2) = 3 right, 2 down from
 # Dimensions
 type TileDimensions = tuple[int, int]  # Example: (16, 16) = 16x16 pixel tiles
 type PixelDimensions = tuple[int, int]  # Example: (1280, 720) window/framebuffer px
+type WorldTileDimensions = tuple[int, int]  # Example: (120, 80) = map size in tiles
 
 # =============================================================================
 # TIME-RELATED TYPES
