@@ -22,6 +22,7 @@ from brileta.game.actors.ai.behaviors.request_help import (
     TradeAction,
 )
 from brileta.game.actors.ai.behaviors.routine import RoutineAction
+from brileta.game.actors.ai.behaviors.surrender import SurrenderAction
 from brileta.game.actors.ai.behaviors.wander import WanderAction
 from brileta.game.actors.ai.perception import PerceptionComponent
 from brileta.game.actors.ai.personality import (
@@ -107,10 +108,12 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
     "combatant": [AttackAction(1.0), FleeAction(1.0)],
     # Social awareness for intelligent NPCs. Overrides the combatant flee
     # with a version that also responds to incoming threats (hostile actors
-    # approaching), not just outgoing combat danger.
+    # approaching), not just outgoing combat danger. Also adds Surrender
+    # (NUBS 7): a cornered, hurt, frightened sapient yields instead of dying.
     "sapient": [
         WatchAction(0.35),
         AvoidAction(0.7),
+        SurrenderAction(1.4),
         # Replaces combatant flee (same action_id="flee"). Triggers on
         # either outgoing threat (I'm hostile and hurt) or incoming threat
         # (something hostile is approaching me). Uses sapient_flee_urgency

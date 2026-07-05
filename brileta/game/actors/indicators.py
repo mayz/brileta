@@ -27,6 +27,7 @@ class IndicatorKind(Enum):
     FLEE = "flee"  # Live: fleeing a threat.
     REQUEST = "request"  # Deferred to NUBS 6: NPC wants the player's help.
     INVESTIGATE = "investigate"  # Deferred to NUBS 8: NPC is checking a noise.
+    SURRENDER = "surrender"  # Live (NUBS 7): NPC has yielded and is cowering.
 
 
 # Glyph and color drawn for each kind. "!" reads as urgent/notable; "?" reads as
@@ -38,4 +39,5 @@ INDICATOR_STYLES: dict[IndicatorKind, tuple[str, colors.Color]] = {
     IndicatorKind.FLEE: ("!", (190, 120, 20)),  # amber
     IndicatorKind.REQUEST: ("!", (40, 110, 120)),  # teal
     IndicatorKind.INVESTIGATE: ("?", (150, 110, 20)),  # olive
+    IndicatorKind.SURRENDER: ("⚑", (210, 210, 210)),  # white flag
 }

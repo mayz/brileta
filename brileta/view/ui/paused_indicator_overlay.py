@@ -49,10 +49,26 @@ class PausedIndicatorOverlay(TextOverlay):
             line_spacing=1.0,
         )
 
+    def _banner_suppressed(self) -> bool:
+        """Whether to hide the chip this frame.
+
+        Shown for a *deliberate* pause, hidden only when the pause is redundant:
+        when the world is not actually running, or when an overlay that freezes
+        the sim itself (e.g. a conversation) is up - that overlay is its own
+        "world frozen" signal. A manual space-pause under a non-freezing overlay
+        (dev console, help) still shows the banner, since nothing else conveys it.
+        """
+        if not self.controller.paused or not self.world_view.visible:
+            return True
+        overlay_system = getattr(self.controller, "overlay_system", None)
+        if overlay_system is None:
+            return False
+        return any(o.freezes_sim for o in overlay_system.active_overlays)
+
     def _calculate_dimensions(self) -> None:
         """Compute chip size and pixel placement inside the world viewport."""
-        # Hidden entirely unless paused and the world view is visible.
-        if not self.controller.paused or not self.world_view.visible:
+        # Hidden entirely unless a deliberate pause is in effect.
+        if self._banner_suppressed():
             self.width = self.height = 0
             self.pixel_width = self.pixel_height = 0
             return
@@ -119,7 +135,7 @@ class PausedIndicatorOverlay(TextOverlay):
         """Present the cached chip texture at the bottom center of the view."""
         if not self.is_active or self._cached_texture is None:
             return
-        if not self.controller.paused:
+        if self._banner_suppressed():
             return
         self.controller.graphics.draw_texture_alpha(
             self._cached_texture,

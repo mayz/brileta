@@ -11,18 +11,18 @@ from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actions.social import TalkIntent
 from brileta.game.actors import NPC
-from brileta.game.actors.ai.behaviors.request_help import RequestHelpGoal
 
 
 class TalkExecutor(ActionExecutor[TalkIntent]):
-    """Executes talk intents.
+    """Executes talk intents by opening the conversation UI.
 
-    Currently shows a message indicating conversation with the target.
-    Future versions may open a dialogue interface.
+    Talking to an NPC opens a ConversationMenu (NUBS 7): the menu derives the
+    NPC's stance and offers social verbs. If the NPC is mid-request, the menu
+    opens on that ask (Accept/Decline); otherwise it opens on a greeting.
     """
 
     def execute(self, intent: TalkIntent) -> GameActionResult | None:
-        """Execute the talk action.
+        """Open a conversation with the target NPC.
 
         Args:
             intent: The TalkIntent containing the target to talk to.
@@ -32,28 +32,17 @@ class TalkExecutor(ActionExecutor[TalkIntent]):
         """
         target = intent.target
 
-        # NUBS 6 minimal help hook: if the target is asking for help, engaging it
-        # completes the request (no failed attempt) and voices the need. The real
-        # conversation UI is Phase 7; this just clears the goal and its bubble.
-        goal = target.current_goal if isinstance(target, NPC) else None
-        if (
-            isinstance(target, NPC)
-            and isinstance(goal, RequestHelpGoal)
-            and not goal.is_complete
-            and target.needs
-        ):
-            need = max(target.needs, key=lambda n: n.urgency)
-            goal.fulfill(target)  # type: ignore[arg-type]
-            target.current_goal = None
-            # Resolving the need stands in for Phase 7's real help; without this
-            # the NPC would immediately re-adopt the request and re-approach.
-            target.needs.remove(need)
-            publish_event(
-                MessageEvent(
-                    f"{target.name} needs help: {need.describe()}.", colors.CYAN
-                )
-            )
+        # Only NPCs have the state (stance, goals, offers) a conversation reads.
+        # Talking to a non-NPC character (should not normally happen) just notes
+        # the approach rather than opening an empty menu.
+        if not isinstance(target, NPC):
+            publish_event(MessageEvent(f"You approach {target.name}.", colors.CYAN))
             return GameActionResult(succeeded=True, should_update_fov=False)
 
-        publish_event(MessageEvent(f"You approach {target.name}.", colors.CYAN))
+        # Local import: the conversation menu pulls in view/UI modules, and
+        # importing those at module load would cycle back through the action
+        # layer that registers this executor.
+        from brileta.view.ui.conversation_menu import open_conversation
+
+        open_conversation(intent.controller, target)
         return GameActionResult(succeeded=True, should_update_fov=False)

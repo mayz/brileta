@@ -401,6 +401,23 @@ def test_fulfill_completes_without_failed_attempt() -> None:
     assert npc.ai.failed_help_attempts_toward(player) == 0
 
 
+def test_decline_records_failed_attempt_and_fails() -> None:
+    """A spoken 'no' (Phase 7 Decline) records a failed attempt just like a
+    timeout, so the declined helper's future RequestHelp score decays and the
+    NPC stops re-asking them."""
+    _, player, npc = make_ai_world(
+        npc_x=_APPROACH_STOP_DISTANCE, npc_y=0, disposition=0
+    )
+    goal = RequestHelpGoal(help_target_id=player.actor_id)
+    npc.indicator = IndicatorKind.REQUEST
+
+    goal.decline(npc, player)
+
+    assert goal.state is GoalState.FAILED
+    assert npc.indicator is None  # Terminal-state hook clears the bubble.
+    assert npc.ai.failed_help_attempts_toward(player) == 1
+
+
 def test_wait_fails_if_helper_walks_far_away() -> None:
     controller, player, npc = make_ai_world(npc_x=0, npc_y=0, disposition=0)
     goal = RequestHelpGoal(help_target_id=player.actor_id)

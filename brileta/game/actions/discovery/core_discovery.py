@@ -84,6 +84,11 @@ class ActionDiscovery:
         options: list[ActionOption] = []
 
         if controller.is_combat_mode():
+            # A surrendering NPC can be spared even mid-combat: offer the
+            # conversation resolution ahead of the attacks (NUBS 7).
+            surrender_option = self._create_accept_surrender_action(controller, target)
+            if surrender_option is not None:
+                options.append(surrender_option)
             # Inside combat - show full combat actions
             options.extend(
                 self.combat_discovery.get_combat_options_for_target(
@@ -159,6 +164,40 @@ class ActionDiscovery:
             requirements=[],
             static_params={"target": target},
             execute=talk,
+        )
+
+    def _create_accept_surrender_action(
+        self, controller: Controller, target: Character
+    ) -> ActionOption | None:
+        """Create an 'Accept Surrender' action if the target has yielded.
+
+        Returns None unless the target is an NPC currently pursuing a
+        SurrenderGoal, so the option only appears over a cowering foe.
+        """
+        from brileta.game.actors.ai.behaviors.surrender import SurrenderGoal
+        from brileta.game.actors.core import NPC
+
+        if not isinstance(target, NPC):
+            return None
+        goal = target.current_goal
+        if not isinstance(goal, SurrenderGoal) or goal.is_complete:
+            return None
+
+        def accept_surrender() -> bool:
+            from brileta.view.ui.conversation_menu import open_conversation
+
+            open_conversation(controller, target)
+            return True
+
+        return ActionOption(
+            id="accept-surrender",
+            name="Accept Surrender...",
+            description=f"Hear out {target.name}, who has surrendered",
+            category=ActionCategory.SOCIAL,
+            action_class=None,
+            requirements=[],
+            static_params={},
+            execute=accept_surrender,
         )
 
     def _create_push_action(

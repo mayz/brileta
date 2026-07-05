@@ -32,6 +32,7 @@ from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
 from .behaviors.flee import FleeAction, collect_flee_candidates
 from .behaviors.request_help import RequestHelpAction
 from .behaviors.routine import RoutineAction
+from .behaviors.surrender import SurrenderAction
 from .behaviors.wander import WanderAction
 from .perception import PerceivedActor, PerceptionComponent
 from .personality import normalize_trait
@@ -60,6 +61,9 @@ _rng = rng.get("npc.ai")
 _INDICATOR_FOR_ACTION: dict[str, IndicatorKind] = {
     "attack": IndicatorKind.ATTACK,
     "flee": IndicatorKind.FLEE,
+    # NUBS 7: a yielding NPC flags a white flag for as long as it keeps
+    # choosing (continuing) its SurrenderGoal.
+    "surrender": IndicatorKind.SURRENDER,
 }
 
 # ---------------------------------------------------------------------------
@@ -161,6 +165,12 @@ class AIComponent:
         # helper's actor_id so being ignored by one target (e.g. the player)
         # never suppresses asking a different helper.
         self._failed_help_attempts: dict[ActorId, int] = {}
+        # Targets who refused this NPC's surrender (NUBS 7). Nothing in the
+        # scoring inputs changes when a surrender is refused - the NPC is still
+        # cornered, hurt, and afraid - so without this it would re-adopt Surrender
+        # on the very next tick and "fights on" would never happen. Recording the
+        # refuser here suppresses SurrenderAction toward them so Attack wins.
+        self._surrender_refused: set[ActorId] = set()
         self.aggro_radius = aggro_radius
         self.default_disposition = default_disposition
         # Perception gates awareness behind range + LOS checks. When None,
@@ -253,6 +263,14 @@ class AIComponent:
         """Return how many times ``target`` has ignored this NPC's help requests."""
         return self._failed_help_attempts.get(target.actor_id, 0)
 
+    def record_surrender_refused(self, target: Actor) -> None:
+        """Record that ``target`` refused this NPC's surrender (NUBS 7)."""
+        self._surrender_refused.add(target.actor_id)
+
+    def was_surrender_refused_by(self, target: Actor) -> bool:
+        """Return True if ``target`` has refused this NPC's surrender."""
+        return target.actor_id in self._surrender_refused
+
     def notify_attacked(self, attacker: Actor) -> None:
         """Record attacker for combat awareness.
 
@@ -296,6 +314,18 @@ class AIComponent:
         force_hostile = force_var is not None and force_var.get_value()
 
         context = self._build_context(controller, actor, force_hostile=force_hostile)
+
+        # A refused surrender (NUBS 7) only holds for the current engagement. Once
+        # no threat is perceived, the fight is over, so clear refusals - a future
+        # desperate moment can yield again. While a threat remains, the flag
+        # persists and keeps SurrenderAction suppressed so the NPC fights on.
+        if (
+            self._surrender_refused
+            and context.threat_level <= 0.0
+            and context.incoming_threat <= 0.0
+        ):
+            self._surrender_refused.clear()
+
         self.last_threat_level = context.threat_level
         self.last_target_actor_id = (
             context.target.actor_id if context.target is not None else None
@@ -361,6 +391,8 @@ class AIComponent:
         if isinstance(action, RoutineAction):
             return action.get_intent_with_goal(context, actor)
         if isinstance(action, RequestHelpAction):
+            return action.get_intent_with_goal(context, actor)
+        if isinstance(action, SurrenderAction):
             return action.get_intent_with_goal(context, actor)
         return action.get_intent(context)
 

@@ -89,6 +89,7 @@ if TYPE_CHECKING:
     from brileta.game.actors.ai.goals import Goal
     from brileta.game.actors.indicators import IndicatorKind
     from brileta.game.actors.needs import Need
+    from brileta.game.actors.offers import Offer
     from brileta.game.game_world import GameWorld
 
 _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
@@ -943,6 +944,11 @@ class NPC(Character):
         # most NPCs; populated by the dev console or a future need-generation
         # system. The most urgent need feeds RequestHelp scoring.
         self.needs: list[Need] = []
+
+        # Offers (NUBS 7): things this NPC can provide, surfaced in conversation
+        # under the Request/Trade verbs. Empty for most NPCs; populated by the
+        # dev console or a future settlement-generation system.
+        self.offers: list[Offer] = []
 
         # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
         # Goals sit above ActionPlans and manage behavioral state transitions.

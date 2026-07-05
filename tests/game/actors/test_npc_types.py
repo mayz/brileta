@@ -75,6 +75,7 @@ def test_brigand_action_pool_contains_combat_and_sapient_actions() -> None:
         "flee",
         "watch",
         "avoid",
+        "surrender",
         "idle",
         "wander",
     }
@@ -177,6 +178,7 @@ def test_resident_action_pool_is_combatant_sapient_profile() -> None:
         "flee",
         "watch",
         "avoid",
+        "surrender",
         "idle",
         "wander",
         "routine",

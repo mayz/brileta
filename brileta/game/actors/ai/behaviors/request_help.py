@@ -196,6 +196,18 @@ class RequestHelpGoal(Goal):
         self._actor_ref = npc  # So the terminal hook can clear the bubble.
         self.state = GoalState.COMPLETED
 
+    def decline(self, npc: NPC, helper: Actor) -> None:
+        """Player said no: record a failed attempt so the NPC stops re-asking.
+
+        A spoken "no" counts at least as much as a timeout (NUBS 7), so the
+        per-target attempt tracking that already gates timed-out requests also
+        gates declined ones - a declined helper's future RequestHelp score
+        decays exactly as an ignored one's does.
+        """
+        self._actor_ref = npc
+        npc.ai.record_failed_help_attempt(helper)
+        self.state = GoalState.FAILED
+
     def _on_state_changed(
         self, previous_state: GoalState, new_state: GoalState
     ) -> None:

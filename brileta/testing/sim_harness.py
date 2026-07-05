@@ -37,13 +37,13 @@ Extending it
 - **Add a scenario**: construct ``SimHarness(seed=...)``, ``spawn`` any actors
   the scenario needs, drive verbs, ``tick``/``wait`` to advance, then assert on
   ``player_pos``, ``npcs()``, ``disposition()``, an NPC's ``health.hp``, or
-  ``messages``. See ``tests/test_sim_harness_*.py`` for worked examples.
+  ``messages``. See ``tests/scenarios/`` for worked examples.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from brileta import config
 from brileta.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
@@ -54,6 +54,9 @@ from brileta.game.actors.npc_core import NPCType
 from brileta.input_handler import InputHandler
 from brileta.types import RandomSeed, WorldTileCoord, WorldTilePos
 from brileta.util import rng
+
+if TYPE_CHECKING:
+    from brileta.view.ui.conversation_menu import ConversationMenu
 
 # Default Chebyshev radius for "near the player" queries. FOV_RADIUS is the
 # player's sight range, so it's the natural scope for "NPCs the player can see".
@@ -181,6 +184,37 @@ class SimHarness:
             target_actor=npc,
             target_position=(npc.x, npc.y),
         )
+
+    def talk_to(self, npc: NPC, max_ticks: int = 200) -> ConversationMenu | None:
+        """Drive the player to talk to ``npc`` and return the opened conversation.
+
+        Starts a ``TalkPlan`` (the same plan the Talk action issues: approach to
+        adjacency, then run ``TalkIntent``), pumps the loop until the executor
+        opens a ``ConversationMenu``, and returns it. Returns ``None`` if no
+        conversation opened within ``max_ticks``. Opening a conversation pauses
+        the sim, so pumping past that point is a no-op until the menu closes.
+        """
+        from brileta.game.actions.social import TalkPlan
+
+        self.controller.start_plan(
+            self.player, TalkPlan, target_actor=npc, target_position=(npc.x, npc.y)
+        )
+        for _ in range(max_ticks):
+            self.tick(1)
+            convo = self.active_conversation()
+            if convo is not None:
+                return convo
+        return None
+
+    def active_conversation(self) -> ConversationMenu | None:
+        """Return the open ConversationMenu overlay, or ``None`` if none is up."""
+        from brileta.view.ui.conversation_menu import ConversationMenu
+
+        assert self.controller.overlay_system is not None
+        for overlay in reversed(self.controller.overlay_system.active_overlays):
+            if isinstance(overlay, ConversationMenu):
+                return overlay
+        return None
 
     # -- Loop pump -----------------------------------------------------------
 

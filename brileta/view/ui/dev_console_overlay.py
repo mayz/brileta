@@ -192,6 +192,15 @@ class DevConsoleOverlay(TextOverlay):
                 ),
                 execute=self._handle_give_need_command,
             ),
+            "give_offer": ConsoleCommand(
+                help_entries=(
+                    (
+                        "give_offer",
+                        "Give the nearest NPC a sample offer (NUBS 7 trade test).",
+                    ),
+                ),
+                execute=self._handle_give_offer_command,
+            ),
             "world": ConsoleCommand(
                 help_entries=(
                     (
@@ -1042,6 +1051,38 @@ class DevConsoleOverlay(TextOverlay):
             f"Gave {target.name} a {need_type.value} need: "
             f"{distance} tiles {compass}{note}"
         )
+
+    def _handle_give_offer_command(self, parts: list[str]) -> None:
+        """Give the nearest NPC sample offers so Request/Trade are testable.
+
+        A stand-in for settlement-driven offer generation (Shopkeeper task):
+        attaches one favor offer (a repair service) and one goods offer (a spare
+        item) so both the Request and Trade conversation verbs have something to
+        show. Targets the nearest living NPC.
+        """
+        _ = parts
+        from brileta.game.actors.core import NPC
+        from brileta.game.actors.offers import Offer, OfferType
+
+        gw = self.controller.gw
+        player = gw.player
+        nearby = gw.actor_spatial_index.get_in_radius(player.x, player.y, 20)
+        candidates = [
+            a
+            for a in nearby
+            if isinstance(a, NPC) and a is not player and a.health.is_alive()
+        ]
+        if not candidates:
+            self.history.append("No NPC nearby.")
+            return
+
+        candidates.sort(key=lambda a: max(abs(a.x - player.x), abs(a.y - player.y)))
+        target = candidates[0]
+        target.offers.append(Offer(type=OfferType.SERVICE, content="repair", price=8))
+        target.offers.append(
+            Offer(type=OfferType.ITEM, content="a spare canteen", price=3)
+        )
+        self.history.append(f"Gave {target.name} a repair service and a goods offer.")
 
     def _complete_spawn_types(self, prefix: str) -> list[str]:
         """Tab-complete NPC type ids for the ``spawn`` command."""

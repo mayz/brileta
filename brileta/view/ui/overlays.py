@@ -48,6 +48,11 @@ class Overlay(abc.ABC):
         self.controller = controller
         self.is_active = False
         self.is_interactive = True  # Most overlays handle input by default
+        # True for overlays that freeze the simulation while open (e.g. a
+        # conversation). Consulted by the PAUSED banner: such an overlay is its
+        # own "world frozen" signal, so the banner stays hidden for it, but a
+        # deliberate space-pause under a non-freezing overlay still shows it.
+        self.freezes_sim = False
 
     @abc.abstractmethod
     def handle_input(self, event: input_events.InputEvent) -> bool:
@@ -412,6 +417,20 @@ class Menu(TextOverlay):
         )
         self.hovered_option_index = self._list_renderer.hovered_index
 
+    def _activate_option(self, option: MenuOption) -> None:
+        """Run an option's action, then close unless it asked to stay open.
+
+        An action returning ``False`` keeps the menu open (its handler owns the
+        consequences); any other result closes it. The single seam both the
+        mouse and keyboard paths route through, so they honor the stay-open
+        signal identically and subclasses can customize activation in one place.
+        """
+        if not option.enabled or option.action is None:
+            return
+        result = option.action()
+        if result is not False:
+            self.hide()
+
     def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle input events for the menu. Returns True if event was consumed."""
         if not self.is_active:
@@ -440,12 +459,7 @@ class Menu(TextOverlay):
                     self.hovered_option_index is not None
                     and self.hovered_option_index < len(self.options)
                 ):
-                    option = self.options[self.hovered_option_index]
-                    if option.enabled and option.action:
-                        result = option.action()
-                        if result is not False:
-                            self.hide()
-                        return True
+                    self._activate_option(self.options[self.hovered_option_index])
                 return True
 
             case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
@@ -477,8 +491,7 @@ class Menu(TextOverlay):
                         and option.enabled
                         and option.action
                     ):
-                        option.action()
-                        self.hide()
+                        self._activate_option(option)
                         return True
                 return True  # Consume all KeyDown input while menu is active
 
