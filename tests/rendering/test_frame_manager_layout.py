@@ -51,6 +51,7 @@ def _build_layout_stub(
     """Construct a minimal object compatible with FrameManager._layout_views."""
     world_view = _ViewRecorder()
     player_status_view = _ViewRecorder()
+    time_of_day_dial_view = _ViewRecorder()
     action_panel_view = _ViewRecorder()
     mini_map_view = _MiniMapViewRecorder()
     message_log_view = _ViewRecorder()
@@ -65,6 +66,7 @@ def _build_layout_stub(
         ),
         world_view=world_view,
         player_status_view=player_status_view,
+        time_of_day_dial_view=time_of_day_dial_view,
         action_panel_view=action_panel_view,
         mini_map_view=mini_map_view,
         message_log_view=message_log_view,
@@ -89,6 +91,7 @@ def test_layout_matches_legacy_shape_on_80x50() -> None:
     assert fm_stub.message_log_view.bounds == (0, 39, 60, 50)
     assert fm_stub.equipment_view.bounds == (60, 39, 80, 50)
     assert fm_stub.player_status_view.bounds == (40, 0, 80, 20)
+    assert fm_stub.time_of_day_dial_view.bounds == (76, 3, 80, 5)
 
 
 def test_layout_scales_for_zoomed_small_console() -> None:
@@ -103,6 +106,7 @@ def test_layout_scales_for_zoomed_small_console() -> None:
     assert fm_stub.message_log_view.bounds == (0, 23, 27, 28)
     assert fm_stub.equipment_view.bounds == (27, 23, 47, 28)
     assert fm_stub.player_status_view.bounds == (23, 0, 47, 20)
+    assert fm_stub.time_of_day_dial_view.bounds == (43, 3, 47, 5)
 
 
 def test_layout_falls_back_to_world_when_console_is_tiny() -> None:
@@ -117,6 +121,7 @@ def test_layout_falls_back_to_world_when_console_is_tiny() -> None:
     assert fm_stub.message_log_view.bounds == (0, 12, 8, 12)
     assert fm_stub.equipment_view.bounds == (8, 12, 20, 12)
     assert fm_stub.player_status_view.bounds == (2, 0, 20, 12)
+    assert fm_stub.time_of_day_dial_view.bounds == (16, 3, 20, 5)
 
 
 def test_layout_hidden_minimap_gives_sidebar_back_to_action_panel() -> None:
@@ -148,6 +153,7 @@ def test_layout_caps_bottom_bar_height_when_tiles_are_zoomed() -> None:
     assert fm_stub.mini_map_view.bounds == (0, 33, 20, 46)
     assert fm_stub.message_log_view.bounds == (0, 46, 60, 50)
     assert fm_stub.equipment_view.bounds == (60, 46, 80, 50)
+    assert fm_stub.time_of_day_dial_view.bounds == (76, 3, 80, 5)
 
 
 @pytest.mark.parametrize(
@@ -178,3 +184,4 @@ def test_layout_is_not_overly_aggressive_at_intermediate_sizes() -> None:
     assert fm_stub.message_log_view.bounds == (0, 30, 40, 38)
     assert fm_stub.equipment_view.bounds == (40, 30, 60, 38)
     assert fm_stub.player_status_view.bounds == (30, 0, 60, 20)
+    assert fm_stub.time_of_day_dial_view.bounds == (56, 3, 60, 5)

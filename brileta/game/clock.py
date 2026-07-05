@@ -14,7 +14,9 @@ import math
 from dataclasses import dataclass
 
 from brileta import colors, config
-from brileta.types import DeltaTime
+from brileta.types import DeltaTime, saturate
+
+MINUTES_PER_DAY = 24 * 60
 
 
 class GameClock:
@@ -36,6 +38,43 @@ class GameClock:
     def advance(self, dt: DeltaTime) -> None:
         """Advance the clock by ``dt`` real seconds, wrapping at a full day."""
         self.time_of_day = (self.time_of_day + dt / self.day_length_seconds) % 1.0
+
+
+def format_clock_time(time_of_day: float, *, use_24_hour: bool = False) -> str:
+    """Return ``time_of_day`` as a clock string.
+
+    With ``use_24_hour`` it is ``HH:MM``; otherwise it is 12-hour
+    ``H:MM am/pm``. Which style to use is a player preference (the
+    ``clock.use_24_hour`` console variable), not auto-detected: the OS time
+    format is not reliably readable across platforms from Python.
+    """
+    total = round((time_of_day % 1.0) * MINUTES_PER_DAY) % MINUTES_PER_DAY
+    hour_24, minute = divmod(total, 60)
+    if use_24_hour:
+        return f"{hour_24:02d}:{minute:02d}"
+    meridiem = "am" if hour_24 < 12 else "pm"
+    hour_12 = hour_24 % 12 or 12
+    return f"{hour_12}:{minute:02d} {meridiem}"
+
+
+def compute_low_sun_time_fraction() -> float:
+    """Return the normalized-day duration where the sun is near the horizon.
+
+    The threshold follows ``SUN_SHADOW_FADE_ELEVATION_DEGREES`` so HUD dawn/dusk
+    artwork uses the same low-sun band as terrain and actor shadow fading.
+    """
+    half_day = config.DAY_FRACTION / 2.0
+    if config.SUN_NOON_ELEVATION_DEGREES <= 0.0:
+        return 0.0
+
+    fade_ratio = saturate(
+        config.SUN_SHADOW_FADE_ELEVATION_DEGREES / config.SUN_NOON_ELEVATION_DEGREES
+    )
+    if fade_ratio <= 0.0:
+        return 0.0
+
+    high_sun_fraction = math.acos(fade_ratio) / (math.pi / 2.0)
+    return max(0.0, min(half_day, half_day * (1.0 - high_sun_fraction)))
 
 
 @dataclass(frozen=True)

@@ -29,7 +29,7 @@ from .game.actions.discovery import ActionDiscovery
 from .game.actions.types import AnimationType
 from .game.actors import Actor
 from .game.actors.core import Character
-from .game.clock import compute_sky_lighting
+from .game.clock import compute_sky_lighting, format_clock_time
 from .game.enums import CombatEndReason
 from .game.game_world import GameWorld
 from .game.lights import DirectionalLight, DynamicLight
@@ -199,6 +199,10 @@ class Controller:
         # gates the write so the lightmap only re-invalidates when the composed
         # result visibly changes.
         self._last_sky_key: _SkyKey | None = None
+        # HUD clock display style: 24-hour when True, 12-hour am/pm otherwise.
+        # A player preference (the clock.use_24_hour console variable), not
+        # auto-detected, and kept on the controller so it survives map reloads.
+        self.use_24_hour_clock: bool = False
         # Clear-weather cloud level, captured while rain is active so it can be
         # restored when rain stops (the atmospheric system carries its own
         # non-rain baseline that the rain overcast level overrides).
@@ -634,7 +638,7 @@ class Controller:
         live_variable_registry.register(
             "clock.time",
             getter=self._format_clock_time,
-            description="Current game time of day (HH:MM, read-only).",
+            description="Current game time of day (e.g. 8:43 am, read-only).",
         )
         live_variable_registry.register(
             "clock.day_progress",
@@ -654,12 +658,20 @@ class Controller:
             display_decimals=0,
             value_range=(1.0, 3600.0),
         )
+        live_variable_registry.register(
+            "clock.use_24_hour",
+            getter=lambda: 1 if self.use_24_hour_clock else 0,
+            setter=lambda v: setattr(self, "use_24_hour_clock", bool(round(float(v)))),
+            description="HUD clock style: 1 = 24-hour (HH:MM), 0 = 12-hour am/pm.",
+            display_decimals=0,
+            value_range=(0.0, 1.0),
+        )
 
     def _format_clock_time(self) -> str:
-        """Return the current game time as a 24-hour HH:MM string."""
-        minutes_in_day = 24 * 60
-        total = round(self.gw.clock.time_of_day * minutes_in_day) % minutes_in_day
-        return f"{total // 60:02d}:{total % 60:02d}"
+        """Return the current game time in the player's chosen clock style."""
+        return format_clock_time(
+            self.gw.clock.time_of_day, use_24_hour=self.use_24_hour_clock
+        )
 
     def _set_time_of_day(self, value: float) -> None:
         """Scrub the clock to a time of day and re-light immediately."""

@@ -5,7 +5,12 @@ from __future__ import annotations
 import math
 
 from brileta import config
-from brileta.game.clock import GameClock, compute_sky_lighting
+from brileta.game.clock import (
+    GameClock,
+    compute_low_sun_time_fraction,
+    compute_sky_lighting,
+    format_clock_time,
+)
 from brileta.types import DeltaTime
 
 
@@ -13,6 +18,27 @@ def test_clock_wraps_after_one_day() -> None:
     clock = GameClock(time_of_day=0.0, day_length_seconds=100.0)
     clock.advance(DeltaTime(150.0))
     assert math.isclose(clock.time_of_day, 0.5)
+
+
+def test_format_clock_time_uses_am_pm_clock() -> None:
+    assert format_clock_time(0.0, use_24_hour=False) == "12:00 am"
+    assert format_clock_time(0.25, use_24_hour=False) == "6:00 am"
+    assert format_clock_time(0.5, use_24_hour=False) == "12:00 pm"
+    assert format_clock_time(1.0, use_24_hour=False) == "12:00 am"
+
+
+def test_format_clock_time_uses_24_hour_clock_in_24_hour_locales() -> None:
+    assert format_clock_time(0.0, use_24_hour=True) == "00:00"
+    assert format_clock_time(0.25, use_24_hour=True) == "06:00"
+    assert format_clock_time(0.5, use_24_hour=True) == "12:00"
+    assert format_clock_time(0.75, use_24_hour=True) == "18:00"
+
+
+def test_low_sun_fraction_comes_from_shadow_fade_threshold() -> None:
+    low_sun_fraction = compute_low_sun_time_fraction()
+    half_day = config.DAY_FRACTION / 2.0
+
+    assert 0.0 < low_sun_fraction < half_day
 
 
 def test_noon_is_brightest_and_due_south() -> None:

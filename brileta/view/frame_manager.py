@@ -44,6 +44,7 @@ from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
 from .ui.paused_indicator_overlay import PausedIndicatorOverlay
+from .ui.time_of_day_tooltip_overlay import TimeOfDayTooltipOverlay
 from .ui.zoom_indicator_overlay import ZoomIndicatorOverlay
 from .views.action_panel_view import ActionPanelView
 from .views.base import View
@@ -51,6 +52,7 @@ from .views.equipment_view import EquipmentView
 from .views.message_log_view import MessageLogView
 from .views.mini_map_view import MiniMapView
 from .views.player_status_view import PlayerStatusView
+from .views.time_of_day_dial_view import TimeOfDayDialView
 from .views.world_view import WorldView
 
 if TYPE_CHECKING:
@@ -122,6 +124,7 @@ class FrameManager:
     message_log_view: MessageLogView
     equipment_view: EquipmentView
     player_status_view: PlayerStatusView
+    time_of_day_dial_view: TimeOfDayDialView
     action_panel_view: ActionPanelView
     mini_map_view: MiniMapView
     views: list[View]
@@ -130,6 +133,7 @@ class FrameManager:
     combat_tooltip_overlay: CombatTooltipOverlay
     zoom_indicator_overlay: ZoomIndicatorOverlay
     paused_indicator_overlay: PausedIndicatorOverlay
+    time_of_day_tooltip_overlay: TimeOfDayTooltipOverlay
 
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the frame manager and supporting systems."""
@@ -168,6 +172,7 @@ class FrameManager:
         )
 
         self.player_status_view = PlayerStatusView(self.controller, self.graphics)
+        self.time_of_day_dial_view = TimeOfDayDialView(self.controller, self.graphics)
         self.action_panel_view = ActionPanelView(self.controller)
         self.mini_map_view = MiniMapView(
             self.controller, self.world_view.viewport_system
@@ -175,6 +180,7 @@ class FrameManager:
 
         self.views: list[View] = [
             self.world_view,
+            self.time_of_day_dial_view,
             self.player_status_view,
             self.equipment_view,
             self.message_log_view,
@@ -198,6 +204,10 @@ class FrameManager:
             self.controller, self.world_view
         )
         self.controller.overlay_system.show_overlay(self.paused_indicator_overlay)
+        self.time_of_day_tooltip_overlay = TimeOfDayTooltipOverlay(
+            self.controller, self.time_of_day_dial_view
+        )
+        self.controller.overlay_system.show_overlay(self.time_of_day_tooltip_overlay)
 
         # Register live variables owned by the frame manager
         live_variable_registry.register(
@@ -323,6 +333,21 @@ class FrameManager:
             0,
             screen_width_tiles,
             player_status_height,
+        )
+
+        # Time-of-day dial sits in the status column underneath HP/Armor.
+        time_dial_y = 3
+        time_dial_width = 0
+        time_dial_height = 0
+        if screen_width_tiles >= 8 and content_bottom_y >= time_dial_y + 2:
+            time_dial_width = min(4, screen_width_tiles)
+            time_dial_height = min(2, content_bottom_y - time_dial_y)
+        self.time_of_day_dial_view.tile_dimensions = tile_dimensions
+        self.time_of_day_dial_view.set_bounds(
+            screen_width_tiles - time_dial_width,
+            time_dial_y if time_dial_width > 0 else 0,
+            screen_width_tiles,
+            time_dial_y + time_dial_height if time_dial_width > 0 else 0,
         )
 
         sidebar_width_px = left_sidebar_width * max(1, tile_dimensions[0])
