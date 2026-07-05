@@ -61,6 +61,7 @@ from brileta.types import (
 from brileta.util import rng
 
 if TYPE_CHECKING:
+    from brileta.game.items.item_core import Item
     from brileta.view.ui.conversation_menu import ConversationMenu
 
 # Default Chebyshev radius for "near the player" queries. FOV_RADIUS is the
@@ -230,6 +231,24 @@ class SimHarness:
             if convo is not None:
                 return convo
         return None
+
+    def use_item_on(self, target: Character, item: Item) -> None:
+        """Have the player use a consumable ``item`` on ``target``.
+
+        Starts a ``UseConsumableOnTargetPlan`` (approach to adjacency, then run
+        ``UseConsumableOnTargetIntent``) - the same plan the "use item on target"
+        action issues. ``item`` must already be in the player's inventory. Call
+        :meth:`wait`/:meth:`tick` to run the approach and apply the effect.
+        """
+        from brileta.game.actions.recovery import UseConsumableOnTargetPlan
+
+        self.controller.start_plan(
+            self.player,
+            UseConsumableOnTargetPlan,
+            target_actor=target,
+            target_position=(target.x, target.y),
+            item=item,
+        )
 
     def active_conversation(self) -> ConversationMenu | None:
         """Return the open ConversationMenu overlay, or ``None`` if none is up."""

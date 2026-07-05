@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from brileta.game.ranges import calculate_distance
 from brileta.testing import SimHarness
-from brileta.util.pathfinding import find_local_path
-from tests.helpers import find_tile_near
+from tests.helpers import find_tile_near, make_reachable_predicate
 
 
 def test_player_walks_to_reachable_tile() -> None:
@@ -20,13 +19,7 @@ def test_player_walks_to_reachable_tile() -> None:
     start = sim.player_pos
     min_steps = 6
 
-    def reachable(x: int, y: int) -> bool:
-        """A tile the player has a real path to, at least ``min_steps`` long."""
-        path = find_local_path(
-            gw.game_map, gw.actor_spatial_index, sim.player, start, (x, y)
-        )
-        return bool(path) and len(path) >= min_steps
-
+    reachable = make_reachable_predicate(gw, sim.player, start, min_steps=min_steps)
     target = find_tile_near(gw.game_map, start, reachable, min_radius=min_steps)
     assert target != start
 

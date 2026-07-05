@@ -16,11 +16,13 @@ from brileta.environment.generators import GeneratedMapData
 from brileta.environment.map import GameMap, MapRegion
 from brileta.environment.tile_types import TileTypeID
 from brileta.game.actors import NPC, PC, Actor, Character
-from brileta.game.enums import ItemSize
+from brileta.game.enums import ConsumableEffectType, ItemSize
 from brileta.game.item_spawner import ItemSpawner
+from brileta.game.items.capabilities import ConsumableEffectSpec
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.turn_manager import TurnManager
 from brileta.types import ActorId, DeltaTime, WorldTileCoord, WorldTilePos
+from brileta.util.pathfinding import find_local_path
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
 
@@ -67,6 +69,50 @@ def reset_actor_id_counter(start: int = 1) -> None:
 def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
     """Create a simple test item with the given name and size."""
     return Item(ItemType(name=name, description="A test item", size=size))
+
+
+def make_healing_item(
+    heal: int | None = 10,
+    *,
+    name: str = "Health Potion",
+    size: ItemSize = ItemSize.TINY,
+) -> Item:
+    """Create a single-use HEAL consumable.
+
+    ``heal=N`` heals N HP on the target; ``heal=None`` restores it to full.
+    """
+    spec = ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.HEAL,
+        effect_value=heal,
+    )
+    return ItemType(
+        name=name, description="A healing item", size=size, consumable_effect=spec
+    ).create()
+
+
+def make_reachable_predicate(
+    gw: GameWorld,
+    actor: Actor,
+    start: WorldTilePos,
+    *,
+    min_steps: int = 1,
+) -> Callable[[int, int], bool]:
+    """Build a ``find_tile_near`` predicate for tiles the actor can walk to.
+
+    Returns a predicate that is True for tiles ``actor`` has a real local path
+    to from ``start`` of at least ``min_steps`` length. A path implies the tile
+    is walkable, so this doubles as a reachability *and* walkability filter -
+    unlike a bare walkability check, which can pick a tile walled off from the
+    actor with nothing for an approach to path to.
+    """
+
+    def reachable(x: int, y: int) -> bool:
+        path = find_local_path(
+            gw.game_map, gw.actor_spatial_index, actor, start, (x, y)
+        )
+        return bool(path) and len(path) >= min_steps
+
+    return reachable
 
 
 def find_tile_near(

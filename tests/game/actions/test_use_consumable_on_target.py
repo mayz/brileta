@@ -12,24 +12,9 @@ from brileta.controller import Controller
 from brileta.game.actions.executors.recovery import UseConsumableOnTargetExecutor
 from brileta.game.actions.recovery import UseConsumableOnTargetIntent
 from brileta.game.actors import Character
-from brileta.game.enums import ConsumableEffectType, ItemSize
-from brileta.game.items.capabilities import ConsumableEffectSpec
-from brileta.game.items.item_core import Item, ItemType
-
-
-def make_healing_potion() -> Item:
-    """Create a test healing potion."""
-    consumable_spec = ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL,
-        effect_value=10,
-    )
-    item_type = ItemType(
-        name="Health Potion",
-        description="A healing potion",
-        size=ItemSize.TINY,
-        consumable_effect=consumable_spec,
-    )
-    return item_type.create()
+from brileta.game.enums import ItemSize
+from brileta.game.items.item_core import ItemType
+from tests.helpers import make_healing_item
 
 
 def test_use_consumable_on_adjacent_target(controller: Controller) -> None:
@@ -42,7 +27,7 @@ def test_use_consumable_on_adjacent_target(controller: Controller) -> None:
     gw.add_actor(npc)
 
     # Give player a healing potion
-    potion = make_healing_potion()
+    potion = make_healing_item()
     player.inventory.add_to_inventory(potion)
 
     # Damage the NPC
@@ -69,7 +54,7 @@ def test_use_consumable_on_distant_target_fails(controller: Controller) -> None:
     gw.add_actor(npc)
 
     # Give player a healing potion
-    potion = make_healing_potion()
+    potion = make_healing_item()
     player.inventory.add_to_inventory(potion)
 
     # Create and execute the intent
@@ -94,7 +79,7 @@ def test_use_consumable_on_dead_target_fails(controller: Controller) -> None:
     npc.health._hp = 0  # Dead
 
     # Give player a healing potion
-    potion = make_healing_potion()
+    potion = make_healing_item()
     player.inventory.add_to_inventory(potion)
 
     # Create and execute the intent
@@ -144,7 +129,7 @@ def test_use_consumable_not_in_inventory_fails(controller: Controller) -> None:
     gw.add_actor(npc)
 
     # Create a potion but don't add it to inventory
-    potion = make_healing_potion()
+    potion = make_healing_item()
 
     # Create and execute the intent
     intent = UseConsumableOnTargetIntent(controller, player, potion, npc)
@@ -163,7 +148,7 @@ def test_use_consumable_intent_stores_target(controller: Controller) -> None:
     npc = Character(player.x + 1, player.y, "N", colors.WHITE, "NPC", game_world=gw)
     gw.add_actor(npc)
 
-    potion = make_healing_potion()
+    potion = make_healing_item()
 
     intent = UseConsumableOnTargetIntent(controller, player, potion, npc)
 
@@ -187,7 +172,7 @@ def test_use_equipped_consumable_on_adjacent_target(controller: Controller) -> N
     gw.add_actor(npc)
 
     # Create and EQUIP a healing potion (put it in ready slot, not stored inventory)
-    potion = make_healing_potion()
+    potion = make_healing_item()
     player.inventory.equip_to_slot(potion, slot_index=0)
 
     # Verify it's equipped, not in stored inventory
