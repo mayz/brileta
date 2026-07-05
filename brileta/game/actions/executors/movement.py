@@ -7,6 +7,17 @@ from brileta.game.actions.movement import MoveIntent
 from brileta.game.enums import ActionBlockReason, StepBlock
 from brileta.util.pathfinding import probe_step
 
+# Fraction of a speed-paced walker's step interval that one tile glide lasts.
+# At 1.0 the glide fills exactly one interval, so on average a glide ends just
+# as the next step's glide begins and steps chain into one continuous walk. The
+# animation system tolerates timing jitter either way: if the next glide starts
+# early it chains from the current render position (Actor.move) and this one
+# supersedes itself silently (MoveAnimation). Sizing it below 1.0 would leave
+# the actor parked on each tile for the remainder of the interval - a visible
+# per-tile stutter. Nudge above 1.0 (e.g. 1.05) to guarantee overlap if jitter
+# ever opens a seam.
+_SPEED_PACED_GLIDE_FRACTION = 1.0
+
 
 class MoveExecutor(ActionExecutor[MoveIntent]):
     """Executes movement intents by reporting movement results and collisions."""
@@ -19,24 +30,38 @@ class MoveExecutor(ActionExecutor[MoveIntent]):
         if block is not None:
             return self._blocked_result(block, intent)
 
-        # Use intent's duration, or derive one from how the actor is paced.
+        # How long a walk step glides is a pure function of the walker's SPEED:
+        # the glide fills the time until that walker's next step. Same speed ->
+        # same gap -> same glide -> same look, for everyone. WHY the actor is
+        # walking (wander, routine, patrol) is irrelevant and must never appear
+        # in this decision.
+        #
+        # "Time until the next step" comes from whichever clock paces the walker:
+        #   - speed clock:  an actor stepping on its own energy/speed cadence
+        #     (all self-directed NPC walking). Sized here from its speed.
+        #   - key repeat:   the human player, paced by held-key timing. Supplies
+        #     its own duration_ms sized to that cadence (see MoveIntentGenerator).
+        #   - turn order:   combat, paced by discrete turns. Supplies its own
+        #     duration_ms.
+        # The formula is one rule; only the clock that feeds it differs.
         ease_power = config.DEFAULT_MOVE_EASE_POWER
-        if intent.duration_ms is not None:
+        paced_by_speed_clock = (
+            intent.actor.energy is not None
+            and intent.actor is not game_world.player
+            and not intent.controller.is_combat_mode()
+        )
+        if paced_by_speed_clock:
+            # Glide fills the gap until this actor's next step at its current
+            # speed, so consecutive steps chain into one continuous walk with no
+            # per-tile stop. A duration stamped by a pathfinding plan (which
+            # copies the player/combat clock) is the wrong clock here, so it is
+            # ignored.
+            step_interval_s = intent.actor.energy.ambient_step_interval_s()
+            duration_ms = int(step_interval_s * _SPEED_PACED_GLIDE_FRACTION * 1000)
+            ease_power = 1.0
+        elif intent.duration_ms is not None:
             duration_ms = intent.duration_ms
             ease_power = intent.ease_power
-        elif (
-            intent.actor is not game_world.player
-            and intent.actor.energy is not None
-            and not intent.controller.is_combat_mode()
-        ):
-            # Explore-mode NPC: size the glide to fill the gap until its next
-            # ambient step, so consecutive steps chain into a continuous
-            # linear stroll instead of a 100ms zip and a freeze. Undershoot
-            # slightly (0.9) so a glide always finishes before the next
-            # step's animation takes over the actor's render position.
-            step_interval_s = intent.actor.energy.ambient_step_interval_s()
-            duration_ms = int(step_interval_s * 0.9 * 1000)
-            ease_power = 1.0
         else:
             duration_ms = config.AUTOPILOT_MOVE_DURATION_MS
 

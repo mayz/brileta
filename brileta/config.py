@@ -429,10 +429,11 @@ HELD_KEY_MOVE_DURATION_MS = 70
 # can't land sooner than MOVEMENT_KEY_REPEAT_DELAY, so this glide can run
 # most of that window (0.9 undershoot) without being interrupted mid-flight.
 TAP_MOVE_DURATION_MS = int(MOVEMENT_KEY_REPEAT_DELAY * 0.9 * 1000)
-# Ease-out strength for held-key repeat hops. 1.0 is linear (reads as
-# frictionless sliding), 2.0 is quadratic (reads as a 14Hz velocity
-# sawtooth); values between trade footstep accent against smoothness.
-HELD_KEY_MOVE_EASE_POWER = 1.7
+# Ease-out strength for held-key repeat hops. 1.0 is linear (constant
+# velocity), matching self-directed NPC walking so continuous player movement
+# looks the same as continuous NPC movement. Higher values decelerate into each
+# tile for a footstep accent, at the cost of a per-hop velocity sawtooth.
+HELD_KEY_MOVE_EASE_POWER = 1.0
 # Default ease-out strength for move glides that don't specify one
 # (taps, autopilot, combat steps): full quadratic single-step accent.
 DEFAULT_MOVE_EASE_POWER = 2.0

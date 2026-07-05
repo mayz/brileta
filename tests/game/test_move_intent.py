@@ -177,8 +177,13 @@ def test_explore_npc_move_glides_across_step_interval() -> None:
     intent = MoveIntent(cast(Controller, controller), npc, dx=1, dy=0)
     result = MoveExecutor().execute(intent)
     assert result is not None and result.succeeded
-    # Standard speed, multiplier 1.0: 0.9 * AMBIENT_ACTION_INTERVAL_SECONDS.
-    expected_ms = int(config.AMBIENT_ACTION_INTERVAL_SECONDS * 0.9 * 1000)
+    # Standard speed, multiplier 1.0: the glide fills one full step interval so
+    # consecutive steps chain into one continuous walk.
+    from brileta.game.actions.executors.movement import _SPEED_PACED_GLIDE_FRACTION
+
+    expected_ms = int(
+        config.AMBIENT_ACTION_INTERVAL_SECONDS * _SPEED_PACED_GLIDE_FRACTION * 1000
+    )
     assert result.duration_ms == expected_ms
 
 
