@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -20,7 +20,7 @@ from brileta.game.enums import ItemSize
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.turn_manager import TurnManager
-from brileta.types import ActorId, DeltaTime, WorldTileCoord
+from brileta.types import ActorId, DeltaTime, WorldTileCoord, WorldTilePos
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
 
@@ -67,6 +67,41 @@ def reset_actor_id_counter(start: int = 1) -> None:
 def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
     """Create a simple test item with the given name and size."""
     return Item(ItemType(name=name, description="A test item", size=size))
+
+
+def find_tile_near(
+    game_map: GameMap,
+    origin: WorldTilePos,
+    predicate: Callable[[int, int], bool],
+    *,
+    min_radius: int = 1,
+    max_radius: int = 25,
+) -> WorldTilePos:
+    """Return the nearest in-bounds tile to ``origin`` satisfying ``predicate``.
+
+    Scans outward in Chebyshev rings (radius ``min_radius``..``max_radius``) and
+    returns the first tile ``(x, y)`` for which ``predicate(x, y)`` is True,
+    skipping out-of-bounds tiles. Callers supply the predicate (walkable, has
+    line of sight, reachable by pathfind, ...) so one scan serves every "find a
+    tile near the player for a scenario" need.
+
+    Raises:
+        AssertionError: if no tile within ``max_radius`` satisfies the predicate.
+    """
+    ox, oy = origin
+    for radius in range(min_radius, max_radius):
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if max(abs(dx), abs(dy)) != radius:
+                    continue  # Only the tiles on the ring at exactly this radius.
+                tx, ty = ox + dx, oy + dy
+                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+                    continue
+                if predicate(tx, ty):
+                    return (tx, ty)
+    raise AssertionError(
+        f"no tile near {origin} satisfied the predicate within radius {max_radius}"
+    )
 
 
 def _make_renderer(tile_height: int = 16) -> GraphicsContext:
