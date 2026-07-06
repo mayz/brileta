@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -376,9 +377,11 @@ class Controller:
         map gets a small atlas, a large map gets a larger one, and map
         transitions simply drop the old atlas and create a fresh one.
         """
+        import numpy as np
+
         from brileta.backends.wgpu.sprite_atlas import compute_atlas_size
         from brileta.game.actors.boulder import Boulder
-        from brileta.game.actors.core import Character
+        from brileta.game.actors.core import NPC, Character
         from brileta.game.actors.trees import Tree
         from brileta.sprites.boulders import (
             archetype_for_position as boulder_archetype_for_position,
@@ -402,6 +405,11 @@ class Controller:
             sprite_content_bbox,
             sprite_visual_scale_for_shadow_height,
         )
+        from brileta.sprites.quadrupeds import (
+            QUADRUPED_POSE_COUNT,
+            generate_quadruped_pose_set,
+            quadruped_sprite_seed,
+        )
         from brileta.sprites.trees import (
             generate_tree_sprite_for_position,
         )
@@ -413,11 +421,16 @@ class Controller:
         trees: list[Tree] = []
         boulders: list[Boulder] = []
         characters: list[Character] = []
+        critters: list[NPC] = []
         for a in self.gw.actors:
             if isinstance(a, Tree):
                 trees.append(a)
             elif isinstance(a, Boulder):
                 boulders.append(a)
+            elif isinstance(a, NPC) and a.critter_preset is not None:
+                # Quadrupeds opt in via their NPCType's critter_preset (dogs
+                # today, other species later) - never matched on glyph or id.
+                critters.append(a)
             elif isinstance(a, Character) and a.ch in HUMANOID_GLYPHS:
                 characters.append(a)
         # Need at least one environmental sprite to justify atlas creation.
@@ -463,11 +476,32 @@ class Controller:
                 ]
                 char_pose_sprites = [generate_character_pose_set(s) for s in char_seeds]
 
+                # Critter sprites: a 12-frame pose set per quadruped, laid out
+                # like the character set so the same pose-selection machinery
+                # drives them. Seeded from actor_id for a stable appearance.
+                critter_pose_sprites: list[list[np.ndarray]] = []
+                for c in critters:
+                    preset = c.critter_preset
+                    assert preset is not None  # only collected when set
+                    critter_pose_sprites.append(
+                        generate_quadruped_pose_set(
+                            quadruped_sprite_seed(c.actor_id, map_seed), preset
+                        )
+                    )
+
             # Phase 2: Compute the atlas size and create it.
             flat_char_sprites = [
                 sprite for pose_set in char_pose_sprites for sprite in pose_set
             ]
-            all_sprites = tree_sprites + boulder_sprites + flat_char_sprites
+            flat_critter_sprites = [
+                sprite for pose_set in critter_pose_sprites for sprite in pose_set
+            ]
+            all_sprites = (
+                tree_sprites
+                + boulder_sprites
+                + flat_char_sprites
+                + flat_critter_sprites
+            )
             gpu_max = self.graphics.gpu_max_texture_dimension_2d
             atlas_side = compute_atlas_size(all_sprites, gpu_max)
 
@@ -517,27 +551,52 @@ class Controller:
 
                 n_boulders = len(boulders)
                 pose_count = CHARACTER_POSE_COUNT
-                for k, character in enumerate(characters):
-                    uv_offset = n_trees + n_boulders + (k * pose_count)
-                    resolved_pose_uvs: list[SpriteUV] = []
-                    for pose_i in range(pose_count):
-                        uv = uvs[uv_offset + pose_i]
-                        if uv is None:
-                            resolved_pose_uvs = []
-                            break
-                        resolved_pose_uvs.append(uv)
 
-                    if len(resolved_pose_uvs) == pose_count:
-                        pose_uvs = tuple(resolved_pose_uvs)
-                        character.character_sprite_uvs = pose_uvs
-                        character.sprite_uv = pose_uvs[0]
-                        character.visual_scale = sprite_visual_scale_for_shadow_height(
-                            char_pose_sprites[k][0],
-                            character.shadow_height,
-                        )
-                        character.sprite_content_bbox = sprite_content_bbox(
-                            char_pose_sprites[k][0]
-                        )
+                def assign_pose_uvs(
+                    actors: Sequence[Character],
+                    pose_sprites: list[list[np.ndarray]],
+                    base_offset: int,
+                    frame_count: int,
+                ) -> None:
+                    """Resolve each actor's packed pose UVs and assign sprite state.
+
+                    Shared by humanoid characters and quadruped critters: both use
+                    the same character_sprite_uvs pipeline, so the only per-family
+                    difference is the frame count and where their block of UVs
+                    starts. If any of an actor's poses failed to pack (a None UV),
+                    it is left on glyph fallback.
+                    """
+                    for k, actor in enumerate(actors):
+                        uv_offset = base_offset + (k * frame_count)
+                        resolved: list[SpriteUV] = []
+                        for pose_i in range(frame_count):
+                            uv = uvs[uv_offset + pose_i]
+                            if uv is None:
+                                resolved = []
+                                break
+                            resolved.append(uv)
+
+                        if len(resolved) == frame_count:
+                            actor.character_sprite_uvs = tuple(resolved)
+                            actor.sprite_uv = resolved[0]
+                            actor.visual_scale = sprite_visual_scale_for_shadow_height(
+                                pose_sprites[k][0],
+                                actor.shadow_height,
+                            )
+                            actor.sprite_content_bbox = sprite_content_bbox(
+                                pose_sprites[k][0]
+                            )
+
+                char_base = n_trees + n_boulders
+                assign_pose_uvs(characters, char_pose_sprites, char_base, pose_count)
+
+                # Critters share the character_sprite_uvs pipeline: same 12-frame
+                # layout, so the facing/walk-frame selection needs no changes.
+                # They pack right after every character pose set.
+                critter_base = char_base + len(characters) * pose_count
+                assign_pose_uvs(
+                    critters, critter_pose_sprites, critter_base, QUADRUPED_POSE_COUNT
+                )
 
                 atlas.flush()
 
@@ -546,15 +605,17 @@ class Controller:
 
         logger.info(
             "Sprite atlas: %dx%d (%d tree + %d boulder + %d character"
-            " pose sprites"
-            " across %d characters,"
+            " + %d critter pose sprites"
+            " across %d characters and %d critters,"
             " %d allocations)",
             atlas_side,
             atlas_side,
             len(trees),
             len(boulders),
             len(characters) * CHARACTER_POSE_COUNT,
+            len(critters) * QUADRUPED_POSE_COUNT,
             len(characters),
+            len(critters),
             atlas.allocated_count,
         )
 

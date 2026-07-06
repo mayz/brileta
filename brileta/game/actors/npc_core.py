@@ -48,6 +48,7 @@ from brileta.util.rng import RNG
 
 if TYPE_CHECKING:
     from brileta.game.game_world import GameWorld
+    from brileta.sprites.quadrupeds import QuadrupedPreset
 
 _npc_type_rng = rng.get("npc.types")
 # Personality sampling draws from its own stream so adding it does not shift the
@@ -228,6 +229,12 @@ class NPCType:
     awareness_radius: int = 12
     role: str | None = None
     display_name: str = ""
+    # Opt-in to procedural quadruped sprites: set to a species preset (e.g.
+    # DOG_PRESET) and the controller generates and assigns a critter
+    # sprite pose set. Left None, the NPC renders as its text glyph. This is one
+    # of the only two places dog-specific knowledge lives (the other is the
+    # preset itself); later species opt in by setting this, no controller change.
+    critter_preset: QuadrupedPreset | None = None
     strength_dist: StatDistribution = StatDistribution()
     toughness_dist: StatDistribution = StatDistribution()
     agility_dist: StatDistribution = StatDistribution()
@@ -299,4 +306,5 @@ class NPCType:
             creature_size=self.creature_size,
             can_open_doors=self.can_open_doors,
             personality=personality,
+            critter_preset=self.critter_preset,
         )

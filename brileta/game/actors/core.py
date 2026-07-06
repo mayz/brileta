@@ -91,6 +91,7 @@ if TYPE_CHECKING:
     from brileta.game.actors.needs import Need
     from brileta.game.actors.offers import Offer
     from brileta.game.game_world import GameWorld
+    from brileta.sprites.quadrupeds import QuadrupedPreset
 
 _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
     Facing.SOUTH: 0,
@@ -887,6 +888,7 @@ class NPC(Character):
         can_open_doors: bool = False,
         ai: AIComponent | None = None,
         personality: PersonalityComponent | None = None,
+        critter_preset: QuadrupedPreset | None = None,
         **kwargs,
     ) -> None:
         """Instantiate NPC.
@@ -943,6 +945,11 @@ class NPC(Character):
         # Whether this NPC can plan routes through closed doors and open them.
         # Humanoid NPCs can open doors; animals and creatures cannot.
         self.can_open_doors = can_open_doors
+
+        # Opt-in to procedural quadruped sprites. None means glyph rendering; a
+        # species preset means the controller generates a critter pose set for
+        # this actor and packs it into the atlas.
+        self.critter_preset: QuadrupedPreset | None = critter_preset
 
         # Social needs (NUBS 6): unmet wants that drive help-seeking. Empty for
         # most NPCs; populated by the dev console or a future need-generation

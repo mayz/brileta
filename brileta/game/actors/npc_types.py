@@ -17,6 +17,7 @@ from brileta.game.items.item_types import (
     SCORPION_STING_TYPE,
     SLEDGEHAMMER_TYPE,
 )
+from brileta.sprites.quadrupeds import DOG_PRESET
 
 from .npc_core import NPCType, StatDistribution, personality_trait
 
@@ -122,6 +123,7 @@ DOG_TYPE = NPCType(
     glyph="d",
     color=colors.BROWN,
     creature_size=CreatureSize.SMALL,
+    critter_preset=DOG_PRESET,
     default_disposition=20,
     can_open_doors=False,
     starting_weapon=DOG_BITE_TYPE,
