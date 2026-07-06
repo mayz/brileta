@@ -126,6 +126,12 @@ class GameWorld:
         # its ActorId. Wired to TurnManager.on_actor_removed to purge stale
         # retry state for killed NPCs.
         self.on_actor_removed: Callable[[ActorId], None] | None = None
+        # Optional callback invoked with each actor added after world creation.
+        # The Controller wires this to the sprite manager so a late-spawned actor
+        # gets atlas sprites through the same path world gen uses. It is None
+        # during GameWorld construction, so the initial actors (covered by the
+        # batch sprite build) never fire it.
+        self.on_actor_added: Callable[[Actor], None] | None = None
 
         self.generator_type = generator_type
         self.seed = seed
@@ -198,6 +204,8 @@ class GameWorld:
         self._actors_revision += 1
         if self.on_actors_changed is not None:
             self.on_actors_changed()
+        if self.on_actor_added is not None:
+            self.on_actor_added(actor)
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the world and spatial index."""

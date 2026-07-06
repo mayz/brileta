@@ -44,12 +44,18 @@ _PACKING_OVERHEAD = 1.3
 def compute_atlas_size(
     sprites: list[np.ndarray],
     gpu_max_texture_dim: int,
+    extra_area: int = 0,
 ) -> int:
     """Compute the smallest power-of-two atlas side that fits all sprites.
 
     Estimates the total padded area, adds packing overhead, and rounds up to
     the next power of two.  The result is clamped between ``_MIN_ATLAS_SIZE``
     and ``gpu_max_texture_dim`` (the hardware limit queried from the GPU).
+
+    ``extra_area`` reserves headroom (in padded px^2) beyond the given sprites
+    so late-added actors can pack into the live atlas without a rebuild. It is
+    counted toward the area budget only, not the per-sprite max-dimension
+    constraint.
 
     Returns a single int because the atlas is always square.
     """
@@ -67,6 +73,7 @@ def compute_atlas_size(
         total_area += padded_w * padded_h
         max_dim = max(max_dim, padded_w, padded_h)
 
+    total_area += extra_area
     target_area = total_area * _PACKING_OVERHEAD
     # Side length from area, then round up to next power of two.
     side = max(max_dim, math.ceil(math.sqrt(target_area)))
@@ -161,6 +168,12 @@ class SpriteAtlas:
         # Bulk pack count (set by pack_all, not tracked per-region).
         self._bulk_count: int = 0
 
+        # Shelf cursor left by pack_all so pack_incremental can continue packing
+        # late sprites into the free space below the last batch row.
+        self._shelf_x: int = 0
+        self._shelf_y: int = 0
+        self._shelf_h: int = 0
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -228,68 +241,35 @@ class SpriteAtlas:
         if not sprites:
             return []
 
-        n = len(sprites)
-        atlas_w = self.width
         atlas_h = self.height
-        pad = PADDING
+        atlas_w = self.width
 
-        # Build (index, height, width) tuples and sort by height descending
-        # so each shelf uses the tallest sprite as its height, and subsequent
-        # sprites on that shelf waste minimal vertical space.
-        indexed = [(i, px.shape[0], px.shape[1]) for i, px in enumerate(sprites)]
-        indexed.sort(key=lambda t: t[1], reverse=True)
+        # A fresh batch build owns the whole atlas: reset the shelf cursor so
+        # placement starts at the origin (and so a later pack_incremental resumes
+        # from wherever this batch leaves off).
+        self._shelf_x = self._shelf_y = self._shelf_h = 0
 
         # Allocate the CPU staging buffer.
         buf = np.zeros((atlas_h, atlas_w, 4), dtype=np.uint8)
 
-        # Shelf state: current row's top-left corner and shelf height.
-        shelf_x = 0
-        shelf_y = 0
-        shelf_h = 0  # Height of the current shelf (set by first sprite in row).
-
-        results: list[SpriteUV | None] = [None] * n
+        results: list[SpriteUV | None] = [None] * len(sprites)
         placed = 0
-        inv_w = 1.0 / atlas_w
-        inv_h = 1.0 / atlas_h
-
-        for orig_idx, sp_h, sp_w in indexed:
-            padded_w = sp_w + pad
-            padded_h = sp_h + pad
-
-            # Start a new shelf if the sprite doesn't fit on this row.
-            if shelf_x + padded_w > atlas_w:
-                shelf_y += shelf_h
-                shelf_x = 0
-                shelf_h = 0
-
-            # Set shelf height from first sprite placed on this shelf.
-            if shelf_h == 0:
-                shelf_h = padded_h
-
-            # Check if we've run out of vertical space.
-            if shelf_y + padded_h > atlas_h:
-                continue  # Skip this sprite (atlas full for remaining).
-
-            x = shelf_x
-            y = shelf_y
-            px = sprites[orig_idx]
+        for i in self._tallest_first(sprites):
+            px = sprites[i]
+            sp_h, sp_w = px.shape[0], px.shape[1]
+            pos = self._shelf_place(sp_w + PADDING, sp_h + PADDING)
+            if pos is None:
+                continue  # Atlas full for this sprite.
+            x, y = pos
 
             # Blit sprite into CPU buffer.
             buf[y : y + sp_h, x : x + sp_w] = px
-
             # Bottom-row edge extension for shadow linear filtering.
             if sp_h > 0 and y + sp_h < atlas_h:
                 buf[y + sp_h, x : x + sp_w] = px[sp_h - 1]
 
-            # Compute normalized UV coordinates.
-            results[orig_idx] = SpriteUV(
-                u1=x * inv_w,
-                v1=y * inv_h,
-                u2=(x + sp_w) * inv_w,
-                v2=(y + sp_h) * inv_h,
-            )
+            results[i] = self._uv_for(x, y, sp_w, sp_h)
             placed += 1
-            shelf_x += padded_w
 
         self._cpu_buffer = buf
         # Update region count to match what we placed (for allocated_count).
@@ -297,6 +277,101 @@ class SpriteAtlas:
         # returned directly and deallocate() is not used in the bulk path.
         self._bulk_count = placed
         return results
+
+    def pack_incremental(self, sprites: list[np.ndarray]) -> list[SpriteUV | None]:
+        """Pack late-added sprites into the atlas and upload each region now.
+
+        Continues the shelf cursor left by :meth:`pack_all` and uploads each
+        sprite with an immediate partial ``write_texture`` - the batch
+        :meth:`flush` already ran, so there is no CPU staging buffer to reuse.
+        This lets an actor created after the batch build join the live atlas
+        without re-flushing the whole texture.
+
+        Returns UVs in the **same order** as the input list; a sprite that no
+        longer fits returns None in its slot (the caller treats a partial pack
+        as a full atlas and rebuilds).
+        """
+        if not sprites:
+            return []
+
+        # The batch build flushes and drops the CPU buffer but keeps the
+        # texture. If this atlas was never batch-built, create a cleared texture
+        # so unoccupied regions read as transparent under the partial uploads.
+        if self._texture is None:
+            self._texture = self._create_texture()
+
+        results: list[SpriteUV | None] = [None] * len(sprites)
+        for i in self._tallest_first(sprites):
+            px = sprites[i]
+            sp_h, sp_w = px.shape[0], px.shape[1]
+            pos = self._shelf_place(sp_w + PADDING, sp_h + PADDING)
+            if pos is None:
+                continue  # Atlas full for this sprite; slot stays None.
+            x, y = pos
+
+            self._upload_region(x, y, sp_w, sp_h, px)
+            results[i] = self._uv_for(x, y, sp_w, sp_h)
+            self._bulk_count += 1
+
+        return results
+
+    @staticmethod
+    def _tallest_first(sprites: list[np.ndarray]) -> list[int]:
+        """Input indices ordered by sprite height descending.
+
+        Shelf packing sizes each shelf by its first sprite, so feeding sprites
+        tallest-first makes every later sprite on a shelf no taller than it -
+        which keeps :meth:`_shelf_place`'s height guard from tripping mid-shelf.
+        """
+        return sorted(
+            range(len(sprites)), key=lambda i: sprites[i].shape[0], reverse=True
+        )
+
+    def _shelf_place(self, padded_w: int, padded_h: int) -> tuple[int, int] | None:
+        """Advance the shelf cursor for one sprite; return its (x, y) or None.
+
+        The single placement primitive shared by :meth:`pack_all` and
+        :meth:`pack_incremental`. It mutates the persistent ``_shelf_*`` cursor,
+        so pack_all resets it first (fresh atlas) and pack_incremental resumes it
+        to append below the last batch row. Callers must feed sprites
+        tallest-first (see :meth:`_tallest_first`). Returns None when the sprite
+        no longer fits vertically (atlas full).
+        """
+        # Start a new shelf when the sprite would overflow the current row's
+        # width, or is taller than the current shelf (its band is not reserved
+        # for us, so placing it would overlap the row above). The height guard is
+        # a no-op for tallest-first input except at a genuine shelf start.
+        if (
+            self._shelf_h == 0
+            or self._shelf_x + padded_w > self.width
+            or padded_h > self._shelf_h
+        ):
+            self._shelf_y += self._shelf_h
+            self._shelf_x = 0
+            self._shelf_h = padded_h
+
+        if self._shelf_y + padded_h > self.height:
+            return None  # Out of vertical space.
+
+        x = self._shelf_x
+        y = self._shelf_y
+        self._shelf_x += padded_w
+        return x, y
+
+    def _uv_for(self, x: int, y: int, sp_w: int, sp_h: int) -> SpriteUV:
+        """Normalized UV rectangle for a sprite placed at pixel (x, y).
+
+        Multiplies by the precomputed reciprocal (rather than dividing) so the
+        UVs stay bit-identical to the pre-refactor pack_all output.
+        """
+        inv_w = 1.0 / self.width
+        inv_h = 1.0 / self.height
+        return SpriteUV(
+            u1=x * inv_w,
+            v1=y * inv_h,
+            u2=(x + sp_w) * inv_w,
+            v2=(y + sp_h) * inv_h,
+        )
 
     def flush(self) -> None:
         """Upload the CPU staging buffer to the GPU in a single transfer.

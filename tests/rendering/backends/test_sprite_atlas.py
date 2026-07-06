@@ -328,6 +328,70 @@ class TestBulkPackAll:
         assert rm.queue.write_texture.call_count == 1
 
 
+class TestPackIncremental:
+    """Tests for pack_incremental(), the late-spawn continuation of pack_all()."""
+
+    def test_empty_list_returns_empty(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=64, height=64)
+        assert atlas.pack_incremental([]) == []
+
+    def test_does_not_overlap_batch(self) -> None:
+        """Incremental sprites pack into the atlas's free space (beside or below
+        the batch row), never overlapping a batch sprite's rectangle."""
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=256, height=256)
+        batch_uvs = atlas.pack_all([_make_pixels(20, 20) for _ in range(10)])
+        atlas.flush()
+        late_uvs = atlas.pack_incremental([_make_pixels(20, 20) for _ in range(30)])
+        assert all(uv is not None for uv in late_uvs)
+
+        def _overlaps(a: SpriteUV, b: SpriteUV) -> bool:
+            # Half-open rectangles in UV space; touching edges do not overlap.
+            return (
+                a.u1 < b.u2 - 1e-9
+                and b.u1 < a.u2 - 1e-9
+                and a.v1 < b.v2 - 1e-9
+                and b.v1 < a.v2 - 1e-9
+            )
+
+        for late in late_uvs:
+            assert late is not None
+            for batch in batch_uvs:
+                assert batch is not None
+                assert not _overlaps(late, batch)
+
+    def test_uploads_one_write_per_sprite(self) -> None:
+        """Each late sprite is a partial upload (region + its bottom-row pad)."""
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=128, height=128)
+        atlas.pack_all([_make_pixels(20, 20) for _ in range(5)])
+        atlas.flush()
+        rm.queue.write_texture.reset_mock()
+        atlas.pack_incremental([_make_pixels(20, 20), _make_pixels(20, 20)])
+        # Two sprites, each a region write plus a bottom-row edge-extension write.
+        assert rm.queue.write_texture.call_count == 4
+
+    def test_returns_none_when_full(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=64, height=64)
+        atlas.pack_all([_make_pixels(20, 20)])
+        atlas.flush()
+        # Exhaust the atlas: push the shelf cursor past the bottom edge.
+        atlas._shelf_y = atlas.height
+        uvs = atlas.pack_incremental([_make_pixels(20, 20)])
+        assert uvs == [None]
+
+    def test_on_fresh_atlas_creates_texture(self) -> None:
+        """An atlas that was never batch-built still packs incrementally,
+        creating a cleared texture on first use."""
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=64, height=64)
+        uvs = atlas.pack_incremental([_make_pixels(10, 10)])
+        assert uvs[0] is not None
+        assert atlas.texture is not None
+        # First sprite lands at the origin.
+        assert uvs[0].u1 == pytest.approx(0.0)
+        assert uvs[0].v1 == pytest.approx(0.0)
+
+
 class TestSpriteAtlasValidation:
     """Input validation tests."""
 

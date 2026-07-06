@@ -210,6 +210,7 @@ class DummyGameWorld(GameWorld):
         self._actor_id_registry: dict[ActorId, Actor] = {}
         self.on_actors_changed = None
         self.on_actor_removed = None
+        self.on_actor_added = None
 
         self.item_spawner = ItemSpawner(self)
 
@@ -245,6 +246,8 @@ class DummyGameWorld(GameWorld):
         self._actors_revision += 1
         if self.on_actors_changed is not None:
             self.on_actors_changed()
+        if self.on_actor_added is not None:
+            self.on_actor_added(actor)
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the list and the spatial index."""

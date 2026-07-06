@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import math
 import random
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -45,10 +44,8 @@ from .types import (
     DeltaTime,
     FixedTimestep,
     InterpolationAlpha,
-    MapDecorationSeed,
     RandomSeed,
     SoundId,
-    SpriteUV,
     saturate,
 )
 from .util import rng
@@ -63,6 +60,7 @@ from .util.message_log import MessageLog
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
+from .view.render.actor_sprite_manager import ActorSpriteManager
 from .view.render.effects.rain import RainConfig, compute_rain_density
 from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
@@ -219,6 +217,10 @@ class Controller:
         # Ambient rain audio recomputes only when spacing or player region changes.
         self._rain_last_ambient_mix_key: tuple[tuple[float, float], int] | None = None
 
+        # Owns the live actor sprite atlas across the world's lifetime and
+        # assigns UVs both at world gen and to late-spawned actors.
+        self.actor_sprite_manager = ActorSpriteManager(graphics)
+
         # Create the initial game world (uses config.RANDOM_SEED)
         # This sets self.gw, lighting_system, player torch, and sun
         self.new_world()
@@ -348,8 +350,14 @@ class Controller:
         else:
             self.gw.lighting_system = NoOpLightingSystem(self.gw)
 
-        # Generate procedural sprites for trees and boulders; upload to GPU atlas.
-        self._generate_environmental_sprites()
+        # Generate procedural sprites for every actor and upload to the GPU
+        # atlas, keeping the atlas alive for late spawns.
+        self.actor_sprite_manager.build_for_world(self.gw)
+
+        # Fire per-actor sprite assignment for actors added after this point
+        # (dev-console spawns, etc.). Actors added during GameWorld construction
+        # ran before this wiring, so the batch build above already covered them.
+        self.gw.on_actor_added = self.actor_sprite_manager.ensure_actor_sprites
 
         # Create the player's torch - automatically disabled in sunlit outdoor areas
         self._player_torch = DynamicLight.create_player_torch(self.gw.player)
@@ -366,258 +374,6 @@ class Controller:
         # Reset dependent systems if this is a regeneration (not first call)
         if self._systems_initialized:
             self._reset_for_new_world()
-
-    def _generate_environmental_sprites(self) -> None:
-        """Generate procedural sprites for environmental and character actors.
-
-        Pre-generates all tree, boulder, and humanoid character sprites into
-        CPU memory, computes the smallest power-of-two atlas that can hold
-        them (clamped to the GPU's hardware limit), then packs and uploads
-        in one pass.  This means the atlas is right-sized per map - a small
-        map gets a small atlas, a large map gets a larger one, and map
-        transitions simply drop the old atlas and create a fresh one.
-        """
-        import numpy as np
-
-        from brileta.backends.wgpu.sprite_atlas import compute_atlas_size
-        from brileta.game.actors.boulder import Boulder
-        from brileta.game.actors.core import NPC, Character
-        from brileta.game.actors.trees import Tree
-        from brileta.sprites.boulders import (
-            archetype_for_position as boulder_archetype_for_position,
-        )
-        from brileta.sprites.boulders import (
-            generate_boulder_sprite_for_position,
-        )
-        from brileta.sprites.boulders import (
-            shadow_height_for_archetype as boulder_shadow_height,
-        )
-        from brileta.sprites.boulders import (
-            visual_scale_with_height_jitter as boulder_visual_scale_with_height_jitter,
-        )
-        from brileta.sprites.characters import (
-            CHARACTER_POSE_COUNT,
-            HUMANOID_GLYPHS,
-            character_sprite_seed,
-            generate_character_pose_set,
-        )
-        from brileta.sprites.common import (
-            sprite_content_bbox,
-            sprite_visual_scale_for_shadow_height,
-        )
-        from brileta.sprites.quadrupeds import (
-            QUADRUPED_POSE_COUNT,
-            generate_quadruped_pose_set,
-            quadruped_sprite_seed,
-        )
-        from brileta.sprites.trees import (
-            generate_tree_sprite_for_position,
-        )
-        from brileta.sprites.trees import (
-            visual_scale_with_height_jitter as tree_visual_scale_with_height_jitter,
-        )
-        from brileta.util.parallel import parallel_map
-
-        trees: list[Tree] = []
-        boulders: list[Boulder] = []
-        characters: list[Character] = []
-        critters: list[NPC] = []
-        for a in self.gw.actors:
-            if isinstance(a, Tree):
-                trees.append(a)
-            elif isinstance(a, Boulder):
-                boulders.append(a)
-            elif isinstance(a, NPC) and a.critter_preset is not None:
-                # Quadrupeds opt in via their NPCType's critter_preset (dogs
-                # today, other species later) - never matched on glyph or id.
-                critters.append(a)
-            elif isinstance(a, Character) and a.ch in HUMANOID_GLYPHS:
-                characters.append(a)
-        # Need at least one environmental sprite to justify atlas creation.
-        # Character sprites piggyback on the atlas - when no environmental
-        # sprites exist, characters fall back to their text glyphs.
-        if not trees and not boulders:
-            return
-
-        map_seed: MapDecorationSeed = int(self.gw.game_map.decoration_seed)
-
-        with record_time_live_variable("time.sprites.total_ms"):
-            # Phase 1: Pre-generate all sprites into CPU memory so we can
-            # measure the total area before creating the GPU texture.
-            with record_time_live_variable("time.sprites.generate_ms"):
-                tree_sprites = parallel_map(
-                    generate_tree_sprite_for_position,
-                    [t.x for t in trees],
-                    [t.y for t in trees],
-                    [map_seed] * len(trees),
-                    [t.tree_type for t in trees],
-                )
-
-                boulder_archetypes = [
-                    boulder_archetype_for_position(b.x, b.y, map_seed) for b in boulders
-                ]
-                for boulder, archetype in zip(
-                    boulders, boulder_archetypes, strict=True
-                ):
-                    boulder.shadow_height = boulder_shadow_height(archetype)
-
-                boulder_sprites = parallel_map(
-                    generate_boulder_sprite_for_position,
-                    [b.x for b in boulders],
-                    [b.y for b in boulders],
-                    [map_seed] * len(boulders),
-                    boulder_archetypes,
-                )
-
-                # Character sprites: four directional poses per humanoid actor,
-                # seeded from actor_id so the appearance is stable across movement.
-                char_seeds = [
-                    character_sprite_seed(c.actor_id, map_seed) for c in characters
-                ]
-                char_pose_sprites = [generate_character_pose_set(s) for s in char_seeds]
-
-                # Critter sprites: a 12-frame pose set per quadruped, laid out
-                # like the character set so the same pose-selection machinery
-                # drives them. Seeded from actor_id for a stable appearance.
-                critter_pose_sprites: list[list[np.ndarray]] = []
-                for c in critters:
-                    preset = c.critter_preset
-                    assert preset is not None  # only collected when set
-                    critter_pose_sprites.append(
-                        generate_quadruped_pose_set(
-                            quadruped_sprite_seed(c.actor_id, map_seed), preset
-                        )
-                    )
-
-            # Phase 2: Compute the atlas size and create it.
-            flat_char_sprites = [
-                sprite for pose_set in char_pose_sprites for sprite in pose_set
-            ]
-            flat_critter_sprites = [
-                sprite for pose_set in critter_pose_sprites for sprite in pose_set
-            ]
-            all_sprites = (
-                tree_sprites
-                + boulder_sprites
-                + flat_char_sprites
-                + flat_critter_sprites
-            )
-            gpu_max = self.graphics.gpu_max_texture_dimension_2d
-            atlas_side = compute_atlas_size(all_sprites, gpu_max)
-
-            atlas = self.graphics.create_sprite_atlas(atlas_side, atlas_side)
-            if atlas is None:
-                logger.debug(
-                    "Graphics backend has no sprite atlas support; "
-                    "actors will use fallback glyph rendering."
-                )
-                return
-
-            # Phase 3: Bulk-pack all sprites via shelf packing, then flush
-            # to the GPU in a single write_texture call.
-            with record_time_live_variable("time.sprites.atlas_pack_ms"):
-                uvs = atlas.pack_all(all_sprites)
-
-                # Assign UVs and visual scales back to the actors.
-                # UV list order: [trees..., boulders..., characters...].
-                n_trees = len(trees)
-                for i, tree in enumerate(trees):
-                    uv = uvs[i]
-                    if uv is not None:
-                        tree.sprite_uv = uv
-                        tree.visual_scale = tree_visual_scale_with_height_jitter(
-                            tree_sprites[i],
-                            tree.shadow_height,
-                            tree.x,
-                            tree.y,
-                            map_seed,
-                        )
-                        tree.sprite_content_bbox = sprite_content_bbox(tree_sprites[i])
-
-                for j, boulder in enumerate(boulders):
-                    uv = uvs[n_trees + j]
-                    if uv is not None:
-                        boulder.sprite_uv = uv
-                        boulder.visual_scale = boulder_visual_scale_with_height_jitter(
-                            boulder_sprites[j],
-                            boulder.shadow_height,
-                            boulder.x,
-                            boulder.y,
-                            map_seed,
-                        )
-                        boulder.sprite_content_bbox = sprite_content_bbox(
-                            boulder_sprites[j]
-                        )
-
-                n_boulders = len(boulders)
-                pose_count = CHARACTER_POSE_COUNT
-
-                def assign_pose_uvs(
-                    actors: Sequence[Character],
-                    pose_sprites: list[list[np.ndarray]],
-                    base_offset: int,
-                    frame_count: int,
-                ) -> None:
-                    """Resolve each actor's packed pose UVs and assign sprite state.
-
-                    Shared by humanoid characters and quadruped critters: both use
-                    the same character_sprite_uvs pipeline, so the only per-family
-                    difference is the frame count and where their block of UVs
-                    starts. If any of an actor's poses failed to pack (a None UV),
-                    it is left on glyph fallback.
-                    """
-                    for k, actor in enumerate(actors):
-                        uv_offset = base_offset + (k * frame_count)
-                        resolved: list[SpriteUV] = []
-                        for pose_i in range(frame_count):
-                            uv = uvs[uv_offset + pose_i]
-                            if uv is None:
-                                resolved = []
-                                break
-                            resolved.append(uv)
-
-                        if len(resolved) == frame_count:
-                            actor.character_sprite_uvs = tuple(resolved)
-                            actor.sprite_uv = resolved[0]
-                            actor.visual_scale = sprite_visual_scale_for_shadow_height(
-                                pose_sprites[k][0],
-                                actor.shadow_height,
-                            )
-                            actor.sprite_content_bbox = sprite_content_bbox(
-                                pose_sprites[k][0]
-                            )
-
-                char_base = n_trees + n_boulders
-                assign_pose_uvs(characters, char_pose_sprites, char_base, pose_count)
-
-                # Critters share the character_sprite_uvs pipeline: same 12-frame
-                # layout, so the facing/walk-frame selection needs no changes.
-                # They pack right after every character pose set.
-                critter_base = char_base + len(characters) * pose_count
-                assign_pose_uvs(
-                    critters, critter_pose_sprites, critter_base, QUADRUPED_POSE_COUNT
-                )
-
-                atlas.flush()
-
-        if atlas.texture is not None:
-            self.graphics.set_sprite_atlas_texture(atlas.texture)
-
-        logger.info(
-            "Sprite atlas: %dx%d (%d tree + %d boulder + %d character"
-            " + %d critter pose sprites"
-            " across %d characters and %d critters,"
-            " %d allocations)",
-            atlas_side,
-            atlas_side,
-            len(trees),
-            len(boulders),
-            len(characters) * CHARACTER_POSE_COUNT,
-            len(critters) * QUADRUPED_POSE_COUNT,
-            len(characters),
-            len(critters),
-            atlas.allocated_count,
-        )
 
     def _reset_for_new_world(self) -> None:
         """Reset all systems that depend on the game world.

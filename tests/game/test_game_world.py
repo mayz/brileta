@@ -214,6 +214,18 @@ class TestActorManagement:
 
         callback.assert_called_once()
 
+    def test_add_actor_invokes_on_actor_added_callback(self) -> None:
+        # Late-spawn sprite assignment rides this hook: add_actor must pass the
+        # added actor to on_actor_added so the sprite manager can generate it.
+        gw = make_world()
+        actor = make_actor(gw)
+        callback = MagicMock()
+        gw.on_actor_added = callback
+
+        GameWorld.add_actor(gw, actor)
+
+        callback.assert_called_once_with(actor)
+
     def test_remove_actor_invokes_on_actors_changed_callback(self) -> None:
         gw = make_world()
         actor = make_actor(gw)
