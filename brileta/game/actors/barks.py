@@ -122,6 +122,10 @@ def _get_bark_state(npc: NPC) -> str | None:
 
 def pick_bump_bark(npc: NPC, player: Character) -> str | None:
     """Pick a short bark when the player bumps this NPC."""
+    # Barks are human speech; critters (dogs, etc.) have no dialogue.
+    if npc.critter_preset is not None:
+        return None
+
     state = _get_bark_state(npc)
     if state is not None:
         candidates = BARKS_BY_STATE.get(state)
@@ -138,6 +142,10 @@ def pick_bump_bark(npc: NPC, player: Character) -> str | None:
 
 def pick_shove_bark(npc: NPC) -> str | None:
     """Pick a short bark when this NPC is shoved (Push stunt)."""
+    # Barks are human speech; critters (dogs, etc.) have no dialogue.
+    if npc.critter_preset is not None:
+        return None
+
     state = _get_bark_state(npc)
     if state is not None:
         candidates = BARKS_BY_STATE.get(state)

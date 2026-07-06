@@ -92,6 +92,24 @@ def test_pick_shove_bark_prefers_wounded_state() -> None:
     assert bark in BARKS_BY_STATE["wounded"]
 
 
+def test_critters_have_no_bump_or_shove_bark() -> None:
+    # Dogs and other critters are NPCs but have no human dialogue; bumping or
+    # shoving them must stay silent.
+    from brileta.sprites.quadrupeds import DOG_PRESET
+
+    gw = DummyGameWorld()
+    player = Character(
+        1, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc = _make_npc(gw)
+    npc.critter_preset = DOG_PRESET
+    gw.player = player
+    gw.add_actor(player)
+
+    assert pick_bump_bark(npc, player) is None
+    assert pick_shove_bark(npc) is None
+
+
 def test_emit_bark_throttles_repeat_calls() -> None:
     npc = _make_npc(DummyGameWorld())
 
