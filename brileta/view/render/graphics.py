@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -609,6 +610,46 @@ class GraphicsContext:
             uv_coords,
             color_rgba,
         )
+
+    def draw_ellipse_outline(
+        self,
+        cx: float,
+        cy: float,
+        rx: float,
+        ry: float,
+        color: colors.Color,
+        alpha: Opacity,
+        *,
+        thickness: int = 2,
+    ) -> None:
+        """Draw an unfilled ellipse ring by stippling small quads on its perimeter.
+
+        The screen-quad renderer only draws axis-aligned rectangles, so instead
+        of tracing diagonal line segments the ring is approximated by placing a
+        small filled quad at evenly spaced angles. Segment count scales with the
+        perimeter so the dots stay dense enough to read as a continuous ring.
+        """
+        if self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
+
+        color_rgba = self._color_to_rgba(color, alpha)
+        uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
+
+        # Ramanujan's approximation of ellipse perimeter, one quad per ~2px.
+        perimeter = math.pi * (
+            3.0 * (rx + ry) - math.sqrt((3.0 * rx + ry) * (rx + 3.0 * ry))
+        )
+        segments = max(16, int(perimeter / 2.0))
+        half = thickness / 2.0
+        for i in range(segments):
+            theta = (i / segments) * 2.0 * math.pi
+            px = cx + rx * math.cos(theta)
+            py = cy + ry * math.sin(theta)
+            self.screen_renderer.add_quad(
+                px - half, py - half, thickness, thickness, uv_coords, color_rgba
+            )
 
     def create_canvas(self, transparent: bool = True) -> Any:
         """Create a backend canvas for drawing operations."""

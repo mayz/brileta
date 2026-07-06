@@ -256,6 +256,10 @@ class Actor:
         # Sprite ground-anchor within the tile in [0, 1], measured from top.
         # 1.0 = tile bottom, 0.5 = tile center.
         self.sprite_ground_anchor_y = sprite_ground_anchor_y
+        # Normalized (u0, v0, u1, v1) opaque bounds within the sprite quad, set
+        # when the sprite is packed. Used to tighten pointer hit testing to the
+        # visible silhouette rather than the padded quad. None for glyph actors.
+        self.sprite_content_bbox: tuple[float, float, float, float] | None = None
         self.has_complex_visuals = False  # Flag for actors with particle effects, etc.
         self.gw = game_world
         self.blocks_movement = blocks_movement

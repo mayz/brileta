@@ -23,7 +23,7 @@ from brileta.events import MessageEvent, publish_event
 from brileta.game.action_plan import WalkToPlan
 from brileta.game.actions.base import GameIntent
 from brileta.game.actions.discovery import ActionOption
-from brileta.game.actors import Actor, Character
+from brileta.game.actors import Character
 from brileta.input_events import Keys
 from brileta.modes.base import Mode
 from brileta.move_intent_generator import MoveIntentGenerator
@@ -226,6 +226,7 @@ class ExploreMode(Mode):
             wv.actor_renderer.render_selection_and_hover_outlines(
                 game_world=self.controller.gw,
                 controller=self.controller,
+                interpolation_alpha=wv.interpolation_alpha,
                 camera_frac_offset=wv.camera_frac_offset,
                 view_origin=(float(wv.x), float(wv.y)),
             )
@@ -448,9 +449,14 @@ class ExploreMode(Mode):
         # fractional scroll offset is compensated before integer truncation.
         graphics = self.controller.graphics
         scale_x, scale_y = graphics.get_display_scale_factor()
+        scaled_px_x = event.position[0] * scale_x
+        scaled_px_y = event.position[1] * scale_y
         world_tile_pos: WorldTilePos | None = self._fm.pixel_to_world_tile(
-            event.position[0] * scale_x, event.position[1] * scale_y
+            scaled_px_x, scaled_px_y
         )
+        # Fractional world position for sub-tile actor hit testing, so a click
+        # selects the actor wherever its sprite currently appears mid-walk.
+        world_pos_f = self._fm.pixel_to_world_pos(scaled_px_x, scaled_px_y)
 
         # Shift+left click for pathfinding (regardless of what's there)
         if event.button == input_events.MouseButton.LEFT and (
@@ -464,14 +470,14 @@ class ExploreMode(Mode):
 
         # Right click executes default action
         if event.button == input_events.MouseButton.RIGHT:
-            return self._handle_right_click(world_tile_pos, root_tile_pos)
+            return self._handle_right_click(world_tile_pos, world_pos_f, root_tile_pos)
 
         # Left click for selection/deselection or action panel clicks
         if event.button == input_events.MouseButton.LEFT:
             # Check if click is on the action panel first
             if self._try_execute_action_panel_click(event):
                 return True
-            return self._handle_left_click(root_tile_pos, world_tile_pos)
+            return self._handle_left_click(root_tile_pos, world_tile_pos, world_pos_f)
 
         return False
 
@@ -510,6 +516,7 @@ class ExploreMode(Mode):
     def _handle_right_click(
         self,
         world_tile_pos: WorldTilePos | None,
+        world_pos_f: tuple[float, float] | None,
         root_tile_pos: RootConsoleTilePos,
     ) -> bool:
         """Handle right click for default action execution.
@@ -534,14 +541,38 @@ class ExploreMode(Mode):
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
             return True
 
-        # Must at least be explored (remembered) to interact
+        # Hit-test against the actor's rendered footprint first, so right-clicking
+        # a walking NPC targets it wherever its sprite appears, and a visible
+        # actor whose sprite overhangs a fogged tile stays interactable (matching
+        # left-click and the hover ring). actor_at_world_point already requires
+        # the actor's own tile to be visible, so an unseen actor is never found.
+        actor_at_click = None
+        if world_pos_f is not None:
+            actor_at_click = self.controller.actor_at_world_point(
+                world_pos_f[0], world_pos_f[1]
+            )
+        interactable = (
+            actor_at_click is not None
+            and actor_at_click is not self.player
+            and not (
+                isinstance(actor_at_click, Character)
+                and not actor_at_click.health.is_alive()
+            )
+        )
+        if interactable:
+            execute_default_action(self.controller, actor_at_click)
+            self.controller.deselect_target()
+            return True
+
+        # No interactable actor under the cursor - fall back to tile logic.
+        # Must at least be explored (remembered) to do anything.
         if not game_map.explored[world_x, world_y]:
             return True  # Can't interact with unexplored tiles
 
-        # For remembered but not currently visible tiles, only allow walking
+        # For remembered but not currently visible tiles, only allow walking.
         if not game_map.visible[world_x, world_y]:
-            # Can only walk to remembered tiles - no interaction with unseen actors
-            # Use start_plan directly rather than execute_default_action,
+            # Can only walk to remembered tiles - no interaction with unseen
+            # actors. Use start_plan directly rather than execute_default_action,
             # since the latter would try to classify actors at the tile.
             self.controller.start_plan(
                 self.player, WalkToPlan, target_position=(world_x, world_y)
@@ -549,31 +580,18 @@ class ExploreMode(Mode):
             self.controller.deselect_target()
             return True
 
-        # Visible tiles - full interaction (existing code continues here)
-        # Determine the target (actor at location or tile position)
-        target: Actor | WorldTilePos
-        actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
-        if actor_at_click is not None and actor_at_click is not self.player:
-            # Skip dead characters
-            if (
-                isinstance(actor_at_click, Character)
-                and not actor_at_click.health.is_alive()
-            ):
-                target = (world_x, world_y)
-            else:
-                target = actor_at_click
-        else:
-            target = (world_x, world_y)
-
-        # Execute the default action for this target
-        execute_default_action(self.controller, target)
+        # Visible tile with no interactable actor: act on the tile itself.
+        execute_default_action(self.controller, (world_x, world_y))
 
         # Clear selection after right-click action
         self.controller.deselect_target()
         return True
 
     def _handle_left_click(
-        self, root_tile_pos: RootConsoleTilePos, world_tile_pos: WorldTilePos | None
+        self,
+        root_tile_pos: RootConsoleTilePos,
+        world_tile_pos: WorldTilePos | None,
+        world_pos_f: tuple[float, float] | None,
     ) -> bool:
         """Handle left click for selection and UI interaction.
 
@@ -594,31 +612,20 @@ class ExploreMode(Mode):
         world_x, world_y = world_tile_pos
         game_map = self.gw.game_map
 
-        # Check bounds and visibility
+        # Check bounds
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
             return False
 
-        if not game_map.visible[world_x, world_y]:
-            # Clicked on non-visible tile - deselect
-            self.controller.deselect_target()
-            return True
-
-        # Check for actor at click location
-        # Use spatial index to find all actors, since get_actor_at_location
-        # prioritizes blocking actors (player) over non-blocking (ItemPile).
-        # Other actors under the player's tile (e.g. an item pile) win over the
-        # player so they stay selectable, but the player is selectable too when
-        # nothing else is there.
+        # Hit-test against actors' rendered (interpolated) footprints first, so a
+        # walking actor is selectable wherever its sprite appears, and a visible
+        # actor whose sprite overhangs a fogged tile stays selectable (matching
+        # the hover ring, which uses the same test). actor_at_world_point already
+        # requires the actor's own tile to be visible.
         actor_at_click = None
-        for actor in self.gw.actor_spatial_index.get_at_point(world_x, world_y):
-            if actor is not self.player:
-                actor_at_click = actor
-                break
-        if actor_at_click is None and (self.player.x, self.player.y) == (
-            world_x,
-            world_y,
-        ):
-            actor_at_click = self.player
+        if world_pos_f is not None:
+            actor_at_click = self.controller.actor_at_world_point(
+                world_pos_f[0], world_pos_f[1]
+            )
         if actor_at_click is not None:
             # Skip dead characters
             if (
@@ -634,7 +641,8 @@ class ExploreMode(Mode):
                 self.controller.select_target(actor_at_click)
             return True
 
-        # Clicked on empty ground - deselect current target
+        # No actor under the cursor (empty ground or a fogged tile) - deselect.
+        # Tiles are not selectable (too easy to misclick a moving entity).
         self.controller.deselect_target()
         return True
 

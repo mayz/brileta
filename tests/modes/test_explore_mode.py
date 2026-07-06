@@ -397,6 +397,23 @@ def make_explore_mode_with_mocks() -> tuple[
     # Track deselect calls
     controller.deselect_target = MagicMock()
 
+    # Mirror Controller.actor_at_world_point: floor the fractional point to a
+    # tile, require the tile to be visible, prefer a non-player actor there,
+    # else the player if allowed.
+    def mock_actor_at_world_point(wx, wy, *, allow_player=True):
+        tile_x, tile_y = int(wx), int(wy)
+        if not gw.game_map.visible[tile_x, tile_y]:
+            return None
+        actors = list(gw.actor_spatial_index.get_at_point(tile_x, tile_y))
+        non_player = [a for a in actors if a is not gw.player]
+        if non_player:
+            return non_player[0]
+        if allow_player and any(a is gw.player for a in actors):
+            return gw.player
+        return None
+
+    controller.actor_at_world_point = mock_actor_at_world_point
+
     # Also need to track queue_action calls for actor interaction
     controller.queued_actions = []
     controller.queue_action = lambda a: controller.queued_actions.append(a)
@@ -416,7 +433,9 @@ def test_right_click_visible_tile_triggers_walk() -> None:
     gw.game_map.explored[5, 5] = True
 
     # Simulate right-click at world position (5, 5)
-    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+    result = mode._handle_right_click(
+        world_tile_pos=(5, 5), world_pos_f=(5.5, 5.5), root_tile_pos=(5, 5)
+    )
 
     assert result is True
     assert len(pathfinding_calls) == 1
@@ -434,7 +453,9 @@ def test_right_click_explored_not_visible_tile_triggers_walk() -> None:
     gw.game_map.visible[5, 5] = False
 
     # Simulate right-click at world position (5, 5)
-    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+    result = mode._handle_right_click(
+        world_tile_pos=(5, 5), world_pos_f=(5.5, 5.5), root_tile_pos=(5, 5)
+    )
 
     assert result is True
     # Should have triggered pathfinding
@@ -454,7 +475,9 @@ def test_right_click_unexplored_tile_does_nothing() -> None:
     gw.game_map.visible[5, 5] = False
 
     # Simulate right-click at world position (5, 5)
-    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+    result = mode._handle_right_click(
+        world_tile_pos=(5, 5), world_pos_f=(5.5, 5.5), root_tile_pos=(5, 5)
+    )
 
     assert result is True  # Event consumed
     # But no pathfinding should have started
@@ -478,7 +501,9 @@ def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
     gw.game_map.explored[1, 0] = True
 
     # Simulate right-click at world position (1, 0) where NPC is
-    result = mode._handle_right_click(world_tile_pos=(1, 0), root_tile_pos=(1, 0))
+    result = mode._handle_right_click(
+        world_tile_pos=(1, 0), world_pos_f=(1.5, 0.5), root_tile_pos=(1, 0)
+    )
 
     assert result is True
     # Should have started a TalkPlan for the NPC
@@ -506,7 +531,9 @@ def test_right_click_explored_not_visible_tile_with_actor_only_walks() -> None:
     gw.game_map.visible[5, 5] = False
 
     # Simulate right-click at world position (5, 5) where NPC is
-    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+    result = mode._handle_right_click(
+        world_tile_pos=(5, 5), world_pos_f=(5.5, 5.5), root_tile_pos=(5, 5)
+    )
 
     assert result is True
     # Should have triggered pathfinding (walk only, no actor detection)
@@ -528,14 +555,46 @@ def test_left_click_on_player_tile_selects_player() -> None:
     gw.game_map.visible[0, 0] = True
     gw.game_map.explored[0, 0] = True
 
-    result = mode._handle_left_click(root_tile_pos=(0, 0), world_tile_pos=(0, 0))
+    result = mode._handle_left_click(
+        root_tile_pos=(0, 0), world_tile_pos=(0, 0), world_pos_f=(0.5, 0.5)
+    )
 
     assert result is True
     controller.select_target.assert_called_once_with(gw.player)
 
 
-def test_left_click_empty_tile_still_deselects() -> None:
-    """The player fallback only fires on the player's tile, not empty ground."""
+def test_left_click_selects_actor_overhanging_fogged_tile() -> None:
+    """A visible actor whose sprite covers a fogged cursor tile stays selectable.
+
+    A tall sprite fogs the tiles it overhangs, so the cursor can be over a
+    non-visible tile while the hit test (which gates on the actor's own visible
+    tile) still finds the actor. Selection must not bail on the fogged cursor
+    tile before consulting the actor.
+    """
+    mode, controller, gw, _calls = make_explore_mode_with_mocks()
+    mode._fm = None
+    controller.select_target = MagicMock()
+    controller.selected_target = None
+
+    npc = Character(5, 5, "N", colors.WHITE, "NPC", game_world=cast(Any, gw))
+    gw.add_actor(npc)
+
+    # Cursor is over a fogged canopy tile above the actor's visible tile.
+    gw.game_map.visible[5, 3] = False
+    # The sprite covers the cursor point, so the hit test returns the actor.
+    controller.actor_at_world_point = lambda wx, wy, **kwargs: npc
+
+    result = mode._handle_left_click(
+        root_tile_pos=(5, 3), world_tile_pos=(5, 3), world_pos_f=(5.5, 3.5)
+    )
+
+    assert result is True
+    controller.select_target.assert_called_once_with(npc)
+    controller.deselect_target.assert_not_called()
+
+
+def test_left_click_empty_tile_deselects() -> None:
+    """Clicking empty ground deselects; tiles are not selectable."""
     mode, controller, gw, _calls = make_explore_mode_with_mocks()
     mode._fm = None
     controller.select_target = MagicMock()
@@ -544,7 +603,9 @@ def test_left_click_empty_tile_still_deselects() -> None:
     gw.game_map.visible[5, 5] = True
     gw.game_map.explored[5, 5] = True
 
-    result = mode._handle_left_click(root_tile_pos=(5, 5), world_tile_pos=(5, 5))
+    result = mode._handle_left_click(
+        root_tile_pos=(5, 5), world_tile_pos=(5, 5), world_pos_f=(5.5, 5.5)
+    )
 
     assert result is True
     controller.deselect_target.assert_called_once()

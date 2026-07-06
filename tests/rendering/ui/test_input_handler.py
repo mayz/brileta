@@ -70,6 +70,11 @@ class DummyFrameManager:
     ) -> tuple[int, int] | None:
         return self.get_world_coords_from_root_tile_coords((int(pixel_x), int(pixel_y)))
 
+    def pixel_to_world_pos(
+        self, pixel_x: float, pixel_y: float
+    ) -> tuple[float, float] | None:
+        return (float(pixel_x), float(pixel_y))
+
     def get_visible_bounds(self) -> None:
         return None
 
@@ -88,8 +93,12 @@ class DummyController:
     clock: Any = None
     mode_stack: list[Any] = field(default_factory=list)
 
-    def update_hovered_actor(self, _mouse_pos: Any) -> None:
+    def update_hovered_actor(self) -> None:
         """No-op placeholder to satisfy InputHandler interactions."""
+        return
+
+    def actor_at_world_point(self, _wx: float, _wy: float, **_kwargs: Any) -> None:
+        """No actor under the cursor in these input-routing tests."""
         return
 
     def is_combat_mode(self) -> bool:
@@ -244,6 +253,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, in
         enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
         deselect_target=lambda: None,
+        actor_at_world_point=lambda *_a, **_kw: None,
     )
 
     mode = ExploreMode(cast(Any, controller))

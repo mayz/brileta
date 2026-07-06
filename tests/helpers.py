@@ -228,6 +228,7 @@ class DummyGameWorld(GameWorld):
 
         # Mouse position for hover tracking
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
+        self.mouse_world_pos_f: tuple[float, float] | None = None
 
         if create_player:
             player = PC(0, 0, "@", colors.WHITE, "Player", game_world=self)

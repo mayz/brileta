@@ -349,13 +349,21 @@ class ViewportSystem:
 
     def screen_to_world(self, vp_x: float, vp_y: float) -> WorldTilePos:
         """Converts viewport/screen coordinates to world coordinates."""
+        world_x, world_y = self.screen_to_world_float(vp_x, vp_y)
+        return (math.floor(world_x), math.floor(world_y))
+
+    def screen_to_world_float(self, vp_x: float, vp_y: float) -> tuple[float, float]:
+        """Converts viewport/screen coordinates to fractional world coordinates.
+
+        Same as screen_to_world but without truncating to a tile, so callers can
+        hit-test against sub-tile (interpolated) positions.
+        """
         scale_x, scale_y = self.get_display_scale_factors()
-        world_x, world_y = self.viewport.viewport_to_world(
+        return self.viewport.viewport_to_world(
             vp_x / scale_x,
             vp_y / scale_y,
             self.camera,
         )
-        return (math.floor(world_x), math.floor(world_y))
 
     def get_camera_fractional_offset(self) -> tuple[float, float]:
         """Return the fractional part of the camera position for smooth scrolling.

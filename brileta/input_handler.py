@@ -165,11 +165,16 @@ class InputHandler:
 
         if world_tile_pos is not None:
             self.gw.mouse_tile_location_on_map = world_tile_pos
+            # Fractional position for sub-tile actor hit testing (hover ring).
+            self.gw.mouse_world_pos_f = self.fm.pixel_to_world_pos(
+                scaled_px_x, scaled_px_y
+            )
         else:
             # Mouse is outside the game map area (e.g., on UI views).
             self.gw.mouse_tile_location_on_map = None
+            self.gw.mouse_world_pos_f = None
 
-        self.controller.update_hovered_actor(self.gw.mouse_tile_location_on_map)
+        self.controller.update_hovered_actor()
 
         if self.controller.is_combat_mode():
             tooltip = self.fm.combat_tooltip_overlay

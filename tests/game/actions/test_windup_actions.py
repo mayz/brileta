@@ -65,6 +65,7 @@ class DummyGameWorld:
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actor_spatial_index.add(self.player)
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
+        self.mouse_world_pos_f: tuple[float, float] | None = None
         self.on_actor_removed = None
 
     def add_light(self, light) -> None:

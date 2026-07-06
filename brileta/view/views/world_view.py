@@ -389,6 +389,10 @@ class WorldView(View):
         self._shake_offset: ViewOffset = (0.0, 0.0)
         # Camera fractional offset for smooth scrolling (set each frame in present())
         self.camera_frac_offset: ViewOffset = (0.0, 0.0)
+        # Sub-step interpolation factor for the current frame (set in present()),
+        # read by the mode's under-actor outline pass so selection rings track
+        # moving actors smoothly.
+        self.interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0)
         self.shadow_renderer = ShadowRenderer(
             game_map=controller.gw.game_map,
             viewport_system=self.viewport_system,
@@ -838,6 +842,8 @@ class WorldView(View):
         cam_frac_x, cam_frac_y = vs.get_display_camera_fractional_offset()
         # Store for use by actor/particle rendering methods
         self.camera_frac_offset = (cam_frac_x, cam_frac_y)
+        # Store the frame's interpolation factor for the under-actor outline pass.
+        self.interpolation_alpha = alpha
         cam_px_x, cam_px_y = graphics.console_to_screen_coords(-cam_frac_x, -cam_frac_y)
         cam_offset_x = cam_px_x - base_px_x
         cam_offset_y = cam_px_y - base_px_y

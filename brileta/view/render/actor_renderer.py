@@ -46,6 +46,16 @@ COMBAT_OUTLINE_MAX_ALPHA: Opacity = Opacity(0.85)  # Maximum alpha during shimme
 
 # Contextual target outline (exploration mode)
 CONTEXTUAL_OUTLINE_ALPHA: Opacity = Opacity(0.70)  # Solid outline opacity
+HOVER_RING_ALPHA: Opacity = Opacity(0.50)  # Subtle ring for the hovered entity
+
+# Selection ring geometry. The ring is a ground ellipse at the entity's feet,
+# flattened to match the game's 2.5-D oblique camera: a full circle reads as
+# pure top-down, a heavily flattened oval reads as a 3/4 RTS view, so the squash
+# sits in between. FLATTEN is the vertical/horizontal ratio (1.0 = circle, lower
+# = flatter); ~0.6 approximates this camera's tilt.
+SELECTION_RING_RX_FRACTION = 0.5  # Horizontal radius, as a fraction of tile width
+SELECTION_RING_FLATTEN = 0.6  # Vertical radius as a fraction of the horizontal
+SELECTION_RING_CENTER_FRACTION = 0.72  # Vertical center, near the tile's base (feet)
 
 # Roof occlusion outline (actors behind opaque roofs)
 _ROOF_OCCLUDED_OUTLINE_ALPHA: Opacity = Opacity(0.45)
@@ -471,20 +481,22 @@ class ActorRenderer:
         *,
         game_world: GameWorld,
         controller: Controller,
+        interpolation_alpha: InterpolationAlpha,
         camera_frac_offset: ViewOffset,
         view_origin: ViewOffset,
     ) -> None:
-        """Render contextual outlines for selected/hovered actors.
+        """Render contextual outlines for the selection and hover.
 
-        Outlines are rendered in priority order:
-        1. selected_target (golden) - sticky click-to-select
-        2. hovered_actor (subtle grey) - visual feedback only
+        Rendered in priority order (only the highest-priority one shows):
+        1. selected entity (golden) - a ground ring that tracks the entity
+        2. hovered entity (subtle) - a ground ring, visual feedback only
 
-        Called by explore mode.
+        Only entities are selectable; the ring tracks a walking actor smoothly.
 
         Args:
             game_world: The current game world state.
             controller: The game controller (for selection/hover state).
+            interpolation_alpha: Sub-step interpolation factor for smooth motion.
             camera_frac_offset: Fractional camera offset for smooth scrolling.
             view_origin: Root console origin of the viewport (x, y).
         """
@@ -493,34 +505,34 @@ class ActorRenderer:
 
         game_map = game_world.game_map
 
-        # Priority 1: Render selected target outline (golden)
+        # Priority 1: selected entity - golden ring that tracks it as it moves.
         selected = controller.selected_target
         if (
             selected is not None
             and selected in game_world.actors
             and game_map.visible[selected.x, selected.y]
         ):
-            self._draw_actor_outline(
+            self._draw_actor_ground_ring(
                 selected,
                 colors.SELECTION_OUTLINE,
                 CONTEXTUAL_OUTLINE_ALPHA,
-                game_map=game_map,
+                interpolation_alpha=interpolation_alpha,
                 camera_frac_offset=camera_frac_offset,
                 view_origin=view_origin,
             )
-            return  # Don't also render hover outline for same actor
+            return
 
-        # Priority 2: Render hover outline (white)
+        # Priority 2: hovered entity - subtle ring.
         hovered = controller.hovered_actor
         if hovered is None or hovered not in game_world.actors:
             return
         if not game_map.visible[hovered.x, hovered.y]:
             return
-        self._draw_actor_outline(
+        self._draw_actor_ground_ring(
             hovered,
             colors.HOVER_OUTLINE,
-            Opacity(0.50),
-            game_map=game_map,
+            HOVER_RING_ALPHA,
+            interpolation_alpha=interpolation_alpha,
             camera_frac_offset=camera_frac_offset,
             view_origin=view_origin,
         )
@@ -914,51 +926,48 @@ class ActorRenderer:
 
         return base_color
 
-    @record_time_live_variable("time.render.actors_traditional_ms")
-    def _draw_actor_outline(
+    def _draw_actor_ground_ring(
         self,
         actor: Actor,
         color: colors.Color,
         alpha: Opacity,
         *,
-        game_map: GameMap,
+        interpolation_alpha: InterpolationAlpha,
         camera_frac_offset: ViewOffset,
         view_origin: ViewOffset,
     ) -> None:
-        """Draw an outline around an actor, handling content layers properly.
+        """Draw a flattened ellipse ring at the base of the actor's tile.
 
-        If the actor has content layers (multi-character composition like bookcase),
-        outlines the entire tile. Otherwise, outlines the glyph shape.
-
-        Args:
-            actor: The actor to outline.
-            color: RGB color for the outline.
-            alpha: Opacity of the outline (0.0-1.0).
-            game_map: The game map (for visibility checks).
-            camera_frac_offset: Fractional camera offset for smooth scrolling.
-            view_origin: Root console origin of the viewport (x, y).
+        Uses the same interpolated screen position as the sprite, so the ring
+        glides with a walking actor instead of snapping tile-to-tile. Works for
+        any actor (layered characters, sprites, glyphs) since it marks the tile
+        footprint rather than tracing the visual silhouette.
         """
-        if (
-            actor.sprite_uv is not None
-            or actor.character_layers
-            or actor.has_complex_visuals
-        ):
-            self._render_layered_tile_outline(
-                actor,
-                color,
-                alpha,
-                camera_frac_offset=camera_frac_offset,
-                view_origin=view_origin,
-            )
-        else:
-            self.render_actor_outline(
-                actor,
-                color,
-                alpha,
-                game_map=game_map,
-                camera_frac_offset=camera_frac_offset,
-                view_origin=view_origin,
-            )
+        vs = self.viewport_system
+        if not vs.is_visible(actor.x, actor.y):
+            return
+
+        _, _, _, _, screen_x, screen_y = self._get_actor_screen_position(
+            actor, interpolation_alpha, camera_frac_offset, view_origin
+        )
+
+        tile_w, tile_h = self.graphics.tile_dimensions
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
+        footprint_w = tile_w * viewport_scale_x
+        footprint_h = tile_h * viewport_scale_y
+
+        center_x = screen_x + footprint_w * 0.5
+        center_y = screen_y + footprint_h * SELECTION_RING_CENTER_FRACTION
+        radius_x = footprint_w * SELECTION_RING_RX_FRACTION
+        radius_y = radius_x * SELECTION_RING_FLATTEN
+        self.graphics.draw_ellipse_outline(
+            center_x,
+            center_y,
+            radius_x,
+            radius_y,
+            color,
+            alpha,
+        )
 
     def _render_layered_tile_outline(
         self,
@@ -978,8 +987,8 @@ class ActorRenderer:
 
         # Apply camera fractional offset for smooth scrolling alignment.
         # Without this, the outline snaps to integer tile boundaries while the
-        # actor layers render at fractionally-offset positions, causing the
-        # outline to straddle tiles or jitter during camera panning.
+        # world renders at fractionally-offset positions, causing the outline to
+        # straddle tiles or jitter during camera panning.
         cam_frac_x, cam_frac_y = camera_frac_offset
         vp_x -= cam_frac_x
         vp_y -= cam_frac_y

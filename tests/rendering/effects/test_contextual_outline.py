@@ -13,7 +13,6 @@ import pytest
 from brileta import colors
 from brileta.controller import Controller
 from brileta.game.actors import Actor
-from brileta.view.render.actor_renderer import CONTEXTUAL_OUTLINE_ALPHA
 from brileta.view.render.effects.screen_shake import ScreenShake
 from brileta.view.views.world_view import WorldView
 
@@ -33,6 +32,12 @@ class DummyActor:
         self._animation_controlled = False
         self.render_x = float(x)
         self.render_y = float(y)
+        # Interpolation sources and optional components read by
+        # compute_actor_screen_position.
+        self.prev_x = float(x)
+        self.prev_y = float(y)
+        self.visual_effects = None
+        self.health = None
 
 
 class DummyGameMap:
@@ -114,6 +119,7 @@ def _outline_kwargs(view: WorldView) -> dict:
     return {
         "game_world": view.controller.gw,
         "controller": view.controller,
+        "interpolation_alpha": 1.0,
         "camera_frac_offset": view.camera_frac_offset,
         "view_origin": (float(view.x), float(view.y)),
     }
@@ -122,8 +128,8 @@ def _outline_kwargs(view: WorldView) -> dict:
 class TestSelectionOutline:
     """Tests for selected target outline rendering."""
 
-    def test_selected_target_renders_golden_outline(self) -> None:
-        """Selected target should render with golden outline."""
+    def test_selected_target_renders_golden_ring(self) -> None:
+        """Selected entity should render a golden ground ring."""
         controller = make_controller(is_combat=False)
         view = _setup_view(controller)
 
@@ -133,18 +139,10 @@ class TestSelectionOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        vp_x, vp_y = view.viewport_system.world_to_screen(target.x, target.y)
-        expected_root_x = view.x + vp_x
-        expected_root_y = view.y + vp_y
-        controller.graphics.draw_actor_outline.assert_called_once_with(
-            target.ch,
-            expected_root_x,
-            expected_root_y,
-            colors.SELECTION_OUTLINE,
-            float(CONTEXTUAL_OUTLINE_ALPHA),
-            scale_x=1.0,
-            scale_y=1.0,
-        )
+        controller.graphics.draw_ellipse_outline.assert_called_once()
+        # Ring color is the golden selection color (positional index 4).
+        call_args = controller.graphics.draw_ellipse_outline.call_args
+        assert call_args[0][4] == colors.SELECTION_OUTLINE
 
     def test_selected_target_skips_in_combat_mode(self) -> None:
         """Selection outline should not render in combat mode."""
@@ -157,7 +155,7 @@ class TestSelectionOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        controller.graphics.draw_actor_outline.assert_not_called()
+        controller.graphics.draw_ellipse_outline.assert_not_called()
 
     def test_selected_target_skips_when_not_visible(self) -> None:
         """Selection outline should not render for non-visible targets."""
@@ -171,14 +169,14 @@ class TestSelectionOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        controller.graphics.draw_actor_outline.assert_not_called()
+        controller.graphics.draw_ellipse_outline.assert_not_called()
 
 
 class TestHoverOutline:
     """Tests for hover actor outline rendering."""
 
-    def test_hover_renders_white_outline(self) -> None:
-        """Hovered actor should render with white outline at 50% opacity."""
+    def test_hover_renders_ring(self) -> None:
+        """Hovered entity should render a subtle ground ring."""
         controller = make_controller(is_combat=False)
         view = _setup_view(controller)
 
@@ -188,18 +186,9 @@ class TestHoverOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        vp_x, vp_y = view.viewport_system.world_to_screen(target.x, target.y)
-        expected_root_x = view.x + vp_x
-        expected_root_y = view.y + vp_y
-        controller.graphics.draw_actor_outline.assert_called_once_with(
-            target.ch,
-            expected_root_x,
-            expected_root_y,
-            colors.HOVER_OUTLINE,
-            0.50,
-            scale_x=1.0,
-            scale_y=1.0,
-        )
+        controller.graphics.draw_ellipse_outline.assert_called_once()
+        call_args = controller.graphics.draw_ellipse_outline.call_args
+        assert call_args[0][4] == colors.HOVER_OUTLINE
 
     def test_selected_takes_priority_over_hover(self) -> None:
         """Selected target should take priority over hovered actor."""
@@ -214,11 +203,10 @@ class TestHoverOutline:
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         # Should only render once (selected takes priority)
-        controller.graphics.draw_actor_outline.assert_called_once()
-        # Should be golden (selection color), not grey (hover color)
-        call_args = controller.graphics.draw_actor_outline.call_args
-        # call_args[0] is positional args: (ch, x, y, color, alpha, ...)
-        assert call_args[0][3] == colors.SELECTION_OUTLINE
+        controller.graphics.draw_ellipse_outline.assert_called_once()
+        # Should be golden (selection color), not the hover color
+        call_args = controller.graphics.draw_ellipse_outline.call_args
+        assert call_args[0][4] == colors.SELECTION_OUTLINE
 
 
 @pytest.mark.parametrize(
@@ -242,14 +230,14 @@ def test_hover_outline_skips_when_combat_or_not_visible(
 
     view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-    controller.graphics.draw_actor_outline.assert_not_called()
+    controller.graphics.draw_ellipse_outline.assert_not_called()
 
 
 class TestComplexVisualsOutline:
-    """Tests for has_complex_visuals flag affecting outline rendering."""
+    """Entities get a ground ring regardless of visual composition."""
 
-    def test_complex_visuals_gets_full_tile_outline(self) -> None:
-        """Actors with has_complex_visuals=True should get full-tile outline."""
+    def test_complex_visuals_gets_ring(self) -> None:
+        """Actors with has_complex_visuals get the same ring as any entity."""
         controller = make_controller(is_combat=False)
         view = _setup_view(controller)
 
@@ -260,12 +248,11 @@ class TestComplexVisualsOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        # Should call draw_rect_outline for full-tile outline, not draw_actor_outline
-        controller.graphics.draw_rect_outline.assert_called_once()
-        controller.graphics.draw_actor_outline.assert_not_called()
+        controller.graphics.draw_ellipse_outline.assert_called_once()
+        controller.graphics.draw_rect_outline.assert_not_called()
 
-    def test_regular_actor_gets_glyph_outline(self) -> None:
-        """Regular actors (has_complex_visuals=False) should get glyph outline."""
+    def test_regular_actor_gets_ring(self) -> None:
+        """Regular actors also get the ground ring."""
         controller = make_controller(is_combat=False)
         view = _setup_view(controller)
 
@@ -276,8 +263,7 @@ class TestComplexVisualsOutline:
 
         view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
-        # Should call draw_actor_outline for glyph-based outline
-        controller.graphics.draw_actor_outline.assert_called_once()
+        controller.graphics.draw_ellipse_outline.assert_called_once()
         controller.graphics.draw_rect_outline.assert_not_called()
 
 

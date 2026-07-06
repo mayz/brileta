@@ -603,6 +603,56 @@ class FrameManager:
             return (world_x, world_y)
         return None
 
+    def pixel_to_world_pos(
+        self, pixel_x: PixelCoord, pixel_y: PixelCoord
+    ) -> tuple[float, float] | None:
+        """Convert a pixel to a fractional world position for sub-tile hit tests.
+
+        Like ``pixel_to_world_tile`` but returns the un-truncated world position,
+        so callers can test the cursor against actors' interpolated (rendered)
+        footprints instead of only the tile grid. Returns None only when the
+        pixel is outside the world view.
+        """
+        graphics = self.graphics
+
+        cam_frac_x, cam_frac_y = (
+            self.world_view.viewport_system.get_display_camera_fractional_offset()
+        )
+        base_px_x, base_px_y = graphics.console_to_screen_coords(0.0, 0.0)
+        frac_px_x, frac_px_y = graphics.console_to_screen_coords(cam_frac_x, cam_frac_y)
+
+        adjusted_x = pixel_x + (frac_px_x - base_px_x)
+        adjusted_y = pixel_y + (frac_px_y - base_px_y)
+        letterbox_geometry = graphics.letterbox_geometry
+        if letterbox_geometry is None:
+            # No letterbox mapping (matches pixel_to_world_tile's fallback). Fall
+            # back to tile granularity, returning the tile center so callers still
+            # hit-test at a sensible sub-tile point instead of silently no-opping.
+            tile = self.pixel_to_world_tile(pixel_x, pixel_y)
+            if tile is None:
+                return None
+            return (tile[0] + 0.5, tile[1] + 0.5)
+
+        offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
+        if scaled_w <= 0 or scaled_h <= 0:
+            return None
+        local_x = adjusted_x - offset_x
+        local_y = adjusted_y - offset_y
+        if local_x < 0 or local_y < 0 or local_x >= scaled_w or local_y >= scaled_h:
+            return None
+
+        root_x = (local_x * graphics.console_width_tiles) / scaled_w
+        root_y = (local_y * graphics.console_height_tiles) / scaled_h
+        vp_x = root_x - self.world_view.x
+        vp_y = root_y - self.world_view.y
+        if not (
+            0.0 <= vp_x < float(self.world_view.width)
+            and 0.0 <= vp_y < float(self.world_view.height)
+        ):
+            return None
+
+        return self.world_view.viewport_system.screen_to_world_float(vp_x, vp_y)
+
     def trigger_screen_shake(self, intensity: float, duration: DeltaTime) -> None:
         """Trigger screen shake effect.
 

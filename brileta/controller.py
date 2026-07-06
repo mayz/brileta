@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 from typing import TYPE_CHECKING
 
@@ -95,6 +96,13 @@ _CONTROLLER_METRICS: list[MetricSpec] = [
     MetricSpec("time.sprites.total_ms", "Total sprite atlas setup", 1),
 ]
 live_variable_registry.register_metrics(_CONTROLLER_METRICS)
+
+# Broad-phase search radius (in tiles) for pointer hit testing. A sprite is
+# drawn extending up to visual_scale tiles above its base, so a click on a tall
+# sprite's top can be that many tiles from its base tile. This bounds the
+# candidate scan; raise it if sprites ever grow taller than this.
+# ponytail: fixed ceiling, revisit when multi-tile sprites land.
+_MAX_SELECTABLE_SPRITE_EXTENT_TILES = 6
 
 
 class Controller:
@@ -390,7 +398,10 @@ class Controller:
             character_sprite_seed,
             generate_character_pose_set,
         )
-        from brileta.sprites.common import sprite_visual_scale_for_shadow_height
+        from brileta.sprites.common import (
+            sprite_content_bbox,
+            sprite_visual_scale_for_shadow_height,
+        )
         from brileta.sprites.trees import (
             generate_tree_sprite_for_position,
         )
@@ -487,6 +498,7 @@ class Controller:
                             tree.y,
                             map_seed,
                         )
+                        tree.sprite_content_bbox = sprite_content_bbox(tree_sprites[i])
 
                 for j, boulder in enumerate(boulders):
                     uv = uvs[n_trees + j]
@@ -498,6 +510,9 @@ class Controller:
                             boulder.x,
                             boulder.y,
                             map_seed,
+                        )
+                        boulder.sprite_content_bbox = sprite_content_bbox(
+                            boulder_sprites[j]
                         )
 
                 n_boulders = len(boulders)
@@ -519,6 +534,9 @@ class Controller:
                         character.visual_scale = sprite_visual_scale_for_shadow_height(
                             char_pose_sprites[k][0],
                             character.shadow_height,
+                        )
+                        character.sprite_content_bbox = sprite_content_bbox(
+                            char_pose_sprites[k][0]
                         )
 
                 atlas.flush()
@@ -1450,43 +1468,164 @@ class Controller:
 
         self.invalidate_combat_tooltip()
 
-        # Refresh hovered actor in case actors moved into/out of the mouse position
-        self.update_hovered_actor(self.gw.mouse_tile_location_on_map)
+        # Refresh hovered actor in case actors moved under a stationary cursor
+        self.update_hovered_actor()
 
-    def update_hovered_actor(self, mouse_pos: WorldTilePos | None) -> None:
-        """Update the hovered actor based on mouse position.
+    def update_hovered_actor(self) -> None:
+        """Update the hovered actor from the cursor's world position.
 
-        This is used for visual feedback only (subtle hover outline).
-        Does not affect game state or ActionPanel.
+        Hit-tests the cursor against actors' interpolated (rendered) footprints,
+        so a walking actor is hoverable wherever its sprite currently appears,
+        not only on its logical destination tile. Drives the hover ring and the
+        ActionPanel's hover target.
         """
-        if mouse_pos is None:
+        pos = self.gw.mouse_world_pos_f
+        if pos is None:
             self.hovered_actor = None
             return
 
-        mouse_x, mouse_y = mouse_pos
-        self.hovered_actor = self._get_visible_actor_at_tile(mouse_x, mouse_y)
+        # The player is hoverable too (consistent with click-to-select). Overlaps
+        # still resolve to a non-player actor, so an NPC sharing the player's tile
+        # is not shadowed by the player's own footprint.
+        self.hovered_actor = self.actor_at_world_point(pos[0], pos[1])
 
-    def _get_visible_actor_at_tile(self, x: int, y: int) -> Actor | None:
-        """Return the first visible actor at a tile, if any."""
+    def actor_at_world_point(
+        self, world_x: float, world_y: float, *, allow_player: bool = True
+    ) -> Actor | None:
+        """Return the visible actor whose drawn sprite covers a world point.
+
+        Each actor is tested against the world-space box its sprite actually
+        occupies - which for a scaled-up sprite (a tree, a bookcase) extends
+        above and to the sides of its base tile - at the actor's interpolated
+        position, so hit testing matches what is drawn on screen: it follows a
+        walking actor, and it covers a tall sprite's full height, not just its
+        base tile. When several boxes overlap, the top-most in render order wins;
+        non-player actors are preferred so an item pile under the player stays
+        selectable.
+
+        Args:
+            world_x: Fractional world X under the cursor.
+            world_y: Fractional world Y under the cursor.
+            allow_player: If False, the player is never returned (used for hover).
+        """
         gm = self.gw.game_map
-        if not (0 <= x < gm.width and 0 <= y < gm.height):
-            return None
-        if not gm.visible[x, y]:
-            return None
+        alpha = self._current_interpolation_alpha()
+        center_x = math.floor(world_x)
+        center_y = math.floor(world_y)
+        radius = _MAX_SELECTABLE_SPRITE_EXTENT_TILES
 
-        actors_at_tile = self.gw.actor_spatial_index.get_at_point(x, y)
-        if not actors_at_tile:
-            return None
-
-        for actor in sorted(actors_at_tile, key=self._actor_sort_key):
-            if actor is not self.gw.player:
-                return actor
-        return None
+        best: Actor | None = None
+        best_key: tuple[bool, int, float] | None = None
+        for actor in self.gw.actor_spatial_index.get_in_radius(
+            center_x, center_y, radius
+        ):
+            if not gm.visible[actor.x, actor.y]:
+                continue
+            is_player = actor is self.gw.player
+            if is_player and not allow_player:
+                continue
+            x0, y0, x1, y1 = self._actor_drawn_bounds(actor, alpha)
+            if not (x0 <= world_x < x1 and y0 <= world_y < y1):
+                continue
+            # Prefer non-player, then the one drawn on top (higher y, then larger
+            # sprite). Ordering non-player first in the key lets a single tuple
+            # comparison express the whole preference.
+            key = (not is_player, actor.y, actor.visual_scale)
+            if best_key is None or key > best_key:
+                best = actor
+                best_key = key
+        return best
 
     @staticmethod
-    def _actor_sort_key(actor: Actor) -> tuple[int, int, str]:
-        """Deterministic ordering for multiple actors on the same tile."""
-        return (actor.y, actor.x, actor.name)
+    def _interpolated_actor_pos(actor: Actor, alpha: float) -> tuple[float, float]:
+        """Return an actor's interpolated world position (matching rendering).
+
+        Mirrors compute_actor_screen_position, including the idle-drift sway, so
+        the hit box tracks the same pixels the sprite and ground ring are drawn
+        at rather than the undrifted tile center.
+        """
+        if actor._animation_controlled:
+            x, y = actor.render_x, actor.render_y
+        else:
+            x = actor.prev_x * (1.0 - alpha) + actor.x * alpha
+            y = actor.prev_y * (1.0 - alpha) + actor.y * alpha
+
+        if (
+            actor.visual_effects is not None
+            and actor.health is not None
+            and actor.health.is_alive()
+        ):
+            drift_x, drift_y = actor.visual_effects.get_idle_drift_offset()
+            x += drift_x
+            y += drift_y
+        return (x, y)
+
+    def _actor_drawn_bounds(
+        self, actor: Actor, alpha: float
+    ) -> tuple[float, float, float, float]:
+        """Return the world-space box (x0, y0, x1, y1) the actor's sprite covers.
+
+        Inverts the draw geometry so the clickable area matches the pixels on
+        screen. A sprite is drawn visual_scale tiles wide, centered on its tile,
+        spanning vertically from ``anchor - visual_scale`` up to ``anchor`` (feet
+        at the tile). Multi-layer glyph actors (e.g. a bookcase) use the union of
+        their layer boxes. Single-tile actors reduce to their one tile.
+        """
+        ipos_x, ipos_y = self._interpolated_actor_pos(actor, alpha)
+        vs = actor.visual_scale
+
+        if actor.character_layers:
+            # Union of each layer's box. Layers sit at sub-tile offsets from the
+            # tile center, sized by visual_scale * the layer's own scale.
+            cx = ipos_x + 0.5
+            cy = ipos_y + 0.5
+            x0 = y0 = float("inf")
+            x1 = y1 = float("-inf")
+            for layer in actor.character_layers:
+                lcx = cx + layer.offset_x
+                lcy = cy + layer.offset_y
+                hw = vs * layer.scale_x * 0.5
+                hh = vs * layer.scale_y * 0.5
+                x0 = min(x0, lcx - hw)
+                x1 = max(x1, lcx + hw)
+                y0 = min(y0, lcy - hh)
+                y1 = max(y1, lcy + hh)
+            # Always include the base tile so a compact composition stays at
+            # least tile-sized and clickable.
+            return (
+                min(x0, ipos_x),
+                min(y0, ipos_y),
+                max(x1, ipos_x + 1.0),
+                max(y1, ipos_y + 1.0),
+            )
+
+        # Sprite / single-glyph actors: the drawn quad is visual_scale tiles
+        # square, centered horizontally, its bottom edge at anchor.
+        anchor = actor.sprite_ground_anchor_y
+        quad_left = ipos_x + 0.5 - vs * 0.5
+        quad_top = ipos_y + anchor - vs
+
+        # Tighten to the sprite's opaque silhouette when known. The quad is
+        # heavily padded for flat sprites (a boulder fills only its bottom
+        # sliver), so without this the box floats well above the visible sprite.
+        bbox = actor.sprite_content_bbox
+        if bbox is not None:
+            u0, v0, u1, v1 = bbox
+            return (
+                quad_left + u0 * vs,
+                quad_top + v0 * vs,
+                quad_left + u1 * vs,
+                quad_top + v1 * vs,
+            )
+
+        return (quad_left, quad_top, quad_left + vs, quad_top + vs)
+
+    def _current_interpolation_alpha(self) -> float:
+        """Return the latest render interpolation factor (1.0 if unavailable)."""
+        fm = self.frame_manager
+        if fm is None or fm.world_view is None:
+            return 1.0
+        return float(getattr(fm.world_view, "interpolation_alpha", 1.0))
 
     def _process_all_available_npc_actions(self) -> None:
         """Process NPCs who can currently afford actions this logic step.

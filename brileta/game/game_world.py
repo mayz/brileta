@@ -105,6 +105,9 @@ class GameWorld:
         seed: int | str | None = None,
     ) -> None:
         self.mouse_tile_location_on_map: WorldTilePos | None = None
+        # Fractional world position under the cursor, for sub-tile hit testing
+        # against actors' interpolated (rendered) positions.
+        self.mouse_world_pos_f: tuple[float, float] | None = None
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
 

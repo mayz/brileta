@@ -587,6 +587,19 @@ class ActionPanelView(TextView):
 
         # Priority 2: Mouse hover position (not selected)
         self._cached_is_selected = False
+
+        # Priority 2a: hovered actor, resolved by the same interpolated hit test
+        # that drives the hover ring, so the panel and the ring always agree on
+        # which actor the cursor is over (even mid-walk, off the logical tile).
+        hovered_actor = self.controller.hovered_actor
+        if (
+            hovered_actor is not None
+            and hovered_actor in gw.actors
+            and gw.game_map.visible[hovered_actor.x, hovered_actor.y]
+        ):
+            self._populate_actor_target_data(hovered_actor)
+            return
+
         mouse_pos = gw.mouse_tile_location_on_map
 
         # No mouse position yet (game just started) - show default controls
