@@ -15,6 +15,7 @@ from .appearance import (
     POSE_STAND,
     BodyParams,
     CharacterAppearance,
+    CharacterPresentationProfile,
     Pose,
 )
 from .body import (
@@ -133,9 +134,18 @@ def _draw_character(
 # ---------------------------------------------------------------------------
 
 
-def roll_character_appearance(seed: int, size: int = 20) -> CharacterAppearance:
+def roll_character_appearance(
+    seed: int,
+    size: int = 20,
+    *,
+    presentation_profile: CharacterPresentationProfile | None = None,
+) -> CharacterAppearance:
     """Roll one deterministic appearance from a seed."""
-    return CharacterAppearance.from_seed(seed, size)
+    return CharacterAppearance.from_seed(
+        seed,
+        size,
+        presentation_profile=presentation_profile,
+    )
 
 
 def _render_pose(appearance: CharacterAppearance, pose: Pose) -> np.ndarray:
@@ -178,20 +188,34 @@ def generate_character(
     *,
     pose: Pose = POSE_STAND,
     appearance: CharacterAppearance | None = None,
+    presentation_profile: CharacterPresentationProfile | None = None,
 ) -> np.ndarray:
     """Generate a single character sprite for one pose."""
-    resolved_appearance = appearance or roll_character_appearance(seed, size)
+    resolved_appearance = appearance or roll_character_appearance(
+        seed,
+        size,
+        presentation_profile=presentation_profile,
+    )
     return _render_pose(resolved_appearance, pose)
 
 
-def generate_character_pose_set(seed: int, size: int = 20) -> list[np.ndarray]:
+def generate_character_pose_set(
+    seed: int,
+    size: int = 20,
+    *,
+    presentation_profile: CharacterPresentationProfile | None = None,
+) -> list[np.ndarray]:
     """Generate the full pose set for one seed.
 
     Order is (facings x frames): per facing (S, N, W, E) a standing frame
     followed by two walk frames, matching ``CHARACTER_POSES``. Front-stand is
     index 0.
     """
-    appearance = roll_character_appearance(seed, size)
+    appearance = roll_character_appearance(
+        seed,
+        size,
+        presentation_profile=presentation_profile,
+    )
     return [_render_pose(appearance, pose) for pose in CHARACTER_POSES]
 
 

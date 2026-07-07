@@ -10,10 +10,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from brileta.backends.wgpu.sprite_atlas import SpriteAtlas
 from brileta.game.actors.npc_types import DOG_TYPE, RESIDENT_TYPE
 from brileta.game.actors.trees import create_deciduous_tree
+from brileta.sprites.characters import MASC_PRESENTATION
 from brileta.sprites.quadrupeds import (
     generate_quadruped_pose_set,
     quadruped_sprite_seed,
@@ -83,6 +85,36 @@ def test_late_humanoid_gets_uvs() -> None:
     assert resident.character_sprite_uvs is None
     manager.ensure_actor_sprites(resident)
     _assert_has_sprites(resident)
+
+
+def test_late_humanoid_passes_presentation_to_sprite_generator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _gw, _g = _manager_with_atlas()
+    resident = RESIDENT_TYPE.create(5, 5, "Res")
+    resident.character_presentation = MASC_PRESENTATION
+    captured_profile: list[object] = []
+
+    def fake_generate_character_pose_set(
+        _seed: int,
+        _size: int = 20,
+        *,
+        presentation_profile: object | None = None,
+    ) -> list[np.ndarray]:
+        captured_profile.append(presentation_profile)
+        sprite = np.zeros((2, 2, 4), dtype=np.uint8)
+        sprite[:, :] = np.array([255, 255, 255, 255], dtype=np.uint8)
+        return [sprite.copy() for _ in range(12)]
+
+    monkeypatch.setattr(
+        "brileta.sprites.characters.generate_character_pose_set",
+        fake_generate_character_pose_set,
+    )
+
+    manager.ensure_actor_sprites(resident)
+
+    _assert_has_sprites(resident)
+    assert captured_profile == [MASC_PRESENTATION]
 
 
 def test_late_quadruped_gets_uvs() -> None:

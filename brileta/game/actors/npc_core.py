@@ -40,8 +40,14 @@ from brileta.game.actors.ai.utility import (
     is_any_threat_perceived,
     is_target_nearby,
 )
+from brileta.game.actors.identity import Gender, NPCIdentity, identity_for_gender
 from brileta.game.enums import CreatureSize
 from brileta.game.items.item_core import ItemType
+from brileta.sprites.characters import (
+    FEM_PRESENTATION,
+    MASC_PRESENTATION,
+    CharacterPresentationProfile,
+)
 from brileta.types import WorldTileCoord
 from brileta.util import rng
 from brileta.util.rng import RNG
@@ -54,6 +60,7 @@ _npc_type_rng = rng.get("npc.types")
 # Personality sampling draws from its own stream so adding it does not shift the
 # stat stream's draw sequence, keeping existing worlds' stats reproducible.
 _npc_personality_rng = rng.get("npc.personality")
+_npc_identity_rng = rng.get("npc.identity")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +104,7 @@ _DEFAULT_TRAIT_DIST = personality_trait()
 
 # Semantic alias for NPC behavior tags.
 type NPCTag = str
+type GenderWeights = tuple[tuple[Gender, float], ...]
 
 # Each tag maps to the utility actions it contributes. When an NPCType lists
 # multiple tags, actions are composed in order - later tags override earlier
@@ -235,6 +243,10 @@ class NPCType:
     # of the only two places dog-specific knowledge lives (the other is the
     # preset itself); later species opt in by setting this, no controller change.
     critter_preset: QuadrupedPreset | None = None
+    # Optional gender distribution for NPCs that need dialogue pronouns and
+    # human visual presentation. Empty means this archetype does not carry
+    # human identity data.
+    identity_weights: GenderWeights = ()
     strength_dist: StatDistribution = StatDistribution()
     toughness_dist: StatDistribution = StatDistribution()
     agility_dist: StatDistribution = StatDistribution()
@@ -259,6 +271,26 @@ class NPCType:
 
     def __hash__(self) -> int:  # pragma: no cover - identity hash
         return id(self)
+
+    def _sample_identity(self) -> NPCIdentity | None:
+        """Sample optional identity using the dedicated identity RNG stream."""
+        if not self.identity_weights:
+            return None
+
+        genders = tuple(gender for gender, _weight in self.identity_weights)
+        weights = tuple(weight for _gender, weight in self.identity_weights)
+        gender = _npc_identity_rng.choices(genders, weights=weights, k=1)[0]
+        return identity_for_gender(gender)
+
+    def _presentation_for_identity(
+        self, identity: NPCIdentity | None
+    ) -> CharacterPresentationProfile | None:
+        """Return the default visual presentation profile for identity."""
+        if identity is None:
+            return None
+        if identity.gender is Gender.FEMALE:
+            return FEM_PRESENTATION
+        return MASC_PRESENTATION
 
     def create(
         self,
@@ -285,6 +317,7 @@ class NPCType:
             agreeableness=self.agreeableness_dist.sample(_npc_personality_rng),
             neuroticism=self.neuroticism_dist.sample(_npc_personality_rng),
         )
+        identity = self._sample_identity()
 
         return NPC(
             x=x,
@@ -306,5 +339,7 @@ class NPCType:
             creature_size=self.creature_size,
             can_open_doors=self.can_open_doors,
             personality=personality,
+            identity=identity,
+            character_presentation=self._presentation_for_identity(identity),
             critter_preset=self.critter_preset,
         )

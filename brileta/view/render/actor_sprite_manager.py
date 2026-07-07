@@ -96,7 +96,8 @@ class ActorSpriteManager:
 
         if kind == "humanoid":
             return generate_character_pose_set(
-                character_sprite_seed(actor.actor_id, self._map_seed)
+                character_sprite_seed(actor.actor_id, self._map_seed),
+                presentation_profile=getattr(actor, "character_presentation", None),
             )
         assert isinstance(actor, NPC) and actor.critter_preset is not None
         return generate_quadruped_pose_set(

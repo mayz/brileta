@@ -8,7 +8,15 @@ from unittest.mock import MagicMock, patch
 
 from brileta import colors
 from brileta.environment.map import MapRegion
-from brileta.game.actors import Actor, Boulder, Character, ItemPile, Tree, components
+from brileta.game.actors import (
+    Actor,
+    Boulder,
+    Character,
+    Gender,
+    ItemPile,
+    Tree,
+    components,
+)
 from brileta.game.actors.npc_types import DOG_TYPE, RESIDENT_TYPE, TROG_TYPE
 from brileta.game.countables import CountableType
 from brileta.game.enums import ItemSize
@@ -42,6 +50,15 @@ def make_actor(
         game_world=cast(GameWorld, gw),
         blocks_movement=blocks_movement,
     )
+
+
+def test_created_player_has_identity_and_presentation() -> None:
+    """The real game player should display identity in selected-target UI."""
+    gw = GameWorld(30, 30, seed=1234)
+
+    assert gw.player.identity is not None
+    assert gw.player.identity.gender is Gender.MALE
+    assert gw.player.character_presentation is not None
 
 
 def make_character(

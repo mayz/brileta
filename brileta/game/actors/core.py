@@ -87,10 +87,12 @@ if TYPE_CHECKING:
     from brileta.game.actions.base import GameIntent
     from brileta.game.actions.discovery import ActionOption
     from brileta.game.actors.ai.goals import Goal
+    from brileta.game.actors.identity import NPCIdentity
     from brileta.game.actors.indicators import IndicatorKind
     from brileta.game.actors.needs import Need
     from brileta.game.actors.offers import Offer
     from brileta.game.game_world import GameWorld
+    from brileta.sprites.characters import CharacterPresentationProfile
     from brileta.sprites.quadrupeds import QuadrupedPreset
 
 _CHARACTER_DIRECTIONAL_POSE_INDEX: dict[Facing, int] = {
@@ -802,6 +804,8 @@ class PC(Character):
         starting_weapon: Item | None = None,
         num_ready_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
+        identity: NPCIdentity | None = None,
+        character_presentation: CharacterPresentationProfile | None = None,
     ) -> None:
         """Instantiate PC.
 
@@ -816,6 +820,9 @@ class PC(Character):
             starting_weapon: Initial equipped weapon
             num_ready_slots: The number of ready slots this character should have
             speed: Action speed (higher = more frequent actions)
+            identity: Optional dialogue identity for player-facing text.
+            character_presentation: Optional visual presentation profile for
+                procedural humanoid sprites. It has no gameplay effect.
         """
         super().__init__(
             x=x,
@@ -838,6 +845,13 @@ class PC(Character):
 
         # The player can always open doors (click-to-walk routes through them).
         self.can_open_doors = True
+
+        # Same text/display hooks as NPCs; set by real game creation once
+        # character creation exists, left optional for generic test PCs.
+        self.identity: NPCIdentity | None = identity
+        self.character_presentation: CharacterPresentationProfile | None = (
+            character_presentation
+        )
 
         # Give player starting energy so they can act immediately on game start.
         # NPCs don't need this - they get energy from on_player_action() before acting.
@@ -888,6 +902,8 @@ class NPC(Character):
         can_open_doors: bool = False,
         ai: AIComponent | None = None,
         personality: PersonalityComponent | None = None,
+        identity: NPCIdentity | None = None,
+        character_presentation: CharacterPresentationProfile | None = None,
         critter_preset: QuadrupedPreset | None = None,
         **kwargs,
     ) -> None:
@@ -911,6 +927,10 @@ class NPC(Character):
             personality: Optional OCEAN personality traits. When omitted, an
                 average-in-every-trait PersonalityComponent is used, so utility
                 scoring stays neutral for NPCs spawned without a type.
+            identity: Optional dialogue identity. When omitted, text systems
+                should fall back to neutral naming rather than pronouns.
+            character_presentation: Optional visual presentation profile for
+                procedural humanoid sprites. It has no gameplay effect.
             **kwargs: Additional Actor parameters
         """
         super().__init__(
@@ -941,6 +961,13 @@ class NPC(Character):
         # scoring so two NPCs of the same type at the same disposition still
         # behave differently. Defaults to all-average when unspecified.
         self.personality: PersonalityComponent = personality or PersonalityComponent()
+
+        # Dialogue identity and independent visual presentation. Pronoun logic
+        # should use identity; sprite generation may use presentation.
+        self.identity: NPCIdentity | None = identity
+        self.character_presentation: CharacterPresentationProfile | None = (
+            character_presentation
+        )
 
         # Whether this NPC can plan routes through closed doors and open them.
         # Humanoid NPCs can open doors; animals and creatures cannot.

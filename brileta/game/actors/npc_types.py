@@ -19,7 +19,10 @@ from brileta.game.items.item_types import (
 )
 from brileta.sprites.quadrupeds import DOG_PRESET
 
+from .identity import Gender
 from .npc_core import NPCType, StatDistribution, personality_trait
+
+_BALANCED_HUMANOID_IDENTITY = ((Gender.MALE, 1.0), (Gender.FEMALE, 1.0))
 
 # Large mutant humanoid. Charges into melee, hits hard, slow and stupid.
 # No sapient tag - attacks or flees without the Watch/Avoid social reasoning.
@@ -33,6 +36,7 @@ TROG_TYPE = NPCType(
     default_disposition=0,
     can_open_doors=True,
     starting_weapon=SLEDGEHAMMER_TYPE,
+    identity_weights=_BALANCED_HUMANOID_IDENTITY,
     speed=80,
     awareness_radius=10,  # Dumb brute, limited awareness
     strength_dist=StatDistribution(mean=3, std_dev=1.0),
@@ -64,6 +68,7 @@ BRIGAND_TYPE = NPCType(
     default_disposition=-75,
     can_open_doors=True,
     starting_weapon=REVOLVER_TYPE,
+    identity_weights=_BALANCED_HUMANOID_IDENTITY,
     speed=105,
     awareness_radius=14,  # Alert human, above-average perception
     strength_dist=StatDistribution(mean=1, std_dev=1.2),
@@ -158,6 +163,7 @@ RESIDENT_TYPE = NPCType(
     default_disposition=0,
     can_open_doors=True,
     starting_weapon=None,
+    identity_weights=_BALANCED_HUMANOID_IDENTITY,
     strength_dist=StatDistribution(mean=0, std_dev=1.0),
     toughness_dist=StatDistribution(mean=0, std_dev=1.0),
     agility_dist=StatDistribution(mean=0, std_dev=1.0),

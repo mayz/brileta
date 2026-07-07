@@ -48,6 +48,7 @@ class ActionPanelView(TextView):
         )
         self._cached_actions: list[ActionOption] = []
         self._cached_target_name: str | None = None
+        self._cached_target_gender: str | None = None
         self._cached_target_description: str | None = None
         self._cached_default_action_id: str | None = None  # The right-click default
         self._cached_is_selected: bool = False  # True if target is selected (not hover)
@@ -231,6 +232,7 @@ class ActionPanelView(TextView):
 
         return (
             self._cached_target_name,
+            self._cached_target_gender,
             self._cached_target_description,
             self._cached_is_selected,
             self._cached_default_action_id,
@@ -307,6 +309,15 @@ class ActionPanelView(TextView):
                 color=colors.YELLOW,
             )
             y_pixel += line_height
+
+            if self._cached_target_gender:
+                self.canvas.draw_text(
+                    pixel_x=x_padding,
+                    pixel_y=y_pixel - ascent,
+                    text=self._cached_target_gender,
+                    color=colors.GREY,
+                )
+                y_pixel += line_height
 
             # Show "Selected" indicator when target is selected (not just hovered)
             if self._cached_is_selected:
@@ -605,6 +616,7 @@ class ActionPanelView(TextView):
         # No mouse position yet (game just started) - show default controls
         if mouse_pos is None:
             self._cached_target_name = None
+            self._cached_target_gender = None
             self._cached_target_description = None
             self._cached_actions = []
             return
@@ -613,6 +625,7 @@ class ActionPanelView(TextView):
         # Mouse outside map bounds (e.g., on UI) - show Controls section
         if not (0 <= x < gw.game_map.width and 0 <= y < gw.game_map.height):
             self._cached_target_name = None
+            self._cached_target_gender = None
             self._cached_target_description = None
             self._cached_actions = []
             return
@@ -625,6 +638,7 @@ class ActionPanelView(TextView):
             else:
                 self._cached_target_name = f"{len(items)} items"
                 self._cached_target_description = "Multiple items here"
+            self._cached_target_gender = None
 
             # Create item pickup actions based on distance
             distance = max(abs(x - gw.player.x), abs(y - gw.player.y))
@@ -678,6 +692,7 @@ class ActionPanelView(TextView):
             else:
                 self._cached_target_name = None
 
+            self._cached_target_gender = None
             self._cached_target_description = None
 
             # Get tile-specific environment actions (e.g., door actions)
@@ -722,6 +737,11 @@ class ActionPanelView(TextView):
             self._cached_target_name = target_actor.display_name
         else:
             self._cached_target_name = target_actor.name
+
+        identity = getattr(target_actor, "identity", None)
+        self._cached_target_gender = (
+            identity.gender.value if identity is not None else None
+        )
 
         # Determine the default action for this target (for right-click indicator)
         target_type = classify_target(self.controller, target_actor)
@@ -788,6 +808,7 @@ class ActionPanelView(TextView):
 
         # Simple header for combat mode
         self._cached_target_name = "Combat Mode"
+        self._cached_target_gender = None
         self._cached_target_description = None
 
         # Mark the selected action for highlighting during render

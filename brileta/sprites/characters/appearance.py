@@ -382,6 +382,36 @@ BodyParamRollFn = Callable[[np.random.Generator, int], BodyParams]
 
 
 @dataclass(frozen=True)
+class CharacterPresentationProfile:
+    """Weighted visual presentation knobs for humanoid character sprites.
+
+    These weights bias generated appearance without making hard promises about
+    gender or body shape. A profile changes only visual selection probabilities.
+    """
+
+    build_weights: tuple[float, ...]
+    hair_weights: tuple[float, ...]
+    clothing_weights: tuple[float, ...]
+
+
+NEUTRAL_PRESENTATION = CharacterPresentationProfile(
+    build_weights=(1.0, 1.0, 1.0, 1.0, 0.35),
+    hair_weights=(0.7, 1.6, 1.4, 1.0, 0.8),
+    clothing_weights=(0.45, 1.4, 1.4, 1.2, 0.55, 0.55),
+)
+MASC_PRESENTATION = CharacterPresentationProfile(
+    build_weights=(1.3, 1.1, 1.4, 0.75, 0.25),
+    hair_weights=(1.0, 2.4, 0.9, 0.35, 1.1),
+    clothing_weights=(0.55, 1.5, 1.5, 1.2, 0.8, 0.3),
+)
+FEM_PRESENTATION = CharacterPresentationProfile(
+    build_weights=(1.25, 0.65, 0.45, 1.25, 0.25),
+    hair_weights=(0.25, 0.75, 1.7, 2.4, 0.45),
+    clothing_weights=(0.15, 1.4, 1.4, 1.2, 0.25, 1.1),
+)
+
+
+@dataclass(frozen=True)
 class CharacterAppearance:
     """Pre-rolled appearance data shared across all poses."""
 
@@ -404,6 +434,7 @@ class CharacterAppearance:
         size: int,
         *,
         forced_build_idx: int | None = None,
+        presentation_profile: CharacterPresentationProfile | None = None,
     ) -> CharacterAppearance:
         """Roll appearance data deterministically from ``seed``.
 
@@ -417,7 +448,14 @@ class CharacterAppearance:
 
         chooser_rng = np.random.default_rng(seed)
         if forced_build_idx is None:
-            build_idx = int(chooser_rng.integers(len(_BODY_PARAM_BUILD_ROLLERS)))
+            if presentation_profile is None:
+                build_idx = int(chooser_rng.integers(len(_BODY_PARAM_BUILD_ROLLERS)))
+            else:
+                build_idx = _weighted_index(
+                    chooser_rng,
+                    presentation_profile.build_weights,
+                    len(_BODY_PARAM_BUILD_ROLLERS),
+                )
         else:
             build_idx = forced_build_idx
 
@@ -426,9 +464,19 @@ class CharacterAppearance:
         rng = np.random.default_rng(seed)
         skin_pal, hair_pal, cloth_pal, pants_pal = _roll_palettes(rng)
         body_params = roll_fn(rng, size)
-        hair_style_idx = int(rng.integers(len(HAIR_STYLES)))
+        if presentation_profile is None:
+            hair_style_idx = int(rng.integers(len(HAIR_STYLES)))
+        else:
+            hair_style_idx = _weighted_index(
+                rng, presentation_profile.hair_weights, len(HAIR_STYLES)
+            )
 
-        clothing_style_idx = int(rng.integers(len(CLOTHING_DEFS)))
+        if presentation_profile is None:
+            clothing_style_idx = int(rng.integers(len(CLOTHING_DEFS)))
+        else:
+            clothing_style_idx = _weighted_index(
+                rng, presentation_profile.clothing_weights, len(CLOTHING_DEFS)
+            )
         _clothing_name, clothing_fn, covers_legs = CLOTHING_DEFS[clothing_style_idx]
 
         return cls(
@@ -449,6 +497,28 @@ class CharacterAppearance:
 # ---------------------------------------------------------------------------
 # Build parameter rolling
 # ---------------------------------------------------------------------------
+
+
+def _weighted_index(
+    rng: np.random.Generator,
+    weights: tuple[float, ...],
+    expected_len: int,
+) -> int:
+    """Return a deterministic weighted index, validating profile shape."""
+    if len(weights) != expected_len:
+        msg = f"Expected {expected_len} weights, got {len(weights)}"
+        raise ValueError(msg)
+
+    weight_array = np.array(weights, dtype=np.float64)
+    if bool(np.any(weight_array < 0.0)):
+        raise ValueError("Weights must be non-negative")
+
+    total = float(weight_array.sum())
+    if total <= 0.0:
+        raise ValueError("At least one weight must be positive")
+
+    probabilities = weight_array / total
+    return int(rng.choice(expected_len, p=probabilities))
 
 
 def _roll_palettes(

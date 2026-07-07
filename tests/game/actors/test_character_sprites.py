@@ -11,6 +11,8 @@ from brileta.sprites.characters import (
     CHARACTER_DIRECTIONAL_POSE_COUNT,
     CHARACTER_FRAMES_PER_FACING,
     CHARACTER_POSE_COUNT,
+    FEM_PRESENTATION,
+    MASC_PRESENTATION,
     POSE_BACK_STAND,
     POSE_LEFT_STAND,
     POSE_RIGHT_STAND,
@@ -106,6 +108,32 @@ def test_character_appearance_from_seed_is_consistent() -> None:
     appearance_b = CharacterAppearance.from_seed(9001, 20)
 
     assert appearance_a == appearance_b
+
+
+def test_presentation_profiles_bias_hair_selection_without_locking_it() -> None:
+    """Presentation profiles should bias weighted rolls, not force one style."""
+    masc_hair = [
+        CharacterAppearance.from_seed(
+            seed, 20, presentation_profile=MASC_PRESENTATION
+        ).hair_style_idx
+        for seed in range(300)
+    ]
+    fem_hair = [
+        CharacterAppearance.from_seed(
+            seed, 20, presentation_profile=FEM_PRESENTATION
+        ).hair_style_idx
+        for seed in range(300)
+    ]
+
+    masc_short_count = sum(1 for idx in masc_hair if idx in {0, 1, 4})
+    fem_short_count = sum(1 for idx in fem_hair if idx in {0, 1, 4})
+    fem_long_count = sum(1 for idx in fem_hair if idx in {2, 3})
+    masc_long_count = sum(1 for idx in masc_hair if idx in {2, 3})
+
+    assert masc_short_count > fem_short_count
+    assert fem_long_count > masc_long_count
+    assert len(set(masc_hair)) > 1
+    assert len(set(fem_hair)) > 1
 
 
 def test_all_build_types_render_valid_sprites_in_all_poses() -> None:

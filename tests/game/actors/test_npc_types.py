@@ -18,6 +18,7 @@ from brileta.game.actors.ai.utility import (
     is_any_threat_perceived,
     is_target_nearby,
 )
+from brileta.game.actors.identity import Gender
 from brileta.game.actors.npc_core import NPCType, StatDistribution, compose_actions
 from brileta.game.actors.npc_types import (
     BRIGAND_TYPE,
@@ -64,6 +65,50 @@ def test_npc_type_create_applies_core_attributes(
     assert npc.visual_effects is not None
     assert npc.shadow_height == size.shadow_height
     assert npc.ai.disposition_toward(other) == default_disposition
+
+
+def test_npc_type_can_assign_identity_and_pronouns() -> None:
+    npc_type = NPCType(
+        id="gendered",
+        tags=("base",),
+        glyph="g",
+        color=colors.WHITE,
+        creature_size=CreatureSize.MEDIUM,
+        identity_weights=((Gender.FEMALE, 1.0),),
+    )
+
+    npc = npc_type.create(0, 0, "Test NPC")
+
+    assert npc.identity is not None
+    assert npc.identity.gender is Gender.FEMALE
+    assert npc.identity.pronouns.subject == "she"
+    assert npc.identity.pronouns.accusative == "her"
+    assert npc.identity.pronouns.possessive_adjective == "her"
+    assert npc.identity.pronouns.possessive_pronoun == "hers"
+    assert npc.identity.pronouns.reflexive == "herself"
+
+
+def test_npc_identity_is_optional_for_non_human_archetypes() -> None:
+    dog = DOG_TYPE.create(0, 0, "Dog")
+    scorpion = GIANT_SCORPION_TYPE.create(0, 0, "Scorpion")
+
+    assert dog.identity is None
+    assert dog.character_presentation is None
+    assert scorpion.identity is None
+    assert scorpion.character_presentation is None
+
+
+def test_humanoid_npc_types_get_identity_and_presentation() -> None:
+    trog = TROG_TYPE.create(0, 0, "Trog")
+    resident = RESIDENT_TYPE.create(0, 0, "Resident")
+    brigand = BRIGAND_TYPE.create(0, 0, "Brigand")
+
+    assert trog.identity is not None
+    assert trog.character_presentation is not None
+    assert resident.identity is not None
+    assert resident.character_presentation is not None
+    assert brigand.identity is not None
+    assert brigand.character_presentation is not None
 
 
 def test_brigand_action_pool_contains_combat_and_sapient_actions() -> None:

@@ -46,6 +46,14 @@ from .container import (
     create_bookcase,
 )
 from .core import NPC, PC, Actor, Character
+from .identity import (
+    FEMALE_PRONOUNS,
+    MALE_PRONOUNS,
+    Gender,
+    NPCIdentity,
+    Pronouns,
+    identity_for_gender,
+)
 from .status_effects import StatusEffect
 from .trees import Tree, create_conifer_tree, create_deciduous_tree
 
@@ -63,6 +71,11 @@ __all__ = [
     "Boulder",
     "BoulderArchetype",
     "Tree",
+    "Gender",
+    "NPCIdentity",
+    "Pronouns",
+    "MALE_PRONOUNS",
+    "FEMALE_PRONOUNS",
     # Sprite Generation
     "HUMANOID_GLYPHS",
     "Facing",
@@ -81,6 +94,7 @@ __all__ = [
     "create_bookcase",
     "create_deciduous_tree",
     "create_conifer_tree",
+    "identity_for_gender",
     # Base/Interface Classes
     "AIComponent",
     "Condition",

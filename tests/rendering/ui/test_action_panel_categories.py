@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 from brileta import colors
 from brileta.controller import Controller
 from brileta.game.actions.discovery import ActionCategory, ActionOption
-from brileta.game.actors import Character
+from brileta.game.actors import NPC, PC, Character
+from brileta.game.actors.identity import Gender, identity_for_gender
 from brileta.game.game_world import GameWorld
+from brileta.types import InterpolationAlpha
 from brileta.view.render.graphics import GraphicsContext
 from brileta.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
@@ -137,6 +139,83 @@ class TestFlatListRendering:
         # Flat list in draw_content limits to 10 actions
         # All actions still get hotkeys assigned
         assert all(a.hotkey is not None for a in actions[:10])
+
+
+class TestTargetIdentityDisplay:
+    """Tests for selected/hovered actor identity display."""
+
+    def test_populate_actor_target_data_caches_npc_gender(self) -> None:
+        """NPC identity gender should be available to the render path."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+        npc = NPC(
+            2,
+            2,
+            "R",
+            colors.WHITE,
+            "Resident",
+            game_world=cast(GameWorld, gw),
+            identity=identity_for_gender(Gender.FEMALE),
+        )
+
+        view._populate_actor_target_data(npc)
+
+        assert view._cached_target_gender == "female"
+
+    def test_populate_actor_target_data_caches_player_gender(self) -> None:
+        """Player identity should use the same selected-actor display path."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+        player = PC(
+            2,
+            2,
+            "@",
+            colors.WHITE,
+            "Player",
+            game_world=cast(GameWorld, gw),
+            identity=identity_for_gender(Gender.MALE),
+        )
+
+        view._populate_actor_target_data(player)
+
+        assert view._cached_target_gender == "male"
+
+    def test_populate_actor_target_data_omits_gender_for_plain_character(self) -> None:
+        """Actors without identity should not show a stale gender line."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+        actor = Character(
+            2,
+            2,
+            "@",
+            colors.WHITE,
+            "Actor",
+            game_world=cast(GameWorld, gw),
+        )
+        view._cached_target_gender = "female"
+
+        view._populate_actor_target_data(actor)
+
+        assert view._cached_target_gender is None
+
+    def test_draw_content_renders_gender_line_under_name_when_cached(self) -> None:
+        """The sidebar should render the gender value directly below the name."""
+        _controller, view = make_action_panel()
+        view.set_bounds(0, 0, 24, 20)
+        view._cached_target_name = "Resident"
+        view._cached_target_gender = "female"
+        view._cached_is_selected = True
+        view._cached_target_description = None
+        view._cached_actions = []
+        view.canvas.draw_text = MagicMock()
+
+        view.draw_content(view.controller.graphics, InterpolationAlpha(1.0))
+
+        rendered_text = [
+            call.kwargs["text"] for call in view.canvas.draw_text.call_args_list
+        ]
+        assert rendered_text[:3] == ["Resi...", "female", "Selected"]
+        assert "Gender: female" not in rendered_text
 
 
 class TestTargetNameTruncation:

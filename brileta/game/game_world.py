@@ -14,9 +14,11 @@ from brileta.game.actors import (
     Actor,
     Boulder,
     Character,
+    Gender,
     ItemPile,
     TreeArchetype,
     create_bookcase,
+    identity_for_gender,
 )
 from brileta.game.actors.environmental import ContainedFire
 from brileta.game.actors.npc_types import (
@@ -42,6 +44,7 @@ from brileta.game.items.item_types import (
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
+from brileta.sprites.characters import MASC_PRESENTATION
 from brileta.sprites.trees import (
     archetype_for_position,
     create_species_noise,
@@ -358,6 +361,8 @@ class GameWorld:
             strength=PLAYER_BASE_STRENGTH,
             toughness=PLAYER_BASE_TOUGHNESS,
             starting_weapon=PISTOL_TYPE.create(),
+            identity=identity_for_gender(Gender.MALE),
+            character_presentation=MASC_PRESENTATION,
         )
         self._setup_player_inventory(player)
 
