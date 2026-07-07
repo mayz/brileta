@@ -272,7 +272,7 @@ class NPCType:
     def __hash__(self) -> int:  # pragma: no cover - identity hash
         return id(self)
 
-    def _sample_identity(self) -> NPCIdentity | None:
+    def sample_identity(self) -> NPCIdentity | None:
         """Sample optional identity using the dedicated identity RNG stream."""
         if not self.identity_weights:
             return None
@@ -298,6 +298,7 @@ class NPCType:
         y: WorldTileCoord,
         name: str,
         game_world: GameWorld | None = None,
+        identity: NPCIdentity | None = None,
     ) -> NPC:
         """Create a concrete NPC instance from this archetype."""
         npc_ai = AIComponent(
@@ -317,7 +318,7 @@ class NPCType:
             agreeableness=self.agreeableness_dist.sample(_npc_personality_rng),
             neuroticism=self.neuroticism_dist.sample(_npc_personality_rng),
         )
-        identity = self._sample_identity()
+        identity = identity or self.sample_identity()
 
         return NPC(
             x=x,
@@ -326,6 +327,7 @@ class NPCType:
             color=self.color,
             name=name,
             game_world=game_world,
+            archetype_name=self.display_name,
             ai=npc_ai,
             strength=self.strength_dist.sample(_npc_type_rng),
             toughness=self.toughness_dist.sample(_npc_type_rng),

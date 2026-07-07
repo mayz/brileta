@@ -162,6 +162,45 @@ class TestTargetIdentityDisplay:
 
         assert view._cached_target_gender == "female"
 
+    def test_populate_actor_target_data_caches_archetype_name(self) -> None:
+        """Named NPCs should still show their archetype in the sidebar."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+        npc = NPC(
+            2,
+            2,
+            "T",
+            colors.WHITE,
+            "James",
+            game_world=cast(GameWorld, gw),
+            archetype_name="Trog",
+            identity=identity_for_gender(Gender.MALE),
+        )
+
+        view._populate_actor_target_data(npc)
+
+        assert view._cached_target_name == "James"
+        assert view._cached_target_type == "Trog"
+
+    def test_populate_actor_target_data_omits_duplicate_archetype_name(self) -> None:
+        """Unnamed creatures should not repeat the same name as a type line."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+        npc = NPC(
+            2,
+            2,
+            "d",
+            colors.WHITE,
+            "Dog",
+            game_world=cast(GameWorld, gw),
+            archetype_name="Dog",
+        )
+
+        view._populate_actor_target_data(npc)
+
+        assert view._cached_target_name == "Dog"
+        assert view._cached_target_type is None
+
     def test_populate_actor_target_data_caches_player_gender(self) -> None:
         """Player identity should use the same selected-actor display path."""
         controller, view = make_action_panel()
@@ -193,10 +232,12 @@ class TestTargetIdentityDisplay:
             game_world=cast(GameWorld, gw),
         )
         view._cached_target_gender = "female"
+        view._cached_target_type = "Trog"
 
         view._populate_actor_target_data(actor)
 
         assert view._cached_target_gender is None
+        assert view._cached_target_type is None
 
     def test_draw_content_renders_gender_line_under_name_when_cached(self) -> None:
         """The sidebar should render the gender value directly below the name."""
@@ -216,6 +257,25 @@ class TestTargetIdentityDisplay:
         ]
         assert rendered_text[:3] == ["Resi...", "female", "Selected"]
         assert "Gender: female" not in rendered_text
+
+    def test_draw_content_renders_type_line_between_name_and_gender(self) -> None:
+        """The sidebar should render archetype under a generated NPC name."""
+        _controller, view = make_action_panel()
+        view.set_bounds(0, 0, 24, 20)
+        view._cached_target_name = "James"
+        view._cached_target_type = "Trog"
+        view._cached_target_gender = "male"
+        view._cached_is_selected = True
+        view._cached_target_description = None
+        view._cached_actions = []
+        view.canvas.draw_text = MagicMock()
+
+        view.draw_content(view.controller.graphics, InterpolationAlpha(1.0))
+
+        rendered_text = [
+            call.kwargs["text"] for call in view.canvas.draw_text.call_args_list
+        ]
+        assert rendered_text[:4] == ["James", "Trog", "male", "Selected"]
 
 
 class TestTargetNameTruncation:

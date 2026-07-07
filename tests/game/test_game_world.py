@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from brileta import colors
 from brileta.environment.map import MapRegion
+from brileta.game import names as npc_names
 from brileta.game.actors import (
     Actor,
     Boulder,
@@ -23,6 +24,7 @@ from brileta.game.enums import ItemSize
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.lights import DirectionalLight, DynamicLight, GlobalLight, StaticLight
+from brileta.game.names import generate_human_name, generate_npc_name
 from brileta.types import ActorId
 from brileta.util.coordinates import Rect
 from tests.helpers import DummyGameWorld
@@ -790,6 +792,17 @@ class TestActorIdRegistry:
 class TestNPCSpawnPlan:
     """Tests for resident-heavy NPC spawn planning."""
 
+    def test_human_name_tables_are_d100_sized(self) -> None:
+        assert len(npc_names._MALE_GIVEN_NAMES) == 100
+        assert len(npc_names._FEMALE_GIVEN_NAMES) == 100
+        assert len(npc_names._SURNAME_PREFIXES) == 100
+        assert len(npc_names._SURNAME_SUFFIXES) == 100
+
+        assert len(set(npc_names._MALE_GIVEN_NAMES)) == 100
+        assert len(set(npc_names._FEMALE_GIVEN_NAMES)) == 100
+        assert len(set(npc_names._SURNAME_PREFIXES)) == 100
+        assert len(set(npc_names._SURNAME_SUFFIXES)) == 100
+
     def test_spawn_plan_uses_resident_heavy_mix_and_caps_dogs(self) -> None:
         gw = make_world()
 
@@ -818,17 +831,57 @@ class TestNPCSpawnPlan:
 
         assert counts[DOG_TYPE.id] <= gw._DOG_SPAWN_CAP
 
-    def test_next_spawn_name_appends_sequential_suffixes_per_type(self) -> None:
-        gw = make_world()
-        spawn_name_counts: dict[str, int] = {}
+    def test_resident_names_are_full_names_and_unique(self) -> None:
+        used_names: set[str] = set()
 
-        first = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
-        second = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
-        third = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
+        names = [
+            generate_npc_name(
+                RESIDENT_TYPE, used_names, RESIDENT_TYPE.sample_identity()
+            )
+            for _ in range(20)
+        ]
 
-        assert first == "Trog"
-        assert second == "Trog 2"
-        assert third == "Trog 3"
+        assert len(names) == len(set(names))
+        assert all(" " in name for name in names)
+        assert all(not name.startswith("Resident") for name in names)
+
+    def test_human_names_can_be_generated_by_gender(self) -> None:
+        used_names: set[str] = set()
+
+        male_name = generate_human_name(Gender.MALE, used_names)
+        female_name = generate_human_name(Gender.FEMALE, used_names)
+
+        assert male_name != female_name
+        assert " " in male_name
+        assert " " in female_name
+
+    def test_resident_name_uses_supplied_identity_gender(self) -> None:
+        identity = RESIDENT_TYPE.sample_identity()
+        assert identity is not None
+
+        name = generate_npc_name(RESIDENT_TYPE, set(), identity)
+        given_name = name.split(" ", maxsplit=1)[0]
+
+        expected_names = (
+            npc_names._MALE_GIVEN_NAMES
+            if identity.gender is Gender.MALE
+            else npc_names._FEMALE_GIVEN_NAMES
+        )
+        assert given_name in expected_names
+
+    def test_identityless_creatures_use_archetype_display_names(self) -> None:
+        name = generate_npc_name(DOG_TYPE, set())
+
+        assert name == "Dog"
+
+    def test_non_social_identity_npcs_get_given_names(self) -> None:
+        identity = TROG_TYPE.sample_identity()
+        assert identity is not None
+
+        name = generate_npc_name(TROG_TYPE, set(), identity)
+
+        assert name != "Trog"
+        assert " " not in name
 
 
 class TestNPCSpawnHelpers:

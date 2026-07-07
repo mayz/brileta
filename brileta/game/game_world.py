@@ -43,6 +43,7 @@ from brileta.game.items.item_types import (
     SHOTGUN_SHELLS_TYPE,
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
+from brileta.game.names import generate_npc_name
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
 from brileta.sprites.characters import MASC_PRESENTATION
 from brileta.sprites.trees import (
@@ -638,9 +639,12 @@ class GameWorld:
         if pos is None:
             return None
 
-        name = npc_type.display_name
+        identity = npc_type.sample_identity()
+        name = generate_npc_name(
+            npc_type, {actor.name for actor in self.actors}, identity
+        )
 
-        npc = npc_type.create(pos[0], pos[1], name, game_world=self)
+        npc = npc_type.create(pos[0], pos[1], name, game_world=self, identity=identity)
         self.add_actor(npc)
         return npc
 
@@ -824,7 +828,7 @@ class GameWorld:
             return  # No rooms large enough for NPCs
 
         spawn_plan = self._build_npc_spawn_plan(num_npcs)
-        spawn_name_counts: dict[str, int] = {}
+        used_names = {actor.name for actor in self.actors}
 
         for npc_type in spawn_plan:
             placed = False
@@ -842,8 +846,11 @@ class GameWorld:
                     self.game_map.walkable[npc_x, npc_y]
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
-                    npc_name = self._next_spawn_name(npc_type, spawn_name_counts)
-                    npc = npc_type.create(npc_x, npc_y, npc_name, game_world=self)
+                    identity = npc_type.sample_identity()
+                    npc_name = generate_npc_name(npc_type, used_names, identity)
+                    npc = npc_type.create(
+                        npc_x, npc_y, npc_name, game_world=self, identity=identity
+                    )
                     self.add_actor(npc)
                     placed = True
                     break
@@ -879,7 +886,7 @@ class GameWorld:
         )
         street_npcs = total_npcs - indoor_npcs - near_doorway_npcs
         spawn_plan = self._build_npc_spawn_plan(total_npcs)
-        spawn_name_counts: dict[str, int] = {}
+        used_names = {actor.name for actor in self.actors}
 
         # Routine-capable NPCs are collected during placement and given
         # homes/workplaces in one batch afterward, so anchor spreading and the
@@ -894,7 +901,7 @@ class GameWorld:
             npc_index,
             max_attempts_per_npc,
             spawn_plan,
-            spawn_name_counts,
+            used_names,
         )
 
         # 2. Place NPCs near building doorways
@@ -903,7 +910,7 @@ class GameWorld:
             npc_index,
             max_attempts_per_npc,
             spawn_plan,
-            spawn_name_counts,
+            used_names,
         )
 
         # 3. Place NPCs on streets
@@ -912,7 +919,7 @@ class GameWorld:
             npc_index,
             max_attempts_per_npc,
             spawn_plan,
-            spawn_name_counts,
+            used_names,
         )
 
         # 4. Assign homes and workplace anchors to the routine-capable NPCs.
@@ -924,7 +931,7 @@ class GameWorld:
         start_index: int,
         max_attempts: int,
         spawn_plan: list[NPCType],
-        spawn_name_counts: dict[str, int],
+        used_names: set[str],
     ) -> int:
         """Place NPCs inside building rooms.
 
@@ -968,7 +975,7 @@ class GameWorld:
                         npc_y,
                         npc_index,
                         spawn_plan,
-                        spawn_name_counts,
+                        used_names,
                     )
                     self.add_actor(npc)
                     npc_index += 1
@@ -986,7 +993,7 @@ class GameWorld:
         start_index: int,
         max_attempts: int,
         spawn_plan: list[NPCType],
-        spawn_name_counts: dict[str, int],
+        used_names: set[str],
     ) -> int:
         """Place NPCs just outside building doors.
 
@@ -1053,7 +1060,7 @@ class GameWorld:
                             npc_y,
                             npc_index,
                             spawn_plan,
-                            spawn_name_counts,
+                            used_names,
                         )
                         self.add_actor(npc)
                         npc_index += 1
@@ -1071,7 +1078,7 @@ class GameWorld:
         start_index: int,
         max_attempts: int,
         spawn_plan: list[NPCType],
-        spawn_name_counts: dict[str, int],
+        used_names: set[str],
     ) -> int:
         """Place NPCs on street tiles.
 
@@ -1107,7 +1114,7 @@ class GameWorld:
                         npc_y,
                         npc_index,
                         spawn_plan,
-                        spawn_name_counts,
+                        used_names,
                     )
                     self.add_actor(npc)
                     npc_index += 1
@@ -1134,7 +1141,7 @@ class GameWorld:
         y: int,
         index: int,
         spawn_plan: list[NPCType],
-        spawn_name_counts: dict[str, int],
+        used_names: set[str],
     ) -> NPC:
         """Create a settlement NPC from the precomputed spawn plan.
 
@@ -1143,14 +1150,15 @@ class GameWorld:
             y: Y position.
             index: Spawn index used to select the NPC type.
             spawn_plan: Ordered list of NPC types to place.
-            spawn_name_counts: Per-type counters for deterministic naming.
+            used_names: Display names already reserved in this world.
 
         Returns:
             The created NPC.
         """
         npc_type = spawn_plan[index] if index < len(spawn_plan) else RESIDENT_TYPE
-        npc_name = self._next_spawn_name(npc_type, spawn_name_counts)
-        npc = npc_type.create(x, y, npc_name, game_world=self)
+        identity = npc_type.sample_identity()
+        npc_name = generate_npc_name(npc_type, used_names, identity)
+        npc = npc_type.create(x, y, npc_name, game_world=self, identity=identity)
         if "routine" in npc_type.tags:
             self._pending_routine_npcs.append(npc)
         return npc
@@ -1363,15 +1371,6 @@ class GameWorld:
         )
         _npc_rng.shuffle(spawn_plan)
         return spawn_plan
-
-    def _next_spawn_name(
-        self, npc_type: NPCType, spawn_name_counts: dict[str, int]
-    ) -> str:
-        """Return the next sequential display name for the given NPC type."""
-        next_sequence = spawn_name_counts.get(npc_type.id, 0) + 1
-        spawn_name_counts[npc_type.id] = next_sequence
-        base = npc_type.display_name
-        return base if next_sequence == 1 else f"{base} {next_sequence}"
 
     def _add_test_fire(self, rooms: list) -> None:
         """Add a test fire to demonstrate the fire system."""

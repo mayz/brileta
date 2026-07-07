@@ -219,6 +219,7 @@ class Actor:
         sprite_uv: SpriteUV | None = None,
         sprite_ground_anchor_y: float = 1.0,
         cover_bonus: int = 0,
+        archetype_name: str | None = None,
     ) -> None:
         # === Core Identity & World Presence ===
         self.actor_id: ActorId = Actor._next_actor_id
@@ -239,6 +240,7 @@ class Actor:
         self.ch = ch
         self.color = color
         self.name = name
+        self.archetype_name = archetype_name
         self.visual_scale = visual_scale
         self.character_layers = character_layers  # Multi-char visual composition
         # UV coordinates into the dynamic sprite atlas.  When set, the actor
