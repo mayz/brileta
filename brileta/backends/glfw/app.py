@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, cast
 
 import glfw
 from PIL import Image as PILImage
@@ -14,13 +14,6 @@ from brileta.types import PixelDimensions, TileDimensions
 from brileta.util.misc import SuppressStderr
 
 from .window import GlfwWindow
-
-
-class _VideoModeLike(Protocol):
-    """Subset of GLFW video mode attributes consumed by fullscreen helpers."""
-
-    size: Any
-    refresh_rate: int
 
 
 class GlfwApp(App[WGPUGraphicsContext]):
@@ -365,7 +358,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
     def _pick_fullscreen_video_mode(
         self,
         monitor: Any | None = None,
-    ) -> _VideoModeLike | None:
+    ) -> glfw._GLFWvidmodeT | None:
         """Pick the monitor mode closest to current framebuffer size."""
         if monitor is None:
             monitor = glfw.get_primary_monitor()
@@ -407,7 +400,9 @@ class GlfwApp(App[WGPUGraphicsContext]):
         """Return from monitor fullscreen to previous windowed size."""
         glfw.set_window_monitor(
             self.window,
-            None,
+            # GLFW takes NULL here to return to windowed mode; the stub types
+            # the parameter as non-optional.
+            cast(Any, None),
             self.windowed_x,
             self.windowed_y,
             self.windowed_width,
