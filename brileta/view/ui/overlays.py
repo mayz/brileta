@@ -295,7 +295,7 @@ class MenuOption:
         self,
         key: str | None,
         text: str,
-        action: Callable[[], None | bool] | None = None,
+        action: Callable[[], bool | None] | None = None,
         enabled: bool = True,
         color: colors.Color = colors.WHITE,
         force_color: bool = False,

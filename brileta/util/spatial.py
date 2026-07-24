@@ -61,7 +61,7 @@ class SpatialIndex[T: HasPosition](abc.ABC):
         """Get all objects within a rectangular bounding box."""
         pass
 
-    def get_in_rect(self, bounds: Rect) -> list[T]:
+    def get_in_rect(self, bounds: Rect, /) -> list[T]:
         """Get all objects within a Rect bounds."""
         return self.get_in_bounds(bounds.x1, bounds.y1, bounds.x2, bounds.y2)
 
