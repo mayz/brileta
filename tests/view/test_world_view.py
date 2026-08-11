@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -12,6 +13,8 @@ import pytest
 from brileta.environment import tile_types
 from brileta.environment.generators.buildings import Building
 from brileta.environment.tile_types import TileTypeID
+from brileta.game.actors import Actor
+from brileta.game.lights import DirectionalLight
 from brileta.types import InterpolationAlpha
 from brileta.util.coordinates import Rect
 from brileta.view.render.actor_renderer import (
@@ -143,7 +146,10 @@ class TestSunDirectionPropagation:
         view = object.__new__(WorldView)
         view.graphics = Mock()
         graphics_arg = view.graphics
-        directional_light = SimpleNamespace(direction=SimpleNamespace(x=0.3, y=-0.7))
+        # Only `.direction.x/.y` is read, so a stand-in namespace is enough.
+        directional_light = cast(
+            DirectionalLight, SimpleNamespace(direction=SimpleNamespace(x=0.3, y=-0.7))
+        )
 
         view._apply_sun_direction_to_graphics(graphics_arg, directional_light)
 
@@ -153,7 +159,9 @@ class TestSunDirectionPropagation:
         view = object.__new__(WorldView)
         view.graphics = Mock()
         graphics_arg = Mock()
-        directional_light = SimpleNamespace(direction=SimpleNamespace(x=-0.5, y=0.9))
+        directional_light = cast(
+            DirectionalLight, SimpleNamespace(direction=SimpleNamespace(x=-0.5, y=0.9))
+        )
 
         view._apply_sun_direction_to_graphics(graphics_arg, directional_light)
 
@@ -1483,8 +1491,9 @@ class TestRoofSubstitution:
         view._compute_roof_state = lambda: (None, [building])
 
         all_actors = [player, hidden_actor, visible_actor]
+        # Only `.x`/`.y` are read, so the mocks stand in for real Actors.
         result_actors, occluded = view._filter_roof_occluded_actors(
-            actors=all_actors,
+            actors=cast("list[Actor]", all_actors),
             viewport_bounds_world=Rect(0, 0, 12, 12),
         )
 
@@ -1542,7 +1551,7 @@ class TestRoofSubstitution:
 
         actors = [actor_in_overhang, actor_inside, actor_in_wall_face, actor_outside]
         _, occluded = view._filter_roof_occluded_actors(
-            actors=actors,
+            actors=cast("list[Actor]", actors),
             viewport_bounds_world=Rect(0, 0, 40, 40),
         )
 

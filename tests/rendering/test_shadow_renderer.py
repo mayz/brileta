@@ -16,7 +16,7 @@ from brileta.environment.tile_types import TileTypeAppearance, TileTypeID
 from brileta.game.actors import Actor
 from brileta.game.actors.core import CharacterLayer
 from brileta.game.lights import DirectionalLight
-from brileta.types import InterpolationAlpha, SpriteUV
+from brileta.types import ColorRGBAf, InterpolationAlpha, PixelPos, SpriteUV
 from brileta.util.coordinates import Rect
 from brileta.view.render.actor_renderer import ActorRenderer
 from brileta.view.render.graphics import GraphicsContext
@@ -183,14 +183,35 @@ def test_add_parallelogram_batch_matches_scalar_vertices() -> None:
         dtype=np.float32,
     )
 
+    # Index each component explicitly rather than using generator expressions:
+    # `tuple(genexpr)` infers as a variadic `tuple[float, ...]`, which does not
+    # satisfy the fixed-length aliases (PixelPos, UVRect, ColorRGBAf) in the
+    # add_parallelogram signature.
+    def _as_pixel_pos(point: np.ndarray) -> PixelPos:
+        return (float(point[0]), float(point[1]))
+
+    def _as_rgba(values: np.ndarray) -> ColorRGBAf:
+        return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+
     for idx in range(2):
+        row_corners = corners[idx]
+        row_vertex_colors = vertex_colors[idx]
+        uvs = uv_coords[idx]
         scalar_renderer.add_parallelogram(
-            corners=tuple(tuple(float(v) for v in point) for point in corners[idx]),
-            uv_coords=tuple(float(v) for v in uv_coords[idx]),
-            base_color=tuple(float(v) for v in base_colors[idx]),
-            tip_color=tuple(float(v) for v in tip_colors[idx]),
-            vertex_colors=tuple(
-                tuple(float(v) for v in color) for color in vertex_colors[idx]
+            corners=(
+                _as_pixel_pos(row_corners[0]),
+                _as_pixel_pos(row_corners[1]),
+                _as_pixel_pos(row_corners[2]),
+                _as_pixel_pos(row_corners[3]),
+            ),
+            uv_coords=(float(uvs[0]), float(uvs[1]), float(uvs[2]), float(uvs[3])),
+            base_color=_as_rgba(base_colors[idx]),
+            tip_color=_as_rgba(tip_colors[idx]),
+            vertex_colors=(
+                _as_rgba(row_vertex_colors[0]),
+                _as_rgba(row_vertex_colors[1]),
+                _as_rgba(row_vertex_colors[2]),
+                _as_rgba(row_vertex_colors[3]),
             ),
             use_sprite_atlas=bool(flags[idx] == np.uint32(2)),
         )
