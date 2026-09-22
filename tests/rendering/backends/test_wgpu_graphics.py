@@ -12,27 +12,14 @@ import numpy as np
 import pytest
 
 from brileta import colors, config
+from brileta.backends.wgpu.atmospheric_renderer import WGPUAtmosphericRenderer
+from brileta.backends.wgpu.graphics import (
+    WGPUGraphicsContext,
+    _infer_compose_tile_dimensions,
+)
 from brileta.game.enums import BlendMode
 from brileta.types import Opacity
 from brileta.util.glyph_buffer import GlyphBuffer
-
-# Try to import WGPU - if not available, skip all tests
-try:
-    import wgpu
-
-    from brileta.backends.wgpu.atmospheric_renderer import WGPUAtmosphericRenderer
-    from brileta.backends.wgpu.graphics import (
-        WGPUGraphicsContext,
-        _infer_compose_tile_dimensions,
-    )
-
-    WGPU_AVAILABLE = True
-except ImportError:
-    WGPU_AVAILABLE = False
-    wgpu = None
-    WGPUGraphicsContext = None
-    _infer_compose_tile_dimensions = None
-    WGPUAtmosphericRenderer = None
 
 
 class MockCursorManager:
@@ -54,7 +41,6 @@ class MockCursorData:
         self.hotspot_y = 0
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 class TestWGPUGraphicsContext:
     """Test suite for WGPUGraphicsContext."""
 
@@ -553,7 +539,6 @@ class TestWGPUGraphicsContext:
         )
 
         call_sequence: list[str] = []
-        assert WGPUAtmosphericRenderer is not None
         render_param_names = [
             name
             for name in inspect.signature(WGPUAtmosphericRenderer.render).parameters
@@ -587,7 +572,6 @@ class TestWGPUGraphicsContext:
 
     def test_infer_compose_tile_dimensions(self):
         """Compose tile size should be inferred from texture/mask dimensions."""
-        assert _infer_compose_tile_dimensions is not None
 
         assert _infer_compose_tile_dimensions(1640, 1240, 82, 62) == (20, 20)
         assert _infer_compose_tile_dimensions(1680, 1050, 80, 50) == (21, 21)
@@ -596,7 +580,6 @@ class TestWGPUGraphicsContext:
         assert _infer_compose_tile_dimensions(101, 100, 10, 10) is None
         assert _infer_compose_tile_dimensions(100, 103, 10, 10) is None
 
-    @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
     def test_wgpu_initialization_real(self):
         """Test WGPU initialization with real GPU resources if available."""
         if not self.real_wgpu:
@@ -784,7 +767,6 @@ class TestWGPUGraphicsContext:
         assert kwargs["color_rgba"] == (1.0, 0.0, 0.0, 1.0)  # Red normalized
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 class TestDrawSpriteSmoothBatch:
     """Tests for the vectorized draw_sprite_smooth_batch method."""
 
@@ -918,7 +900,6 @@ class TestDrawSpriteSmoothBatch:
         self.mock_screen_renderer.add_quad_batch.assert_not_called()
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 class TestDrawSpriteOutline:
     """Tests for sprite silhouette outline rendering."""
 
@@ -957,7 +938,6 @@ class TestDrawSpriteOutline:
         assert int(flags[0]) == 6  # sprite (2) + outline (4)
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_window_parameters():
     """Test WGPUGraphicsContext window parameter handling."""
     from brileta.backends.glfw.window import GlfwWindow
@@ -973,7 +953,6 @@ def test_wgpu_graphics_context_window_parameters():
     assert ctx.window is mock_window
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_default_parameters():
     """Test WGPUGraphicsContext default parameter handling."""
     from brileta.backends.glfw.window import GlfwWindow

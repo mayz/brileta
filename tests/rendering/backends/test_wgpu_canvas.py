@@ -9,23 +9,9 @@ from unittest.mock import Mock
 import pytest
 
 from brileta import colors
-
-# Try to import WGPU - if not available, skip all tests
-try:
-    import wgpu
-
-    from brileta.backends.wgpu.canvas import WGPUCanvas
-    from brileta.backends.wgpu.graphics import WGPUGraphicsContext
-
-    WGPU_AVAILABLE = True
-except ImportError:
-    WGPU_AVAILABLE = False
-    wgpu = None
-    WGPUCanvas = None
-    WGPUGraphicsContext = None
+from brileta.backends.wgpu.canvas import WGPUCanvas
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 class TestWGPUCanvas:
     """Test suite for WGPUCanvas."""
 
@@ -274,7 +260,6 @@ class TestWGPUCanvas:
         assert descent == 0  # Default implementation
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_canvas_creation_parameters():
     """Test canvas creation with different parameters."""
     mock_renderer = Mock()
@@ -292,7 +277,6 @@ def test_canvas_creation_parameters():
     assert opaque_canvas.renderer is mock_renderer
 
 
-@pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_canvas_operation_caching():
     """Test canvas operation caching behavior."""
     mock_renderer = Mock()

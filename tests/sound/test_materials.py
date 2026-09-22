@@ -17,10 +17,7 @@ class TestImpactMaterial:
 
     def test_all_materials_defined(self) -> None:
         """Test that all expected materials exist."""
-        assert ImpactMaterial.FLESH
-        assert ImpactMaterial.METAL
-        assert ImpactMaterial.STONE
-        assert ImpactMaterial.WOOD
+        assert {"FLESH", "METAL", "STONE", "WOOD"} <= ImpactMaterial.__members__.keys()
 
     def test_materials_are_distinct(self) -> None:
         """Test that all materials have distinct values."""

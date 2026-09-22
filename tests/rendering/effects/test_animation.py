@@ -30,7 +30,7 @@ class TestAnimation:
     def test_animation_is_abstract(self) -> None:
         """Animation cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            Animation()
+            Animation()  # ty: ignore[call-non-callable]
 
 
 class TestMoveAnimation:

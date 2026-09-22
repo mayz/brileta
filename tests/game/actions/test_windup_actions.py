@@ -9,6 +9,7 @@ import pytest
 
 from brileta.controller import Controller
 from brileta.game.actions.base import GameIntent
+from brileta.game.actions.movement import MoveIntent
 from brileta.game.actions.types import AnimationType
 from brileta.types import FixedTimestep, TileDimensions
 from brileta.view.animation import Animation
@@ -120,7 +121,7 @@ class DummyMoveIntentGenerator:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
 
-    def generate_intent(self, keys: set) -> None:
+    def generate_intent(self, keys: set) -> MoveIntent | None:
         return None
 
 
