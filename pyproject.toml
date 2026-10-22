@@ -59,6 +59,8 @@ include = ["tests/**"]
 [tool.ty.overrides.rules]
 invalid-assignment = "ignore"  # Mock assignments in tests
 unresolved-attribute = "ignore"  # Mock attribute access in tests (.return_value, .assert_called_*, .call_count)
+invalid-mutable-override = "ignore"  # Dummy controllers narrow attributes to dummy types (gw: DummyGameWorld)
+invalid-attribute-override = "ignore"  # Dummy controllers swap in stand-in types (frame_manager: DummyFrameManager)
 
 [dependency-groups]
 dev = [

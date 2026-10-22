@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -199,7 +199,7 @@ class WGPUGraphicsContext(GraphicsContext):
         self.blurred_atlas_texture: wgpu.GPUTexture | None = None
 
         # Screen renderer
-        self.screen_renderer: WGPUScreenRenderer | None = None
+        self.screen_renderer: WGPUScreenRenderer | None = None  # ty: ignore[invalid-mutable-override]
 
         # Glyph renderer for off-screen rendering
         self.glyph_renderer: WGPUGlyphRenderer | None = None
@@ -1111,7 +1111,7 @@ class WGPUGraphicsContext(GraphicsContext):
         )
 
     @contextmanager
-    def shadow_pass(self) -> Iterator[None]:
+    def shadow_pass(self) -> Generator[None]:
         """Bracket shadow geometry so the screen renderer can draw it separately."""
         if self.screen_renderer is not None:
             self.screen_renderer.mark_shadow_start()

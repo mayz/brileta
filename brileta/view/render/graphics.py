@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -739,7 +739,7 @@ class GraphicsContext:
         return
 
     @contextmanager
-    def shadow_pass(self) -> Iterator[None]:
+    def shadow_pass(self) -> Generator[None]:
         """Bracket shadow geometry generation, if supported by backend."""
         yield
 

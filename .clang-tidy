@@ -10,7 +10,8 @@ Checks: >
   performance-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
-  -bugprone-implicit-widening-of-multiplication-result
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-signed-bitwise
 
 # Only warn on our own headers, not third-party (FastNoiseLite.h).
 HeaderFilterRegex: '_native.*\.c$'

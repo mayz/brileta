@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
@@ -110,7 +110,7 @@ def patch_combat_rng() -> Callable[
     @contextmanager
     def _patch(
         d20_values: list[int], dice_values: list[int] | None = None
-    ) -> Iterator[None]:
+    ) -> Generator[None]:
         with ExitStack() as stack:
             stack.enter_context(
                 patch.object(d20_system._rng, "randint", FixedRandom(d20_values))

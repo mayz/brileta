@@ -881,7 +881,7 @@ class NPC(Character):
     functionality still comes from the components.
     """
 
-    ai: AIComponent
+    ai: AIComponent  # ty: ignore[invalid-mutable-override]
 
     def __init__(
         self,
